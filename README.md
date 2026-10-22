@@ -14,4 +14,4 @@ HG is an independent software product. This repository is the canonical source f
 
 MAEP applies across task intake, authorization, execution, evidence review, acceptance, and closure. It is not a sixth functional domain.
 
-This is an architecture-only bootstrap. No functional implementation is included.
+MAEP V1 governance primitives and contract specifications are implemented under `maep/`. Runtime integration with BrainOrchestrator remains pending and is not yet verified.

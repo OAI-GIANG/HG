@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hg:maep:state-transition-1.0.0.schema.json",
+  "title": "MAEP State Transition",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "transition_id",
+    "task_id",
+    "from_state",
+    "to_state",
+    "trigger",
+    "guard_results",
+    "decision",
+    "timestamp"
+  ],
+  "properties": {
+    "transition_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "from_state": {
+      "type": "string",
+      "minLength": 1
+    },
+    "to_state": {
+      "type": "string",
+      "minLength": 1
+    },
+    "trigger": {
+      "type": "string",
+      "minLength": 1
+    },
+    "guard_results": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "guard_id",
+          "passed",
+          "detail"
+        ],
+        "properties": {
+          "guard_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "passed": {
+            "type": "boolean"
+          },
+          "detail": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "decision": {
+      "enum": [
+        "ALLOW",
+        "DENY",
+        "BLOCKED"
+      ]
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

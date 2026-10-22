@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hg:maep:authorization-1.0.0.schema.json",
+  "title": "MAEP Authorization",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "authorization_id",
+    "principal",
+    "action",
+    "resource",
+    "scope",
+    "conditions",
+    "task_id",
+    "policy_version",
+    "decision",
+    "issued_at",
+    "expires_at"
+  ],
+  "properties": {
+    "authorization_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "principal": {
+      "type": "string",
+      "minLength": 1
+    },
+    "action": {
+      "enum": [
+        "READ",
+        "WRITE",
+        "COMMIT",
+        "PUSH",
+        "MERGE",
+        "DEPLOY",
+        "MIGRATE",
+        "DELETE",
+        "EXECUTE",
+        "OTHER"
+      ]
+    },
+    "resource": {
+      "type": "string",
+      "minLength": 1
+    },
+    "scope": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "conditions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "policy_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "decision": {
+      "enum": [
+        "ALLOW",
+        "DENY",
+        "BLOCKED"
+      ]
+    },
+    "issued_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expires_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "reason": {
+      "type": "string"
+    }
+  }
+}
