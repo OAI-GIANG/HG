@@ -54,9 +54,9 @@ The dependency graph must be acyclic. Cross-branch workflows route through Brain
 
 ## 4. Task lifecycle
 
-Proposed states: RECEIVED, PLANNED, AUTHORIZATION_PENDING, READY, RUNNING, VERIFYING, ACCEPTED, CLOSED_VERIFIED, BLOCKED, FAILED, UNKNOWN, NEEDS_RECOVERY.
+The canonical state vocabulary and allowed transitions are defined by `maep/spec/STATE_TRANSITION_TABLE_V1.md` and implemented as local primitives in `maep/core.py`: DRAFT, READY, ASSESSED, PLANNED, AUTHORIZED, RUNNING, VERIFYING, ACCEPTED, CLOSED_VERIFIED, BLOCKED, FAILED, CANCELLED, UNVERIFIED. This architecture must not introduce a parallel state vocabulary or bypass those transition edges.
 
-The MAEP transition guard is the only authority for state changes. Terminal-state continuation creates a linked task or amendment; it does not silently reopen a terminal task. ACCEPTED is not CLOSED_VERIFIED until closure criteria and evidence are validated.
+Cancellation is a request/event, not a new task state, and does not itself mutate task state. For a RUNNING task, use the allowed RUNNING -> BLOCKED transition to stop new dispatch; reconcile in-flight effects while BLOCKED; only then use the allowed BLOCKED -> CANCELLED transition. CANCELLED is terminal and does not imply rollback. Terminal-state continuation creates a linked task or amendment; it does not silently reopen a terminal task. ACCEPTED is not CLOSED_VERIFIED until closure criteria and evidence are validated.
 
 ## 5. Standard interaction
 

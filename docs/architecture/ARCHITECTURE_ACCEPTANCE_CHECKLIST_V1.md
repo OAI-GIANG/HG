@@ -4,6 +4,13 @@ Status: **DESIGN GATE — NOT YET ACCEPTED**
 
 Use three values for each item: PASS (with evidence ref), FAIL (with evidence ref), or NOT_RUN/BLOCKED (with reason and reopening condition). A checked box without evidence is not a PASS.
 
+## Gate separation
+
+- **Design acceptance** evaluates whether the proposed architecture and contracts are coherent, complete, traceable to MAEP-001..MAEP-028, explicit about trust/failure semantics, and free of known contradictions. It may use source inventory and static design review as evidence.
+- **Implementation acceptance** evaluates actual module/import graphs, runtime authorization enforcement, state/evidence persistence, recovery, and executable unit/integration tests. These items cannot be marked PASS merely because the design describes them.
+- Where a runtime-only item has no implementation to inspect, record `NOT_APPLICABLE_PENDING_IMPLEMENTATION` for the design review and carry it forward as a mandatory implementation gate. Do not treat it as proof that the runtime passes.
+- Design acceptance and implementation acceptance are separate decisions. A design acceptance does not authorize implementation, merge, or deployment.
+
 ## A. Design completeness
 - [ ] HG Architecture V1 documents goals, invariants, five branches, dependency rules and lifecycle.
 - [ ] BrainOrchestrator contract defines inputs, outputs, failures, deadlines and idempotency behavior.
@@ -60,6 +67,10 @@ Use three values for each item: PASS (with evidence ref), FAIL (with evidence re
 - [ ] Runtime integration and end-to-end tests are not marked PASS until actually executed.
 - [ ] No merge or deploy occurs without a separate explicit authorization.
 
-## Current evidence status
+## Current evidence status (final design-gate review)
 
-At authoring time, the repository has MAEP Foundation V1 but no `docs/architecture/` tree. This checklist is newly authored design material. It does not assert that any runtime or integration test has run. Current acceptance is therefore NOT_RUN pending document validation and user review.
+The design branch contains 17 architecture Markdown files: seven primary documents and ADR-001 through ADR-010. The MAEP constitution and architecture traceability matrix both enumerate MAEP-001..MAEP-028; the architecture matrix contains each ID exactly once, with no missing or extra rule IDs. Repository identity, branch/HEAD, remote branch SHA, unchanged `main`, MAEP baseline ancestry, clean initial worktree, and documentation-only scope were checked during the review.
+
+The initial static review identified underspecified deadline/idempotency semantics in the BrainOrchestrator contract and ambiguity between design acceptance and implementation acceptance. The contract and this gate-separation section were amended in the review changeset. The accompanying `ARCHITECTURE_FINAL_DESIGN_GATE_REVIEW_V1.md` records the review scope, checks, findings, evidence and remaining limitations.
+
+This checklist does not assert that BrainOrchestrator or any functional branch exists at runtime, nor that end-to-end authorization, persistence, restart recovery, or integration tests have passed. Those remain mandatory implementation gates. Final design acceptance is determined by the accompanying review report; user authorization is still required before implementation begins.
