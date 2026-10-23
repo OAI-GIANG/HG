@@ -18,6 +18,17 @@ class ExecutionModeTests(unittest.TestCase):
         with self.assertRaises(MAEPError):
             enforce_execution_mode("READ_ONLY", "UNRECOGNIZED")
 
+    def test_audit_only_allows_read(self):
+        self.assertTrue(enforce_execution_mode("AUDIT_ONLY", "READ"))
+
+    def test_audit_only_denies_write(self):
+        with self.assertRaisesRegex(MAEPError, "AUDIT_ONLY"):
+            enforce_execution_mode("AUDIT_ONLY", "WRITE")
+
+    def test_audit_only_denies_execute(self):
+        with self.assertRaisesRegex(MAEPError, "AUDIT_ONLY"):
+            enforce_execution_mode("AUDIT_ONLY", "EXECUTE")
+
 
 class ReportingAndRetryTests(unittest.TestCase):
     def test_not_run_cannot_be_reported_pass(self):

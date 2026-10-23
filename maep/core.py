@@ -272,15 +272,19 @@ def validate_closure(closure, *, mandatory_gates, evidence_by_id, candidate_ref,
 
 
 def enforce_execution_mode(mode, action):
-    """Deny side effects and unknown actions in explicit READ_ONLY mode."""
+    """Deny side effects in READ_ONLY and AUDIT_ONLY modes.
+
+    AUDIT_ONLY additionally requires a read-only adapter registry and the fixed
+    HG_AUDIT principal. This is an application guard, not OS isolation.
+    """
     read_actions = {"READ", "LIST", "INSPECT"}
     known_actions = read_actions | {"WRITE", "COMMIT", "PUSH", "MERGE", "DEPLOY", "MIGRATE", "DELETE", "EXECUTE", "OTHER"}
-    if mode not in {"READ_ONLY", "AUTHORIZED_EXECUTION"}:
+    if mode not in {"READ_ONLY", "AUDIT_ONLY", "AUTHORIZED_EXECUTION"}:
         raise MAEPError("unknown execution mode")
     if action not in known_actions:
         raise MAEPError("unknown action")
-    if mode == "READ_ONLY" and action not in read_actions:
-        raise MAEPError("side effect denied in READ_ONLY mode")
+    if mode in {"READ_ONLY", "AUDIT_ONLY"} and action not in read_actions:
+        raise MAEPError(f"side effect denied in {mode} mode")
     return True
 
 

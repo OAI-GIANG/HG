@@ -18,8 +18,9 @@ from types import SimpleNamespace
 
 from maep.ledger import read_events
 from maep.authority.anchored import AnchoredPolicyEvaluator
+from maep.authority.canonical_source import CanonicalManifest
 from maep.authority.issuer import IssuedGrantEvaluator, TaskGrantIssuer
-from maep.core import MAEPError
+from maep.core import MAEPError, enforce_execution_mode
 from maep.policy import PolicyEvaluator
 from maep.task_store import TaskStore
 from hg.brain.orchestrator import BrainOrchestrator
@@ -28,6 +29,7 @@ from hg.tools.gateway import ActionGateway, LocalFileReadAdapter, LocalFileWrite
 from hg.verification.evidence import AcceptanceGate, EventLog
 
 DEFAULT_PRINCIPAL = "STT"
+AUDIT_ONLY_PRINCIPAL = "HG_AUDIT"
 
 
 def utcnow():
@@ -44,6 +46,14 @@ def open_task_store(path, evaluator, clock):
 def build_runtime(workdir, grants, *, principal=DEFAULT_PRINCIPAL, mode="AUTHORIZED_EXECUTION",
                   verifiers=None, clock=None, extra_adapters=(), condition_provider=None, authority=None,
                   allow_fixture_grants=False, issue_task_grants=False, memory=None, grant_ttl_s=3600):
+    enforce_execution_mode(mode, "READ")
+    if mode == "AUDIT_ONLY":
+        if principal != AUDIT_ONLY_PRINCIPAL:
+            raise MAEPError("AUDIT_ONLY requires principal='HG_AUDIT'")
+        if type(authority) is not CanonicalManifest or allow_fixture_grants:
+            raise MAEPError("AUDIT_ONLY requires CanonicalManifest authority; fixture or duck-typed authority is forbidden")
+        if issue_task_grants and list(grants):
+            raise MAEPError("AUDIT_ONLY task-grant issuance cannot also accept caller-supplied grants")
     if authority is not None and allow_fixture_grants:
         raise MAEPError("pass either authority or allow_fixture_grants, not both")
     if issue_task_grants and (authority is None or list(grants)):
@@ -74,9 +84,15 @@ def build_runtime(workdir, grants, *, principal=DEFAULT_PRINCIPAL, mode="AUTHORI
         memory = MemoryStore(workdir / "memory.jsonl", clock=clock)
     store = open_task_store(workdir / "tasks.jsonl", evaluator, clock)
     actions = EventLog(workdir / "actions.jsonl", clock=clock)
-    adapters = [LocalFileWriteAdapter(root), LocalFileReadAdapter(root), CodeSearchAdapter(root),
-                SymbolIndexAdapter(root), CodeDiffAdapter(root), TestRunAdapter(root), UrlReadAdapter(),
-                *extra_adapters]
+    if mode == "AUDIT_ONLY":
+        # Do not instantiate write, commit, process-execution, or other effect adapters.
+        adapters = [LocalFileReadAdapter(root), CodeSearchAdapter(root),
+                    SymbolIndexAdapter(root), CodeDiffAdapter(root),
+                    *extra_adapters]
+    else:
+        adapters = [LocalFileWriteAdapter(root), LocalFileReadAdapter(root), CodeSearchAdapter(root),
+                    SymbolIndexAdapter(root), CodeDiffAdapter(root), TestRunAdapter(root), UrlReadAdapter(),
+                    *extra_adapters]
     gateway = ActionGateway(store, evaluator, actions, adapters, principal=principal, mode=mode)
     gate = AcceptanceGate(clock=clock)
     orchestrator = BrainOrchestrator(store, gateway, gate, principal=principal, verifiers=verifiers,
