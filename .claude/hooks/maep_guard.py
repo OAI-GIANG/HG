@@ -28,12 +28,20 @@ from pathlib import PurePosixPath
 
 DELEGATION_FILE = "maep/spec/MAEP_OWNER_DELEGATION_V1.md"
 GRANTS_FILE = "maep/authority/owner-grants.json"
-TRUST_FILES = (DELEGATION_FILE, GRANTS_FILE)
+GUARD_SETTINGS_FILE = ".claude/settings.json"
+GUARD_IMPLEMENTATION_FILE = ".claude/hooks/maep_guard.py"
+TRUST_FILES = (DELEGATION_FILE, GRANTS_FILE, GUARD_SETTINGS_FILE, GUARD_IMPLEMENTATION_FILE)
 EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
 SEPARATORS = {"&&", "||", ";", "|", "&", "(", ")", "|&", ";;"}
 REDIRECTS = {">", ">>", ">|", "&>", "&>>"}
 PREFIX_COMMANDS = {"sudo", "command", "exec", "nohup", "time", "env", "builtin"}
 SHELLS = {"bash", "sh", "zsh", "dash"}
+INLINE_CODE_FLAGS = {
+    "python": {"-c"}, "python2": {"-c"}, "python3": {"-c"},
+    "pypy": {"-c"}, "pypy3": {"-c"},
+    "node": {"-e", "--eval"}, "deno": {"eval"}, "bun": {"-e", "--eval"},
+    "perl": {"-e", "-E"}, "ruby": {"-e"}, "php": {"-r"},
+}
 GIT_OPTS_WITH_VALUE = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path"}
 PUSH_OPTS_WITH_VALUE = {"--repo", "--receive-pack", "--exec", "-o", "--push-option"}
 HEREDOC = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
@@ -241,6 +249,12 @@ def _check_segment(tokens, cwd, probe, depth):
     if not tokens:
         return
     name = PurePosixPath(tokens[0]).name
+    inline_flags = INLINE_CODE_FLAGS.get(name, set())
+    if inline_flags.intersection(tokens[1:]):
+        raise Blocked(
+            f"inline code execution via {name!r} is not inspected by MAEP guard; "
+            "use a reviewed script or a separately isolated execution host"
+        )
     if name in SHELLS and "-c" in tokens[1:]:
         position = tokens.index("-c")
         if position + 1 < len(tokens) and depth < 3:

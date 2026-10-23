@@ -191,6 +191,48 @@ class OwnerGrantsFileTests(unittest.TestCase):
             allowed, reason = evaluate(payload, probe=FakeProbe())
             self.assertTrue(allowed, f"{payload} ({reason})")
 
+    def test_agent_cannot_disable_or_rewrite_guard_controls(self):
+        for command in (
+            "echo x > .claude/settings.json",
+            "sed -i 's/a/b/' .claude/settings.json",
+            "rm .claude/settings.json",
+            "echo x > .claude/hooks/maep_guard.py",
+            "sed -i 's/a/b/' .claude/hooks/maep_guard.py",
+            "git checkout other-branch -- .claude/settings.json",
+        ):
+            allowed, reason = evaluate(bash(command), probe=FakeProbe())
+            self.assertFalse(allowed, command)
+            self.assertIn("only the owner changes", reason)
+        for tool in ("Edit", "Write", "MultiEdit", "NotebookEdit"):
+            for path in ("/repo/.claude/settings.json", "/repo/.claude/hooks/maep_guard.py"):
+                payload = {"tool_name": tool, "tool_input": {"file_path": path}}
+                allowed, reason = evaluate(payload, probe=FakeProbe())
+                self.assertFalse(allowed, f"{tool} {path}")
+                self.assertIn("only the owner changes", reason)
+
+
+class InlineInterpreterTests(unittest.TestCase):
+    """Inline interpreter payloads are opaque to the shell parser and must fail closed."""
+
+    def test_inline_interpreter_execution_blocked(self):
+        for command in (
+            "python3 -c 'open(\"maep/authority/owner-grants.json\", \"w\").write(\"{}\")'",
+            "python -c 'import subprocess; subprocess.run([\"git\", \"push\", \"origin\", \"main\"])'",
+            "node -e 'require(\"child_process\").execSync(\"git push origin main\")'",
+            "perl -e 'system(\"git push origin main\")'",
+            "ruby -e 'system(\"git push origin main\")'",
+            "php -r 'file_put_contents(\"maep/authority/owner-grants.json\", \"{}\");'",
+            "env python3 -c 'print(1)'",
+            "bash -c \"python3 -c 'print(1)'\"",
+        ):
+            allowed, reason = evaluate(bash(command), probe=FakeProbe())
+            self.assertFalse(allowed, command)
+            self.assertIn("inline code execution", reason)
+
+    def test_module_based_test_runner_remains_allowed(self):
+        allowed, reason = evaluate(bash("python3 -m unittest discover -s maep/tests -v"), probe=FakeProbe())
+        self.assertTrue(allowed, reason)
+
 
 class MalformedInputTests(unittest.TestCase):
     def test_unparseable_risky_command_fails_closed(self):

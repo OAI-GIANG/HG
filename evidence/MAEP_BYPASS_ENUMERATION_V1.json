@@ -1,0 +1,155 @@
+{
+  "evidence_id": "HG-MAEP-BYPASS-20261024-001",
+  "captured_at": "2026-10-24",
+  "repository": "OAI-GIANG/HG",
+  "mode": "READ_ONLY_DISCOVERY_PLUS_ISOLATED_FIXTURE_TESTS",
+  "test_worktree": {
+    "path": "/data/data/com.termux/files/home/HG-execution-host-audit-only-20261024",
+    "branch": "stt/execution-host-audit-only-20261024",
+    "base_head": "3efbf7cf0802bd133ef856024e3d64075a52ce4d",
+    "state": "UNCOMMITTED_ISOLATED_WORKTREE_PATCH",
+    "changed_files": [
+      {
+        "path": ".claude/hooks/maep_guard.py",
+        "sha256": "9dceb0f33644827949b5afd1f59ec29083b12e07dfb334e98b2791d8162534e9"
+      },
+      {
+        "path": ".claude/hooks/test_maep_guard.py",
+        "sha256": "af136994a0f43845c7197eed140dc82b88f634207480d255fb69a00573cbed35"
+      },
+      {
+        "path": "docs/architecture/MAEP_BYPASS_ENUMERATION_V1.md",
+        "sha256": "2557e04978685e269228c1e8b8c63e8c0d497afaa9102e3502d82b95198f3c35"
+      }
+    ]
+  },
+  "routes": [
+    {
+      "id": "BE-01",
+      "route": "RDC direct write_file/edit_block/read_file",
+      "status": "BYPASS_CONFIRMED",
+      "evidence": "Created disposable file outside repository through write_file, changed it through edit_block, read back RDC_DIRECT_EDIT_BYPASSED_HG_GATE. No HG ActionGateway or Claude hook invocation."
+    },
+    {
+      "id": "BE-02",
+      "route": "RDC start_process/shell",
+      "status": "ALLOWED_CONFIRMED",
+      "evidence": "python3 -c print(...) executed successfully through RDC."
+    },
+    {
+      "id": "BE-03",
+      "route": "RDC child process/process control",
+      "status": "ALLOWED_CONFIRMED",
+      "evidence": "RDC starts separate shell/Python PIDs and exposes process listing and process-control tools."
+    },
+    {
+      "id": "BE-04",
+      "route": "Claude PreToolUse inline interpreter",
+      "status": "BYPASS_REPRODUCED_AND_PATCHED_IN_WORKTREE",
+      "evidence": "Before patch evaluate() returned [true, allowed] for python3 -c payload. Added fail-closed detection for inline Python, Node, Deno, Bun, Perl, Ruby, PHP and wrapper regression cases."
+    },
+    {
+      "id": "BE-05",
+      "route": "Claude PreToolUse guard self-modification",
+      "status": "BYPASS_REPRODUCED_AND_PATCHED_IN_WORKTREE",
+      "evidence": "Before patch evaluate() allowed Write to /repo/.claude/settings.json and Edit to /repo/.claude/hooks/maep_guard.py. Both paths added to protected path set and regression tests."
+    },
+    {
+      "id": "BE-06",
+      "route": "HG ActionGateway",
+      "status": "APPLICATION_TESTED_ONLY",
+      "evidence": "In-process gateway cannot mediate independent RDC or GitHub connector operations. Full OS-level mediation not present in inspected environment."
+    },
+    {
+      "id": "BE-07",
+      "route": "HG HTTP API",
+      "status": "PARTIAL",
+      "evidence": "Production source read-only inspection: loopback bind by default; health endpoint public; read endpoints use read auth; memory write/delete and durable sync use write auth. No production mutation requests sent; live negative tests and credential isolation remain unverified.",
+      "runtime_source_commit": "fcc561ae919b64572c5a9b549d5664b7fbfd4676"
+    },
+    {
+      "id": "BE-08",
+      "route": "Loopback/network/IPC",
+      "status": "UNVERIFIED",
+      "evidence": "HG and RDC observed with same Android UID 10460 and same SELinux domain u:r:untrusted_app_27:s0:c204,c257,c512,c768. Namespace probes previously failed. Full socket/IPC denial tests require isolated Linux host."
+    },
+    {
+      "id": "BE-09",
+      "route": "GitHub connector/API",
+      "status": "BYPASS_CAPABILITY_CONFIRMED",
+      "evidence": "Authenticated GitHub login OAI-GIANG; repository metadata reports admin:true and push:true. Tool surface includes create/update/delete file, commit/ref mutation and PR merge actions. No destructive connector action invoked."
+    },
+    {
+      "id": "BE-10",
+      "route": "Other agents/connectors/credentials",
+      "status": "PARTIAL",
+      "evidence": "Only tools visible in this session were inventoried; cannot prove exhaustive coverage of future agents, connectors, credentials, devices or APIs."
+    },
+    {
+      "id": "BE-11",
+      "route": "OS isolation",
+      "status": "BLOCKED",
+      "evidence": "Android/Termux namespace probes failed; no isolated Linux VM/host available. proot is not accepted as OS isolation."
+    }
+  ],
+  "tests": [
+    {
+      "id": "BE-HOOK",
+      "command": "python3 .claude/hooks/test_maep_guard.py",
+      "exit_code": 0,
+      "count": 35,
+      "result": "PASS"
+    },
+    {
+      "id": "BE-MAEP",
+      "command": "python3 -m unittest discover -s maep/tests -p 'test_*.py'",
+      "exit_code": 0,
+      "count": 261,
+      "result": "PASS"
+    },
+    {
+      "id": "BE-HG",
+      "command": "python3 -m unittest discover -s hg/tests -p 'test_*.py'",
+      "exit_code": 0,
+      "count": 195,
+      "result": "PASS",
+      "warnings": [
+        "ResourceWarning: socket cleanup",
+        "ResourceWarning: implicit HTTPError 404 cleanup"
+      ]
+    },
+    {
+      "id": "BE-DIFF",
+      "command": "git diff --check",
+      "exit_code": 0,
+      "result": "PASS"
+    }
+  ],
+  "preservation": {
+    "main_sha": "37e30b106cb9e0fafb289066befbce2c2b700a4a",
+    "original_checkout_head": "f7f00a75c6a1b1363993c2fb9bc023171f080038",
+    "original_checkout_branch": "stt/maep-v1-20261022",
+    "original_checkout_status_entries": 90,
+    "production_pid": 15005,
+    "production_command": "python3 -u -m hg.server",
+    "production_or_main_changed": false,
+    "merge_or_deploy": false
+  },
+  "overall": "BLOCKED_P0",
+  "open_blockers": [
+    "DIRECT_TOOL_BYPASS",
+    "GITHUB_API_BYPASS",
+    "OS_ISOLATION_UNVERIFIED",
+    "API_IPC_MEDIATION_UNVERIFIED",
+    "COMPLETE_MEDIATION_UNVERIFIED",
+    "EVIDENCE_SINK_SEPARATION_UNVERIFIED"
+  ],
+  "limitations": [
+    "The two hook patches are uncommitted in an isolated test worktree and are not active in production.",
+    "Hook tests prove evaluator behavior only, not OS-level enforcement.",
+    "RDC direct tools bypass the Claude hook and HG ActionGateway.",
+    "GitHub connector writes are independent of local hook policy.",
+    "No production mutation was attempted.",
+    "This evidence file is mutable and not an append-only/tamper-resistant evidence sink."
+  ]
+}
