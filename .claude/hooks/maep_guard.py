@@ -15,11 +15,13 @@ bypass the pull-request route to `main`, or change the owner's delegation:
 Exit 0 allows the call; exit 2 blocks it and shows stderr to the agent. Input that cannot
 be evaluated is blocked (MAEP-005).
 
-Limits: this is a best-effort command parser, not a sandbox. It does not see inside
-`$(...)`, `eval`, `xargs` or interpreter one-liners, and an agent that edits this file or
-`.claude/settings.json` can disable it. Weakening it is a policy change (MAEP-017, 028).
+Limits: this is a best-effort command parser, not a sandbox. It blocks known opaque
+shell/interpreter patterns and protects lexical/symlink-resolved trust paths, but cannot
+mediate arbitrary binaries, external tools, OS APIs, filesystem races, or agents that never
+invoke this hook. Only OS-enforced isolation and complete mediation can provide that boundary.
 """
 import json
+import os
 import re
 import shlex
 import subprocess
@@ -173,6 +175,8 @@ def _check_push(args, path, probe):
 def _check_git(tokens, cwd, probe):
     path, i = cwd, 1
     while i < len(tokens) and tokens[i].startswith("-"):
+        if tokens[i] == "-c" or tokens[i].startswith("--config-env"):
+            raise Blocked("git command-scoped config can change aliases, hooks or command execution")
         if tokens[i] in GIT_OPTS_WITH_VALUE:
             if tokens[i] == "-C" and i + 1 < len(tokens):
                 path = tokens[i + 1]
@@ -197,18 +201,22 @@ def _check_git(tokens, cwd, probe):
             if probe.has_untracked_files(path, include_ignored) is not False:
                 raise Blocked("`git clean -f` would delete untracked files; move or commit them first")
     if sub in {"rm", "mv", "checkout", "restore", "reset", "apply", "am"}:
-        trust_file = _mentioned_trust_file(args)
+        trust_file = _mentioned_trust_file(args, path)
         if trust_file:
             raise Blocked(f"only the owner changes {trust_file}")
 
 
-def _trust_file(token):
-    path = token.replace("\\", "/").rstrip("/")
-    return next((f for f in TRUST_FILES if path.endswith(f)), None)
+def _trust_file(token, cwd=None):
+    if not isinstance(token, str) or not token:
+        return None
+    # Resolve lexical traversal and symlink aliases before matching protected files.
+    candidate = token if token.startswith("/") else os.path.join(cwd or os.getcwd(), token)
+    path = os.path.realpath(candidate).replace("\\", "/").rstrip("/")
+    return next((f for f in TRUST_FILES if path.endswith("/" + f) or path == f), None)
 
 
-def _mentioned_trust_file(tokens):
-    return next((f for f in map(_trust_file, tokens) if f), None)
+def _mentioned_trust_file(tokens, cwd=None):
+    return next((f for f in (_trust_file(token, cwd) for token in tokens) if f), None)
 
 
 def _check_rm(args):
@@ -223,27 +231,32 @@ def _check_rm(args):
                 raise Blocked("deleting a `.git` directory destroys repository history")
 
 
-def _check_delegation_writes(tokens):
+def _check_delegation_writes(tokens, cwd=None):
     """Block shell writes to any owner-only trust file (delegation, grants manifest)."""
     for index, token in enumerate(tokens):
-        trust_file = _trust_file(token)
+        trust_file = _trust_file(token, cwd)
         if trust_file and index > 0 and tokens[index - 1] in REDIRECTS:
             raise Blocked(f"only the owner changes {trust_file}")
-    trust_file = _mentioned_trust_file(tokens) if tokens else None
+    trust_file = _mentioned_trust_file(tokens, cwd) if tokens else None
     if not trust_file:
         return
     name = PurePosixPath(tokens[0]).name
     args = tokens[1:]
     if name in {"rm", "mv", "truncate", "tee", "dd", "shred", "chmod", "chown", "ln", "install"}:
         raise Blocked(f"only the owner changes {trust_file}")
-    if name == "cp" and args and _trust_file(args[-1]):
+    if name == "cp" and args and _trust_file(args[-1], cwd):
         raise Blocked(f"only the owner changes {trust_file}")
     if name in {"sed", "perl"} and any(a.startswith("-i") or a == "--in-place" for a in args):
         raise Blocked(f"only the owner changes {trust_file}")
 
 
 def _check_segment(tokens, cwd, probe, depth):
-    _check_delegation_writes(tokens)
+    _check_delegation_writes(tokens, cwd)
+    if any(
+        PurePosixPath(tokens[index]).name == "env" and tokens[index + 1] in {"-S", "--split-string"}
+        for index in range(len(tokens) - 1)
+    ):
+        raise Blocked("env split-string hides the invoked command from MAEP guard")
     while tokens and (re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", tokens[0]) or tokens[0] in PREFIX_COMMANDS):
         tokens = tokens[1:]
     if not tokens:
@@ -255,10 +268,31 @@ def _check_segment(tokens, cwd, probe, depth):
             f"inline code execution via {name!r} is not inspected by MAEP guard; "
             "use a reviewed script or a separately isolated execution host"
         )
-    if name in SHELLS and "-c" in tokens[1:]:
-        position = tokens.index("-c")
-        if position + 1 < len(tokens) and depth < 3:
-            _check_command(tokens[position + 1], cwd, probe, depth + 1)
+    if name in SHELLS:
+        if "-c" in tokens[1:]:
+            position = tokens.index("-c")
+            if position + 1 < len(tokens) and depth < 3:
+                _check_command(tokens[position + 1], cwd, probe, depth + 1)
+        elif any(not token.startswith("-") for token in tokens[1:]):
+            raise Blocked(f"shell script-file execution via {name!r} is not inspected by MAEP guard")
+    elif name in {"python", "python2", "python3", "pypy", "pypy3"}:
+        if "-m" in tokens[1:]:
+            position = tokens.index("-m")
+            module = tokens[position + 1] if position + 1 < len(tokens) else ""
+            if module != "unittest":
+                raise Blocked(f"Python module execution via {module!r} is not allowlisted")
+            args = tokens[position + 2:]
+            if not args or args[0] != "discover" or "-s" not in args:
+                raise Blocked("Python unittest must use discovery rooted in an allowlisted test directory")
+            start_index = args.index("-s") + 1
+            test_root = args[start_index] if start_index < len(args) else ""
+            if test_root not in {"maep/tests", "hg/tests", ".claude/hooks"}:
+                raise Blocked(f"Python unittest discovery path {test_root!r} is not allowlisted")
+        elif any(not token.startswith("-") for token in tokens[1:]):
+            raise Blocked("Python script-file execution is not inspected by MAEP guard")
+    elif name in {"node", "deno", "bun", "perl", "ruby", "php"}:
+        if any(not token.startswith("-") for token in tokens[1:]):
+            raise Blocked(f"script-file execution via {name!r} is not inspected by MAEP guard")
     elif name == "git":
         _check_git(tokens, cwd, probe)
     elif name == "rm":
@@ -266,13 +300,28 @@ def _check_segment(tokens, cwd, probe, depth):
 
 
 def _check_command(command, cwd, probe, depth=0):
+    # The shell parser cannot safely inspect nested expansion, command substitution,
+    # process substitution, eval/xargs or find-exec payloads. Fail closed rather than
+    # treating opaque payloads as ordinary arguments.
+    opaque_patterns = (
+        r"\$\(", r"`", r"<\(", r">\(",
+    )
+    if any(re.search(pattern, command) for pattern in opaque_patterns):
+        raise Blocked("opaque shell expansion/substitution is not inspected by MAEP guard")
     try:
         segments = list(_segments(command))
     except ValueError as exc:
-        if RISK_HINT.search(command):
+        if RISK_HINT.search(command) or command.strip():
             raise Blocked(f"cannot parse command to verify it is safe ({exc})")
         return
     for tokens in segments:
+        lowered = [token.lower() for token in tokens]
+        if any(token == "eval" for token in lowered):
+            raise Blocked("eval executes opaque code not inspected by MAEP guard")
+        if "xargs" in lowered:
+            raise Blocked("xargs executes a derived command not inspected by MAEP guard")
+        if "find" in lowered and any(token in {"-exec", "-execdir", "-ok", "-okdir"} for token in lowered):
+            raise Blocked("find execution predicates are not inspected by MAEP guard")
         _check_segment(tokens, cwd, probe, depth)
 
 
@@ -288,7 +337,7 @@ def evaluate(payload, probe=None):
             raise Blocked("tool_input is not an object")
         if tool in EDIT_TOOLS:
             file_path = tool_input.get("file_path") or tool_input.get("notebook_path") or ""
-            trust_file = _trust_file(file_path) if isinstance(file_path, str) else None
+            trust_file = _trust_file(file_path, payload.get("cwd") or os.getcwd()) if isinstance(file_path, str) else None
             if trust_file:
                 raise Blocked(f"only the owner changes {trust_file}")
         elif tool == "Bash":

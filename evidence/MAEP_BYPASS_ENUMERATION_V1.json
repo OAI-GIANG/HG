@@ -7,19 +7,19 @@
     "path": "/data/data/com.termux/files/home/HG-execution-host-audit-only-20261024",
     "branch": "stt/execution-host-audit-only-20261024",
     "base_head": "3efbf7cf0802bd133ef856024e3d64075a52ce4d",
-    "state": "UNCOMMITTED_ISOLATED_WORKTREE_PATCH",
+    "state": "COMMITTED_LOCAL_UNPUSHED_TEST_BRANCH",
     "changed_files": [
       {
         "path": ".claude/hooks/maep_guard.py",
-        "sha256": "9dceb0f33644827949b5afd1f59ec29083b12e07dfb334e98b2791d8162534e9"
+        "sha256": "9edcbab8a6b3727239707134eb6f669b9f35e89787ee2f03d010de24a49b7a67"
       },
       {
         "path": ".claude/hooks/test_maep_guard.py",
-        "sha256": "af136994a0f43845c7197eed140dc82b88f634207480d255fb69a00573cbed35"
+        "sha256": "59f81d12521882e2bc42d516eb41a220fc528d72c0e6a48dd134f0bfd70c474d"
       },
       {
         "path": "docs/architecture/MAEP_BYPASS_ENUMERATION_V1.md",
-        "sha256": "2557e04978685e269228c1e8b8c63e8c0d497afaa9102e3502d82b95198f3c35"
+        "sha256": "6940177b145d69cad6e8f2c49612e8a879af5921034b9d62944692b4e14e3c60"
       }
     ]
   },
@@ -90,26 +90,32 @@
       "route": "OS isolation",
       "status": "BLOCKED",
       "evidence": "Android/Termux namespace probes failed; no isolated Linux VM/host available. proot is not accepted as OS isolation."
+    },
+    {
+      "id": "BE-12",
+      "route": "Claude hook script-file execution, shell indirection, protected-path aliases",
+      "status": "PATCHED_AND_FIXTURE_TESTED_IN_WORKTREE",
+      "evidence": "40 hook tests pass. Added rejection of interpreter script files, shell script files, command substitution, backticks, process substitution, eval, xargs, find execution predicates, env -S even behind wrappers, Git command-scoped config, non-discovery Python module execution, symlink aliases and path traversal to protected policy paths. This remains parser-level defense and does not mediate arbitrary binaries or external RDC/GitHub calls."
     }
   ],
   "tests": [
     {
       "id": "BE-HOOK",
-      "command": "python3 .claude/hooks/test_maep_guard.py",
+      "command": "PYTHONDONTWRITEBYTECODE=1 python3 .claude/hooks/test_maep_guard.py",
       "exit_code": 0,
-      "count": 35,
+      "count": 40,
       "result": "PASS"
     },
     {
       "id": "BE-MAEP",
-      "command": "python3 -m unittest discover -s maep/tests -p 'test_*.py'",
+      "command": "PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s maep/tests -p 'test_*.py'",
       "exit_code": 0,
       "count": 261,
       "result": "PASS"
     },
     {
       "id": "BE-HG",
-      "command": "python3 -m unittest discover -s hg/tests -p 'test_*.py'",
+      "command": "PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s hg/tests -p 'test_*.py'",
       "exit_code": 0,
       "count": 195,
       "result": "PASS",
@@ -145,10 +151,11 @@
     "EVIDENCE_SINK_SEPARATION_UNVERIFIED"
   ],
   "limitations": [
-    "The two hook patches are uncommitted in an isolated test worktree and are not active in production.",
-    "Hook tests prove evaluator behavior only, not OS-level enforcement.",
+    "The new hook changes are only in the isolated test worktree and are not active in production.",
+    "Hook tests prove evaluator behavior only, not OS-level enforcement or complete mediation.",
     "RDC direct tools bypass the Claude hook and HG ActionGateway.",
     "GitHub connector writes are independent of local hook policy.",
+    "The current feature worktree has no hg/server.py API implementation; production API/IPC authorization cannot be tested against the candidate source in this branch.",
     "No production mutation was attempted.",
     "This evidence file is mutable and not an append-only/tamper-resistant evidence sink."
   ]
