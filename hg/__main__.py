@@ -2,6 +2,7 @@
 
     python -m hg selfcheck [--workdir DIR]   run the runtime self-check scenarios
     python -m hg status --workdir DIR        read-only task and pending-action report
+    python -m hg authority-check             read the canonical owner manifest (RT-06), live
 
 selfcheck exercises the real runtime path (BrainOrchestrator -> TaskStore -> ActionGateway
 -> local filesystem -> AcceptanceGate) in a scratch directory. Its grants are self-check
@@ -17,6 +18,8 @@ from pathlib import Path
 
 from maep.core import POLICY_VERSION
 from maep.ledger import read_events
+from maep.authority.canonical_source import load_canonical_manifest
+from maep.authority.trust_anchor import TrustAnchorError
 from maep.task_store import TaskStore
 from hg.runtime import DEFAULT_PRINCIPAL, build_runtime
 from hg.tools.gateway import pending_from_events
@@ -65,7 +68,8 @@ def selfcheck(workdir):
     def scenario(name, subdir, grants, mode, task_id, path, expected_state, expect_file):
         rt_dir = workdir / subdir
         root = rt_dir / "root"
-        rt = build_runtime(rt_dir, grants, mode=mode, verifiers={"AC-1": readback(root, path)})
+        rt = build_runtime(rt_dir, grants, mode=mode, verifiers={"AC-1": readback(root, path)},
+                           allow_fixture_grants=True)    # self-check fixtures; reported in "limitations"
         final = rt.orch.execute_task(_task(task_id, path), [_step(task_id, path, content[path])])
         observed_file = (root / path).is_file()
         ok = final["task"]["state"] == expected_state and observed_file == expect_file
@@ -104,6 +108,19 @@ def status(workdir):
     return {"workdir": str(workdir), "tasks": report}
 
 
+def authority_check(loader=load_canonical_manifest):
+    """Report whether the trust root on main can be loaded. Exit 0 loaded, 3 unavailable/invalid."""
+    try:
+        doc, provenance = loader()
+    except TrustAnchorError as exc:
+        return 3, {"result": "BLOCKED", "reason": str(exc),
+                   "meaning": "anchored runtime denies every action until a valid manifest exists on main"}
+    grants = [{"principal": g["principal"], "actions": g["actions"], "scope": g["scope"],
+               "issued_at": g["issued_at"], "expires_at": g["expires_at"]} for g in doc["grants"]]
+    return 0, {"result": "LOADED", "provenance": provenance, "policy_version": doc["policy_version"],
+               "grants": grants}
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="python -m hg")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -111,7 +128,13 @@ def main(argv=None):
     sc.add_argument("--workdir", help="directory for ledgers and files (default: a new temp directory)")
     st = sub.add_parser("status", help="read-only report from a runtime work directory")
     st.add_argument("--workdir", required=True)
+    sub.add_parser("authority-check", help="read the canonical owner manifest from main (network)")
     args = parser.parse_args(argv)
+
+    if args.command == "authority-check":
+        code, report = authority_check()
+        print(json.dumps(report, indent=2, ensure_ascii=False))
+        return code
 
     if args.command == "selfcheck":
         workdir = Path(args.workdir) if args.workdir else Path(tempfile.mkdtemp(prefix="hg-selfcheck-"))

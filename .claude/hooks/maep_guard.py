@@ -8,7 +8,9 @@ bypass the pull-request route to `main`, or change the owner's delegation:
   lease-forcing `main` or `recovery/*` (MAEP-015, MAEP-027);
 - `git reset --hard` with uncommitted changes and `git clean -f` with files it would
   delete; recursive deletion of `.git`, `/` or the home directory (MAEP-016, 027);
-- any write to `maep/spec/MAEP_OWNER_DELEGATION_V1.md` (MAEP-017, delegation condition 3).
+- any write to the owner-only trust files: `maep/spec/MAEP_OWNER_DELEGATION_V1.md`
+  (MAEP-017, delegation condition 3) and the RT-06 grants manifest
+  `maep/authority/owner-grants.json`, so an agent cannot grant itself authority.
 
 Exit 0 allows the call; exit 2 blocks it and shows stderr to the agent. Input that cannot
 be evaluated is blocked (MAEP-005).
@@ -25,6 +27,8 @@ import sys
 from pathlib import PurePosixPath
 
 DELEGATION_FILE = "maep/spec/MAEP_OWNER_DELEGATION_V1.md"
+GRANTS_FILE = "maep/authority/owner-grants.json"
+TRUST_FILES = (DELEGATION_FILE, GRANTS_FILE)
 EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
 SEPARATORS = {"&&", "||", ";", "|", "&", "(", ")", "|&", ";;"}
 REDIRECTS = {">", ">>", ">|", "&>", "&>>"}
@@ -33,7 +37,7 @@ SHELLS = {"bash", "sh", "zsh", "dash"}
 GIT_OPTS_WITH_VALUE = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path"}
 PUSH_OPTS_WITH_VALUE = {"--repo", "--receive-pack", "--exec", "-o", "--push-option"}
 HEREDOC = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
-RISK_HINT = re.compile(r"\bgit\b|\brm\b|MAEP_OWNER_DELEGATION")
+RISK_HINT = re.compile(r"\bgit\b|\brm\b|MAEP_OWNER_DELEGATION|owner-grants")
 
 
 class Blocked(Exception):
@@ -184,12 +188,19 @@ def _check_git(tokens, cwd, probe):
             include_ignored = "x" in flags or "X" in flags
             if probe.has_untracked_files(path, include_ignored) is not False:
                 raise Blocked("`git clean -f` would delete untracked files; move or commit them first")
-    if sub in {"rm", "mv", "checkout", "restore", "reset", "apply", "am"} and _mentions_delegation(args):
-        raise Blocked(f"only the owner changes {DELEGATION_FILE}")
+    if sub in {"rm", "mv", "checkout", "restore", "reset", "apply", "am"}:
+        trust_file = _mentioned_trust_file(args)
+        if trust_file:
+            raise Blocked(f"only the owner changes {trust_file}")
 
 
-def _mentions_delegation(tokens):
-    return any(t.rstrip("/").endswith(DELEGATION_FILE) for t in tokens)
+def _trust_file(token):
+    path = token.replace("\\", "/").rstrip("/")
+    return next((f for f in TRUST_FILES if path.endswith(f)), None)
+
+
+def _mentioned_trust_file(tokens):
+    return next((f for f in map(_trust_file, tokens) if f), None)
 
 
 def _check_rm(args):
@@ -205,21 +216,22 @@ def _check_rm(args):
 
 
 def _check_delegation_writes(tokens):
+    """Block shell writes to any owner-only trust file (delegation, grants manifest)."""
     for index, token in enumerate(tokens):
-        if not token.rstrip("/").endswith(DELEGATION_FILE):
-            continue
-        if index > 0 and tokens[index - 1] in REDIRECTS:
-            raise Blocked(f"only the owner changes {DELEGATION_FILE}")
-    if not tokens or not _mentions_delegation(tokens):
+        trust_file = _trust_file(token)
+        if trust_file and index > 0 and tokens[index - 1] in REDIRECTS:
+            raise Blocked(f"only the owner changes {trust_file}")
+    trust_file = _mentioned_trust_file(tokens) if tokens else None
+    if not trust_file:
         return
     name = PurePosixPath(tokens[0]).name
     args = tokens[1:]
     if name in {"rm", "mv", "truncate", "tee", "dd", "shred", "chmod", "chown", "ln", "install"}:
-        raise Blocked(f"only the owner changes {DELEGATION_FILE}")
-    if name == "cp" and args and args[-1].rstrip("/").endswith(DELEGATION_FILE):
-        raise Blocked(f"only the owner changes {DELEGATION_FILE}")
+        raise Blocked(f"only the owner changes {trust_file}")
+    if name == "cp" and args and _trust_file(args[-1]):
+        raise Blocked(f"only the owner changes {trust_file}")
     if name in {"sed", "perl"} and any(a.startswith("-i") or a == "--in-place" for a in args):
-        raise Blocked(f"only the owner changes {DELEGATION_FILE}")
+        raise Blocked(f"only the owner changes {trust_file}")
 
 
 def _check_segment(tokens, cwd, probe, depth):
@@ -262,8 +274,9 @@ def evaluate(payload, probe=None):
             raise Blocked("tool_input is not an object")
         if tool in EDIT_TOOLS:
             file_path = tool_input.get("file_path") or tool_input.get("notebook_path") or ""
-            if isinstance(file_path, str) and file_path.replace("\\", "/").endswith(DELEGATION_FILE):
-                raise Blocked(f"only the owner changes {DELEGATION_FILE}")
+            trust_file = _trust_file(file_path) if isinstance(file_path, str) else None
+            if trust_file:
+                raise Blocked(f"only the owner changes {trust_file}")
         elif tool == "Bash":
             command = tool_input.get("command")
             if not isinstance(command, str):

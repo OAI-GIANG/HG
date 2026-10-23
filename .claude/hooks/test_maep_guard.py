@@ -16,6 +16,7 @@ from maep_guard import evaluate
 
 HOOK = Path(__file__).with_name("maep_guard.py")
 DELEGATION = "maep/spec/MAEP_OWNER_DELEGATION_V1.md"
+GRANTS = "maep/authority/owner-grants.json"
 
 
 class FakeProbe:
@@ -152,6 +153,43 @@ class DelegationFileTests(unittest.TestCase):
             payload = {"tool_name": tool, "tool_input": {"file_path": f"/repo/{DELEGATION}"}}
             allowed, _ = evaluate(payload, probe=FakeProbe())
             self.assertFalse(allowed, tool)
+
+
+class OwnerGrantsFileTests(unittest.TestCase):
+    """RT-06: the canonical grants manifest is trust-root data; agents never write it (MAEP-017)."""
+
+    def test_shell_writes_to_grants_file_blocked(self):
+        for command in (
+            f"echo '{{}}' > {GRANTS}",
+            f"echo x >> {GRANTS}",
+            f"sed -i 's/a/b/' {GRANTS}",
+            f"cp /tmp/grants.json {GRANTS}",
+            f"mv /tmp/grants.json {GRANTS}",
+            f"rm {GRANTS}",
+            f"git rm {GRANTS}",
+            f"git checkout other-branch -- {GRANTS}",
+            f"printf x | tee /repo/{GRANTS}",
+            f"truncate -s 0 {GRANTS}",
+        ):
+            allowed, _ = evaluate(bash(command), probe=FakeProbe())
+            self.assertFalse(allowed, command)
+
+    def test_edit_tools_on_grants_file_blocked(self):
+        for tool in ("Edit", "Write", "MultiEdit"):
+            payload = {"tool_name": tool, "tool_input": {"file_path": f"/repo/{GRANTS}"}}
+            allowed, reason = evaluate(payload, probe=FakeProbe())
+            self.assertFalse(allowed, tool)
+            self.assertIn(GRANTS, reason)
+
+    def test_reading_grants_file_and_editing_neighbours_allowed(self):
+        for payload in (
+            bash(f"cat {GRANTS}"),
+            {"tool_name": "Read", "tool_input": {"file_path": f"/repo/{GRANTS}"}},
+            {"tool_name": "Write", "tool_input": {"file_path": "/repo/maep/authority/trust_anchor.py"}},
+            {"tool_name": "Write", "tool_input": {"file_path": "/repo/maep/authority/owner-grants.json.example"}},
+        ):
+            allowed, reason = evaluate(payload, probe=FakeProbe())
+            self.assertTrue(allowed, f"{payload} ({reason})")
 
 
 class MalformedInputTests(unittest.TestCase):

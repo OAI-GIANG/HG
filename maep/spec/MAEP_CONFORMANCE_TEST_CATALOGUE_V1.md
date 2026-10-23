@@ -51,6 +51,12 @@ Run: `python -m unittest discover -s maep/tests -v`. Test names are stable ancho
 | T-044 | hg/tests/test_orchestrator.py AuthorityTests, RetryLimitTests | MAEP-003, 005, 014 | a plan with any unauthorized step never starts; known failures retried at most three times |
 | T-045 | hg/tests/test_cli.py | MAEP-006, 008, 023 | `python -m hg selfcheck` in a fresh process: authorized task closes, ungranted task never executes, READ_ONLY blocks; `status` writes nothing |
 
+| T-046 | test_trust_anchor, test_trust_anchor_defects | MAEP-004, 005, 019 | RT-06 provider: F1–F11 (scope, timestamps, window, actions, principal, renewal, naive time, duplicate keys, mutable results) fail closed |
+| T-047 | test_canonical_source | MAEP-005, 012, 019 | manifest read only from main at the resolved commit; feature branch never read; missing/unreachable/invalid denies; failed reload never reuses stale data; anchored ALLOW needs both grants |
+| T-048 | hg/tests/test_anchored_runtime | MAEP-003, 005, 017, 019 | anchored runtime: no effect without a live manifest grant; revocation and expiry deny at the tool boundary; restart re-checks the trust root |
+| T-049 | hg/tests/test_bypass | MAEP-005, 017, 023 | direct adapter calls, forged/reused/other-resource permits and unanchored runtimes cause no effect |
+| T-050 | .claude/hooks/test_maep_guard.py OwnerGrantsFileTests | MAEP-017 | agent shell and edit-tool writes to owner-grants.json blocked |
+
 ## Test layers and limits
 - Unit tests: executable local invariants in `core.py`.
 - Schema-file tests: JSON syntax, dialect marker, required/property declaration only.
