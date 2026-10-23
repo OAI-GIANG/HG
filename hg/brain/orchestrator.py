@@ -17,6 +17,7 @@ import uuid
 
 from maep.core import MAEPError, _nonempty_string, retry_decision
 from hg.brain.plan import step_request, validate_plan
+from hg.brain.context import build_context
 from hg.brain.planner import PlanRejected
 
 COLLECTOR = "hg.security_verification"
@@ -211,6 +212,9 @@ class BrainOrchestrator:
         """
         task_id = self.submit_task(task)
         self.assess(task_id)
+        if context is None and self._memory is not None:
+            # C-15: constraints pinned, relevant memory fenced as data.
+            context = build_context(self._store.snapshot(task_id)["task"], memory=self._memory)["text"]
         try:
             steps = planner.plan(self._store.snapshot(task_id)["task"], goal, self._gateway, context=context)
         except PlanRejected as exc:

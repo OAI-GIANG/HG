@@ -69,6 +69,9 @@ def build_runtime(workdir, grants, *, principal=DEFAULT_PRINCIPAL, mode="AUTHORI
         if authority is not None:
             evaluator = AnchoredPolicyEvaluator(evaluator, authority)   # one evaluator for store and gateway
             trust = "anchored"
+    if memory is True:
+        from hg.memory.store import MemoryStore
+        memory = MemoryStore(workdir / "memory.jsonl", clock=clock)
     store = open_task_store(workdir / "tasks.jsonl", evaluator, clock)
     actions = EventLog(workdir / "actions.jsonl", clock=clock)
     adapters = [LocalFileWriteAdapter(root), LocalFileReadAdapter(root), CodeSearchAdapter(root),
@@ -78,5 +81,6 @@ def build_runtime(workdir, grants, *, principal=DEFAULT_PRINCIPAL, mode="AUTHORI
     gate = AcceptanceGate(clock=clock)
     orchestrator = BrainOrchestrator(store, gateway, gate, principal=principal, verifiers=verifiers,
                                      issuer=issuer, memory=memory)
-    return SimpleNamespace(workdir=workdir, root=root, clock=clock, evaluator=evaluator, trust=trust, store=store,
+    return SimpleNamespace(workdir=workdir, root=root, clock=clock, evaluator=evaluator, trust=trust, memory=memory,
+                           store=store,
                            actions=actions, gateway=gateway, gate=gate, orch=orchestrator)

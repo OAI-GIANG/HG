@@ -150,6 +150,19 @@ class GoalPipelineTests(TempDirMixin):
         self.assertEqual(final["task"]["state"], "ASSESSED")
         self.assertTrue(any(r.startswith("PLANNER_UNAVAILABLE") for r in self.results(final)))
 
+    def test_memory_context_reaches_the_model_planner(self):
+        rt = self.autonomous(FakeGitHub(files={MAIN_SHA: anchored_manifest()}))
+        from hg.memory.store import MemoryStore
+        memory = MemoryStore(self.workdir / "memory.jsonl", clock=self.clock)
+        memory.remember(layer="PROJECT", kind="DECISION", subject="greeting", content="Greetings are in Vietnamese",
+                        source="USER", source_ref="chat")
+        rt.orch._memory = memory
+        scripted = ScriptedProvider("scripted", [{"steps": [WRITE]}])
+        final = rt.orch.execute_goal(make_task(), "write a greeting", ModelPlanner(ModelRouter([scripted], sleep=lambda s: None)))
+        self.assertIn("Decision [", scripted.requests[0]["messages"][0]["content"])
+        self.assertIn("Greetings are in Vietnamese", scripted.requests[0]["messages"][0]["content"])
+        self.assertEqual(memory.active(layer="EPISODIC")[0]["value"]["state"], final["task"]["state"])
+
     def test_issue_mode_refuses_caller_grants(self):
         from hg.tests.support import grant
         from maep.core import MAEPError
