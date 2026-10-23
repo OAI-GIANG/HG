@@ -1,6 +1,6 @@
 # HG Execution Host — Audit-Only Runtime V1
 
-Status: IMPLEMENTED IN ISOLATED FEATURE BRANCH; APPLICATION-LEVEL TESTS PASS (448 TESTS, 2026-10-24); OS-LEVEL GATES OPEN
+Status: IMPLEMENTED IN ISOLATED FEATURE BRANCH; APPLICATION-LEVEL TESTS PASS (456 TESTS, 2026-10-24); OS-LEVEL GATES OPEN
 Scope: OAI-GIANG/HG. This document does not authorize merge or production deployment.
 
 ## Decision record
@@ -52,11 +52,11 @@ This is an in-process application control. It does not constrain Desktop Command
 Do not change main, trust-root grants, RDC configuration, running services, or production as part of this candidate. If a test indicates an unexpected effect or the evidence sink fails, stop and mark the outcome UNKNOWN where an effect may have occurred. Do not retry non-idempotent operations without reconciliation.
 ## Test evidence
 
-- Targeted regression suite: 56 tests passed, exit code 0.
-- Full repository suite: 451 tests passed, exit code 0 using Python 3.14.6 on Android/Termux ARM64.
+- Targeted regression suite: 61 tests passed, exit code 0, including proposed HG_AUDIT grant fixture tests.
+- Full repository suite: 456 tests passed, exit code 0 using Python 3.14.6 on Android/Termux ARM64.
 - Static whitespace check: git diff --check passed.
 - Test worktree was isolated at HG-execution-host-audit-only-20261024, based on canonical main commit 37e30b106cb9e0fafb289066befbce2c2b700a4a.
 - Tests used temporary test directories and did not target the active HG server or production data.
 - Machine-readable evidence and SHA-256 file inventory: evidence/EXECUTION_HOST_AUDIT_ONLY_EVIDENCE_V1.json.
 
-The test results prove the candidate's application-level behavior only. They do not prove operating-system isolation, complete mediation, tamper-resistant evidence storage, or production acceptance.
+The test results prove the candidate's application-level behavior only. They do not prove operating-system isolation, complete mediation, tamper-resistant evidence storage, or production acceptance. The minimum-grant proposal has fixture-only scope/action/expiry tests; this does not modify or authorize the canonical grant. See EXECUTION_HOST_P0_CLOSURE_ASSESSMENT_V1.md for the observed Android/Termux boundary assessment and the Linux/VM acceptance plan.
