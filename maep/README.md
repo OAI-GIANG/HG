@@ -1,12 +1,13 @@
 # MAEP — HG Operating Governance
 
-Policy version: MAEP-1.0.0. Status: implemented and locally tested foundation; runtime integration remains deferred.
+Policy version: MAEP-1.1.0 (supersedes MAEP-1.0.0; see `spec/MAEP_OWNER_DELEGATION_V1.md`). Status: implemented and locally tested foundation; runtime integration remains deferred.
 
 MAEP is a cross-cutting governance layer for task intake, authority, state transitions, evidence, acceptance, recovery and closure. It is not a sixth HG domain. BrainOrchestrator remains the sole task coordinator.
 
 - `spec/`: constitution, execution protocol, authority, evidence/acceptance, evolution, threat model, state transitions, traceability, risks and ADRs.
 - `schemas/`: six JSON Schema Draft 2020-12 contract files.
 - `core.py`: fail-closed governance primitives implemented with Python standard library.
+- `policy.py`: `PolicyEvaluator`, which takes grants and condition facts from sources fixed at construction instead of from the request. It is not a trust root.
 - `ledger.py`: single-writer append-only JSONL event/evidence ledger (not tamper-proof against privileged filesystem edits).
 - `tests/`: standard-library conformance tests.
 - `spec/MAEP_CONFORMANCE_TEST_CATALOGUE_V1.md`: rule-to-test catalogue.

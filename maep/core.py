@@ -5,7 +5,7 @@ principals. Callers must supply a trusted policy decision and authenticated iden
 """
 from datetime import datetime, timezone
 
-POLICY_VERSION = "MAEP-1.0.0"
+POLICY_VERSION = "MAEP-1.1.0"
 STATES = {
     "DRAFT", "READY", "ASSESSED", "PLANNED", "AUTHORIZED", "RUNNING",
     "VERIFYING", "ACCEPTED", "CLOSED_VERIFIED", "BLOCKED", "FAILED",
@@ -26,6 +26,7 @@ TRANSITIONS = {
     "CANCELLED": set(),
     "CLOSED_VERIFIED": set(),
 }
+TERMINAL_STATES = {"FAILED", "CANCELLED", "CLOSED_VERIFIED"}
 REQUIRED_TASK_FIELDS = {
     "task_id", "objective", "scope", "inputs", "outputs",
     "acceptance_criteria", "evidence_requirements", "risks",
@@ -47,6 +48,16 @@ class MAEPError(ValueError):
 
 def _nonempty_string(value):
     return isinstance(value, str) and bool(value.strip())
+
+
+def _parse_aware_datetime(value, label):
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (AttributeError, ValueError):
+        raise MAEPError(f"invalid {label}")
+    if parsed.tzinfo is None:
+        raise MAEPError(f"{label} must include timezone")
+    return parsed
 
 
 def validate_task(task):
@@ -124,41 +135,41 @@ def authorize_action(grant, request, *, trusted_policy_allow, now=None):
     if not set(required_conditions).issubset(set(satisfied_conditions)):
         raise MAEPError("authorization conditions are not satisfied")
     now = now or datetime.now(timezone.utc)
-    issued = grant.get("issued_at")
-    try:
-        issued_at = datetime.fromisoformat(issued.replace("Z", "+00:00"))
-    except (AttributeError, ValueError):
-        raise MAEPError("invalid authorization issue time")
-    if issued_at.tzinfo is None:
-        raise MAEPError("authorization issue time must include timezone")
+    issued_at = _parse_aware_datetime(grant.get("issued_at"), "authorization issue time")
     if issued_at > now:
         raise MAEPError("authorization is not yet valid")
     expires = grant.get("expires_at")
     if expires is not None:
-        try:
-            expiry = datetime.fromisoformat(expires.replace("Z", "+00:00"))
-        except (AttributeError, ValueError):
-            raise MAEPError("invalid authorization expiry")
-        if expiry.tzinfo is None:
-            raise MAEPError("authorization expiry must include timezone")
-        if now >= expiry:
+        if now >= _parse_aware_datetime(expires, "authorization expiry"):
             raise MAEPError("authorization expired")
     return True
 
 
-def transition(current, target, *, guards=None, blocker_resolved=False, new_task=False):
-    """Return target only if transition is allowed and guards are satisfied."""
+def transition(current, target, *, guards=None, blocker_resolved=False):
+    """Return target only if transition is allowed and guards are satisfied.
+
+    A terminal task never transitions; continuation is a new task checked by validate_linked_task.
+    """
     if current not in STATES or target not in STATES:
         raise MAEPError("unknown state")
-    if current in {"FAILED", "CANCELLED", "CLOSED_VERIFIED"}:
-        if new_task and target == "DRAFT":
-            return target
-        raise MAEPError("terminal task cannot be reopened")
+    if current in TERMINAL_STATES:
+        raise MAEPError("terminal task cannot be reopened; continue with a linked task")
     if target not in TRANSITIONS.get(current, set()):
         raise MAEPError(f"forbidden transition: {current} -> {target}")
     guards = guards or {}
-    if current == "BLOCKED" and target == "ASSESSED" and blocker_resolved is not True:
-        raise MAEPError("blocker reopening requires evidence of resolution")
+    if not isinstance(guards, dict):
+        raise MAEPError("guards must be an object")
+    if current == "BLOCKED" and target == "ASSESSED":
+        if blocker_resolved is not True:
+            raise MAEPError("blocker reopening requires evidence of resolution")
+        refs = guards.get("blocker_resolution_evidence_refs")
+        if not isinstance(refs, list) or not refs or not all(_nonempty_string(r) for r in refs):
+            raise MAEPError("blocker reopening requires resolution evidence references")
+        if guards.get("authority_reassessed") is not True or guards.get("risk_reassessed") is not True:
+            raise MAEPError("blocker reopening requires fresh authority and risk assessment")
+    if target == "VERIFYING":
+        if guards.get("result_recorded") is not True or not _nonempty_string(guards.get("candidate_ref")):
+            raise MAEPError("verification requires a recorded result and candidate")
     if target in {"AUTHORIZED", "RUNNING"} and guards.get("authorization_valid") is not True:
         raise MAEPError("valid authorization required")
     if target == "READY" and guards.get("task_valid") is not True:
@@ -170,6 +181,32 @@ def transition(current, target, *, guards=None, blocker_resolved=False, new_task
         if any(guards.get(k) is not True for k in required):
             raise MAEPError("closure invariants not satisfied")
     return target
+
+
+def validate_linked_task(predecessor, successor):
+    """Continue a terminal task (MAEP-026) with a new DRAFT task that references it.
+
+    The link is the task contract's existing TASK input reference; the predecessor is never mutated.
+    """
+    if not isinstance(predecessor, dict) or not isinstance(successor, dict):
+        raise MAEPError("predecessor and successor must be objects")
+    if predecessor.get("state") not in TERMINAL_STATES:
+        raise MAEPError("only a terminal task can be continued by a linked task")
+    predecessor_id = predecessor.get("task_id")
+    successor_id = successor.get("task_id")
+    if not _nonempty_string(predecessor_id) or not _nonempty_string(successor_id):
+        raise MAEPError("linked tasks require non-empty task IDs")
+    if predecessor_id == successor_id:
+        raise MAEPError("linked task must have a new task_id")
+    if successor.get("state") != "DRAFT":
+        raise MAEPError("linked task must start in DRAFT")
+    inputs = successor.get("inputs")
+    if not isinstance(inputs, list):
+        raise MAEPError("linked task inputs must be a list")
+    if not any(isinstance(ref, dict) and ref.get("kind") == "TASK" and ref.get("ref_id") == predecessor_id
+               for ref in inputs):
+        raise MAEPError("linked task must reference its predecessor as a TASK input")
+    return True
 
 
 def evaluate_gate(gate, evidence_by_id, candidate_ref=None):
@@ -187,7 +224,7 @@ def evaluate_gate(gate, evidence_by_id, candidate_ref=None):
     if not isinstance(refs, list) or not refs:
         return False
     for ref in refs:
-        if ref not in evidence_by_id:
+        if not _nonempty_string(ref) or ref not in evidence_by_id or not isinstance(evidence_by_id[ref], dict):
             return False
         if candidate_ref is not None and evidence_by_id[ref].get("candidate_ref") != candidate_ref:
             return False
@@ -203,21 +240,34 @@ def validate_closure(closure, *, mandatory_gates, evidence_by_id, candidate_ref,
         raise MAEPError("closure candidate mismatch")
     if closure.get("policy_version") != policy_version:
         raise MAEPError("closure policy version mismatch")
-    if not closure.get("criteria_results") or any(c.get("status") != "PASS" for c in closure["criteria_results"]):
+    criteria = closure.get("criteria_results")
+    if not isinstance(criteria, list) or not criteria or not all(isinstance(c, dict) for c in criteria):
+        raise MAEPError("criteria_results must be a non-empty list of objects")
+    if any(not _nonempty_string(c.get("criterion_id")) for c in criteria):
+        raise MAEPError("each closure criterion requires a criterion_id")
+    if any(c.get("status") != "PASS" for c in criteria):
         raise MAEPError("all closure criteria must pass")
-    closure_refs = set(closure.get("evidence_refs", []))
-    for criterion in closure["criteria_results"]:
+    closure_refs = closure.get("evidence_refs")
+    if not isinstance(closure_refs, list) or not closure_refs or not all(_nonempty_string(r) for r in closure_refs):
+        raise MAEPError("closure evidence_refs must be a non-empty list of IDs")
+    for criterion in criteria:
         criterion_refs = criterion.get("evidence_refs")
-        if not isinstance(criterion_refs, list) or not criterion_refs or not set(criterion_refs).issubset(closure_refs):
+        if (not isinstance(criterion_refs, list) or not criterion_refs
+                or not all(_nonempty_string(r) for r in criterion_refs)
+                or not set(criterion_refs).issubset(closure_refs)):
             raise MAEPError("each passing criterion must link to closure evidence")
-    if not closure.get("evidence_refs") or any(ref not in evidence_by_id for ref in closure["evidence_refs"]):
+    if not isinstance(evidence_by_id, dict) or any(ref not in evidence_by_id for ref in closure_refs):
         raise MAEPError("closure evidence missing or unresolved")
-    if any(evidence_by_id[ref].get("candidate_ref") != candidate_ref for ref in closure["evidence_refs"]):
+    if any(not isinstance(evidence_by_id[ref], dict) for ref in closure_refs):
+        raise MAEPError("closure evidence records must be objects")
+    if any(evidence_by_id[ref].get("candidate_ref") != candidate_ref for ref in closure_refs):
         raise MAEPError("closure evidence candidate mismatch")
     if not mandatory_gates or any(not evaluate_gate(g, evidence_by_id, candidate_ref) for g in mandatory_gates):
         raise MAEPError("mandatory acceptance gate not satisfied")
-    if closure.get("limitations") is None or closure.get("closed_at") is None:
-        raise MAEPError("closure limitations and timestamp required")
+    limitations = closure.get("limitations")
+    if not isinstance(limitations, list) or not all(isinstance(item, str) for item in limitations):
+        raise MAEPError("closure limitations must be a list of strings")
+    _parse_aware_datetime(closure.get("closed_at"), "closure timestamp")
     return True
 
 
@@ -248,8 +298,11 @@ def validate_report_status(claimed_status, observed_status):
 
 def retry_decision(attempt_count, *, safety_stop=False, progress_possible=True):
     """Return CONTINUE or STOP under MAEP-014."""
-    if not isinstance(attempt_count, int) or attempt_count < 0:
+    # bool is a subclass of int, so True/False would otherwise pass as attempt counts.
+    if isinstance(attempt_count, bool) or not isinstance(attempt_count, int) or attempt_count < 0:
         raise MAEPError("attempt_count must be a non-negative integer")
+    if not isinstance(safety_stop, bool) or not isinstance(progress_possible, bool):
+        raise MAEPError("safety_stop and progress_possible must be booleans")
     if safety_stop or not progress_possible or attempt_count >= 3:
         return "STOP"
     return "CONTINUE"
