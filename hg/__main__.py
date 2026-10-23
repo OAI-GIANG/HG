@@ -68,7 +68,8 @@ def selfcheck(workdir):
     def scenario(name, subdir, grants, mode, task_id, path, expected_state, expect_file):
         rt_dir = workdir / subdir
         root = rt_dir / "root"
-        rt = build_runtime(rt_dir, grants, mode=mode, verifiers={"AC-1": readback(root, path)})
+        rt = build_runtime(rt_dir, grants, mode=mode, verifiers={"AC-1": readback(root, path)},
+                           allow_fixture_grants=True)    # self-check fixtures; reported in "limitations"
         final = rt.orch.execute_task(_task(task_id, path), [_step(task_id, path, content[path])])
         observed_file = (root / path).is_file()
         ok = final["task"]["state"] == expected_state and observed_file == expect_file

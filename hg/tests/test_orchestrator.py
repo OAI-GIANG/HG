@@ -17,8 +17,8 @@ class CrashOnce(LocalFileWriteAdapter):
     name = "crashonce.write"
     crashes_left = 1
 
-    def execute(self, params):
-        observed = super().execute(params)
+    def _perform(self, params):
+        observed = super()._perform(params)
         if CrashOnce.crashes_left:
             CrashOnce.crashes_left -= 1
             raise RuntimeError("process died after the write")
@@ -28,7 +28,7 @@ class CrashOnce(LocalFileWriteAdapter):
 class AlwaysFails(LocalFileWriteAdapter):
     name = "fail.write"
 
-    def execute(self, params):
+    def _perform(self, params):
         raise AdapterFailure("target rejected the request")
 
 

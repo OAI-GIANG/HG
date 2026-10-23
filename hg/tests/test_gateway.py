@@ -17,15 +17,15 @@ from hg.tests.support import PRINCIPAL, TempDirMixin, grant, make_task, write_st
 class WritesThenCrashes(LocalFileWriteAdapter):
     name = "crash.write"
 
-    def execute(self, params):
-        super().execute(params)
+    def _perform(self, params):
+        super()._perform(params)
         raise RuntimeError("process died after the write")
 
 
 class RaisesTimeout(LocalFileWriteAdapter):
     name = "timeout.write"
 
-    def execute(self, params):
+    def _perform(self, params):
         raise TimeoutError("remote side did not answer")
 
 
@@ -37,7 +37,7 @@ class Hangs(LocalFileWriteAdapter):
         super().__init__(root)
         self._release = release
 
-    def execute(self, params):
+    def _perform(self, params):
         self._release.wait(5)
         return {}
 
@@ -52,7 +52,7 @@ class NeverVerifies(LocalFileWriteAdapter):
 class KnownFailure(LocalFileWriteAdapter):
     name = "fail.write"
 
-    def execute(self, params):
+    def _perform(self, params):
         raise AdapterFailure("refused by target before any change")
 
 

@@ -36,6 +36,24 @@ class AdapterFailure(RuntimeError):
     """The operation failed in a way known to have produced no effect."""
 
 
+class AdapterRefused(AdapterFailure):
+    """The adapter refused to act: no valid permit from its gateway. Nothing was attempted."""
+
+
+class _Permit:
+    """Single-use authority for one effect, minted only by ActionGateway after ALLOW (RT-06).
+
+    Bound to the minting gateway's key and to the exact resource. An adapter performs an
+    effect only with a matching, unused permit, so calling an adapter directly -- outside
+    the gateway's checks -- does nothing. In-process limit: code that reaches private
+    attributes could still mint one.
+    """
+    __slots__ = ("_key", "resource", "action_id", "_used")
+
+    def __init__(self, key, resource, action_id):
+        self._key, self.resource, self.action_id, self._used = key, resource, action_id, False
+
+
 def _sha256(data):
     return hashlib.sha256(data).hexdigest()
 
@@ -51,6 +69,22 @@ class ToolAdapter:
     timeout_s = 10.0
     description = ""
     params_schema = {}       # param name -> python type
+    _gateway_key = None      # set once by the ActionGateway the adapter is registered with
+
+    def bind(self, key):
+        if self._gateway_key is not None and self._gateway_key is not key:
+            raise MAEPError(f"tool {self.name} is already registered with another gateway")
+        self._gateway_key = key
+
+    def execute(self, params, permit=None):
+        """Perform the effect only with an unused permit from this adapter's own gateway."""
+        if (not isinstance(permit, _Permit) or self._gateway_key is None
+                or permit._key is not self._gateway_key):
+            raise AdapterRefused("effect requires a permit from the gateway this tool is registered with")
+        if permit._used or permit.resource != self.resource_for(params):
+            raise AdapterRefused("permit already used or issued for another resource")
+        permit._used = True
+        return self._perform(params)
 
     def describe(self):
         return {"name": self.name, "version": self.version, "action": self.action,
@@ -75,7 +109,7 @@ class ToolAdapter:
         """Small, secret-free description of the intended effect, kept for reconciliation."""
         raise NotImplementedError
 
-    def execute(self, params):
+    def _perform(self, params):
         raise NotImplementedError
 
     def verify(self, params, observed):
@@ -126,7 +160,7 @@ class LocalFileWriteAdapter(_RootedFileAdapter):
         data = params["content"].encode("utf-8")
         return {"path": self._rel(params["path"])[0], "sha256": _sha256(data), "bytes": len(data)}
 
-    def execute(self, params):
+    def _perform(self, params):
         rel, full = self._rel(params["path"])
         data = params["content"].encode("utf-8")
         full.parent.mkdir(parents=True, exist_ok=True)
@@ -169,7 +203,7 @@ class LocalFileReadAdapter(_RootedFileAdapter):
     def intent(self, params):
         return {"path": self._rel(params["path"])[0]}
 
-    def execute(self, params):
+    def _perform(self, params):
         rel, full = self._rel(params["path"])
         if not full.is_file():
             raise AdapterFailure("file does not exist")
@@ -212,11 +246,14 @@ class ActionGateway:
         self._log = event_log
         self._mode = mode
         self._policy_version = policy_version
+        self._key = object()
         self._adapters = {}
         for adapter in adapters:
             if adapter.name in self._adapters:
                 raise MAEPError("duplicate tool name in registry")
             self._adapters[adapter.name] = adapter
+        for adapter in self._adapters.values():
+            adapter.bind(self._key)
         self._pending = self._rebuild_pending()
 
     # ---------- registry / introspection ----------
@@ -306,7 +343,7 @@ class ActionGateway:
         self._pending[action_id] = {"action_id": action_id, "task_id": task_id, "step_id": step_id,
                                     "tool": adapter.name, "intent": intent}
 
-        status, reason, observed = self._run(adapter, params)
+        status, reason, observed = self._run(adapter, params, _Permit(self._key, resource, action_id))
         record = {"action_id": action_id, "step_id": step_id, "status": status, "reason": reason,
                   "observed": {k: v for k, v in observed.items() if k != "content"}}
         try:
@@ -321,9 +358,9 @@ class ActionGateway:
                              observed=observed, decision=decision)
 
     @staticmethod
-    def _run(adapter, params):
+    def _run(adapter, params, permit):
         pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-        future = pool.submit(adapter.execute, params)
+        future = pool.submit(adapter.execute, params, permit)
         try:
             observed = future.result(timeout=adapter.timeout_s)
         except concurrent.futures.TimeoutError:

@@ -86,4 +86,6 @@ class TempDirMixin(unittest.TestCase):
         """Build (or, if ledgers exist, resume) the runtime in this test's work directory."""
         if verifiers is None:
             verifiers = {"AC-1": content_verifier(self.root)}
+        if "authority" not in kwargs:
+            kwargs["allow_fixture_grants"] = True      # tests use fixture grants unless anchored
         return build_runtime(self.workdir, grants, verifiers=verifiers, clock=self.clock, **kwargs)

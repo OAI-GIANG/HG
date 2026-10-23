@@ -18,8 +18,8 @@ class CrashOnce(LocalFileWriteAdapter):
     name = "crashonce.write"
     crashes_left = 1
 
-    def execute(self, params):
-        observed = super().execute(params)
+    def _perform(self, params):
+        observed = super()._perform(params)
         if CrashOnce.crashes_left:
             CrashOnce.crashes_left -= 1
             raise RuntimeError("died after the write")
