@@ -1,0 +1,87 @@
+{
+  "evidence_id": "EH-AUDIT-ONLY-20261024-001",
+  "captured_at": "2026-10-23T19:22:05.171313+00:00",
+  "collector": "Remote Desktop Commander start_process on localhost Android/Termux",
+  "repository": "OAI-GIANG/HG",
+  "branch": "stt/execution-host-audit-only-20261024",
+  "base_commit": "37e30b106cb9e0fafb289066befbce2c2b700a4a",
+  "candidate_status": "FEATURE_BRANCH_CANDIDATE_NOT_MERGED",
+  "runtime": {
+    "platform": "Android/Termux",
+    "architecture": "arm64",
+    "python": "3.14.6"
+  },
+  "checks": [
+    {
+      "id": "EH-AUDIT-UNIT",
+      "command": "PYTHONDONTWRITEBYTECODE=1 python -m unittest hg.tests.test_execution_host maep.tests.test_policy_controls hg.tests.test_gateway",
+      "result": "PASS",
+      "tests": 56,
+      "exit_code": 0
+    },
+    {
+      "id": "EH-AUDIT-FULL",
+      "command": "PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -q",
+      "result": "PASS",
+      "tests": 451,
+      "exit_code": 0
+    },
+    {
+      "id": "EH-AUDIT-DIFF",
+      "command": "git diff --check",
+      "result": "PASS",
+      "exit_code": 0
+    }
+  ],
+  "files": {
+    "maep/core.py": {
+      "sha256": "c359723a8de01cf9f4d1df6181140043521c5a01d2fca71e4e3080591c1c0740",
+      "bytes": 22862
+    },
+    "hg/runtime.py": {
+      "sha256": "cc492733e3d19a37510c0b5880a6140977ddaccd2fa82370ba3f13f830bda207",
+      "bytes": 5830
+    },
+    "hg/tools/gateway.py": {
+      "sha256": "86ec727ba92a9264edaaad65538b8d03bbc72e7eaaaaa4b6123f5b817b9e6b45",
+      "bytes": 18885
+    },
+    "maep/tests/test_policy_controls.py": {
+      "sha256": "097a04f47bacb6d7fa5608085966e51309b07477b9fd037bc68e89023a9ba52d",
+      "bytes": 4049
+    },
+    "hg/tests/test_execution_host.py": {
+      "sha256": "9d8b2757f3fb6bfe05ab28f5df20224eb52ae74b320c83018299bc5b06d16f1d",
+      "bytes": 6538
+    },
+    "docs/architecture/EXECUTION_HOST_AUDIT_ONLY_V1.md": {
+      "sha256": "7a050dcc3d77d1527e35190c7def55dec0c3157a2434a40447e08980ca313be9",
+      "bytes": 4335
+    }
+  },
+  "security_state": {
+    "OS_ISOLATION_UNVERIFIED": "OPEN",
+    "COMPLETE_MEDIATION_UNVERIFIED": "OPEN",
+    "EVIDENCE_SINK_SEPARATION": "UNVERIFIED",
+    "EH_01": "PARTIAL",
+    "EH_02": "BLOCKED",
+    "EH_03": "BLOCKED",
+    "EH_04": "UNVERIFIED",
+    "EH_05": "PASS_APPLICATION_TESTS_ONLY",
+    "EH_06": "PASS_FOR_RECORDED_LOCAL_TEST_RUNS_ONLY",
+    "EH_07": "UNVERIFIED"
+  },
+  "limitations": [
+    "The evidence file is stored in the candidate worktree and is not append-only or independently tamper-resistant.",
+    "Tests use a test CanonicalManifest loader; they do not prove production authority or OS isolation.",
+    "The canonical main owner-grants manifest currently does not grant a distinct HG_AUDIT principal; production audit mode must fail closed until an owner-authorized trust-root change is merged.",
+    "No production files, running services, RDC configuration, permissions, principal configuration, or PIDs were changed."
+  ],
+  "candidate_commit": "51eb1cefb7d94312f7711d560423347889c4e9ce",
+  "tested_candidate_commit": "51eb1cefb7d94312f7711d560423347889c4e9ce",
+  "integrity_check": {
+    "result": "PASS",
+    "method": "SHA-256 recomputation of every listed source/test/doc file",
+    "files_checked": 6
+  }
+}
