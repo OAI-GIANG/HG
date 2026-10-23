@@ -1,6 +1,6 @@
 # Runtime Enforcement Plan V1
 
-- Status: **DESIGN — RT-01 IMPLEMENTED and UNIT_TESTED (2026-10-23); RT-02..RT-06 not implemented; RT-07 done (CI plus ruleset `main-maep` on `main`)**
+- Status: RT-01..RT-05 **IMPLEMENTED, INTEGRATION_TESTED (in-process)** (2026-10-23; RT-01 via PR #3, RT-02..RT-05 and RT-01 extensions on `stt/miid-runtime-rt02-rt05`); RT-06 BLOCKED; RT-07 done (CI plus ruleset `main-maep` on `main`). See §6.
 - Base: MAEP-1.0.0 at `f7f00a75c6a1b1363993c2fb9bc023171f080038` plus the Phase 2 fixes on the same branch as this file.
 - Inputs: `HG_ARCHITECTURE_V1.md`, `BRAIN_ORCHESTRATOR_CONTRACT_V1.md`, `MAEP_INTEGRATION_DESIGN_V1.md`, `DATA_FLOW_TRUST_BOUNDARY_V1.md`.
 - Not available: `BRAIN_ORCHESTRATOR_MASTER_PLAN_V1.md` was never committed to any accessible ref; nothing here depends on it.
@@ -64,3 +64,20 @@ RT-01 to RT-05 are in-process integration tests. They would justify INTEGRATION_
 - **Q-6 Version.** The Phase 2 changes align code with existing spec text and keep `POLICY_VERSION = "MAEP-1.0.0"`. Removing `transition(new_task=...)` is an API change; decide whether MAEP-028 calls for a new version.
 
 **Resolution (2026-10-23, MAEP-1.1.0):** Q-1 to Q-4 accepted as implemented; Q-5 trust root is the owner `OAI-GIANG`; Q-6 `POLICY_VERSION` raised to `MAEP-1.1.0`. RT-06 now depends on choosing a machine-verifiable anchor for that trust root. Details and who decided each item: `maep/spec/MAEP_OWNER_DELEGATION_V1.md` §4.
+
+## 6. Implementation record (2026-10-23, MIID-1.0 Phase C)
+
+| ID | Code | Tests (negative tests included) | Status |
+|---|---|---|---|
+| RT-01 | `maep/task_store.py` (PR #3) + `restore`, `claim_writer`, `record_plan` | `maep/tests/test_task_store.py` (41), `test_task_store_restore.py` (17) | IMPLEMENTED, INTEGRATION_TESTED; ENFORCED on the runtime path |
+| RT-02 | `hg/tools/gateway.py`; real effect target: local filesystem under a confined root | `hg/tests/test_gateway.py` (24) | IMPLEMENTED, INTEGRATION_TESTED; ENFORCED on the runtime path |
+| RT-03 | `hg/verification/evidence.py` (AcceptanceGate over TaskStore evidence; action EventLog) | `hg/tests/test_acceptance.py` (11), `test_orchestrator.py` | IMPLEMENTED, INTEGRATION_TESTED |
+| RT-04 | `hg/brain/orchestrator.py`, `hg/brain/plan.py` | `hg/tests/test_orchestrator.py` (21) | IMPLEMENTED, INTEGRATION_TESTED |
+| RT-05 | `TaskStore.restore`, `pending_from_events`, `ActionGateway.reconcile`, `BrainOrchestrator.reconcile_and_reopen` | restore, gateway and orchestrator restart tests | IMPLEMENTED, INTEGRATION_TESTED |
+| — | `hg/runtime.py`, `hg/__main__.py` | `hg/tests/test_cli.py` (3, fresh process) | IMPLEMENTED, INTEGRATION_TESTED |
+| RT-06 | — | — | BLOCKED: owner to choose a machine-verifiable anchor (protected grants file via reviewed PRs, or signed grants) |
+| RT-07 | CI from PR #3, now also running `hg/tests` and the self-check; ruleset `main-maep` (PR #4) | CI runs on the pull request | Done: `main` requires `unittest (3.13)` and `unittest (3.14)`, which now include the HG suite |
+
+Spec conflict found and resolved for the spec: an unauthorized task cannot move PLANNED → BLOCKED (not an allowed edge), so it stays PLANNED and the denial is recorded as evidence.
+
+Limits: in-process capability boundaries, not OS isolation; ledgers not tamper-proof; one authorization request is held per task (the gateway preflights and re-checks every step); verifiers are internal checks (MAEP-021); plans are supplied as data — no autonomous planning is claimed.

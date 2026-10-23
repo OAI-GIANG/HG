@@ -9,9 +9,15 @@ Every accepted change is appended to the ledger before memory changes (MAEP-015)
 append fails, the store is unchanged. Each mutation takes `expected_version` and rejects a
 stale one (compare-and-set). Terminal tasks accept no new facts or transitions (MAEP-026).
 
-Limits: in-process only. Restart recovery from the ledger is RT-05, so a store refuses a
-ledger that already holds events. Authority comes from an injected PolicyEvaluator,
-which is not yet anchored to the trust root (RT-06).
+Restart (RT-05): `TaskStore.restore` rebuilds records by replaying the ledger through the
+same appliers that live mutations use, and refuses a history whose versions, event IDs
+or transitions are inconsistent. A plain constructor still refuses a non-empty ledger.
+
+Sole coordinator (MAEP-006): `claim_writer()` issues one TaskWriter; once claimed, every
+mutation must come through it. The claim is an in-process capability, not OS isolation.
+
+Limits: in-process only. Authority comes from an injected PolicyEvaluator, which is not
+yet anchored to the trust root (RT-06). One authorization request is held per task.
 """
 import copy
 import threading
@@ -26,6 +32,65 @@ from .ledger import append_event, read_events
 RESULT_STATES = {"RUNNING", "UNVERIFIED"}
 
 
+def _new_record(task):
+    return {
+        "task": copy.deepcopy(task), "version": 0, "authorization_request": None, "authorization_decision": None,
+        "result": None, "evidence": {}, "mandatory_gates": [], "closure": None, "blockers": {},
+        "reassessment": None, "blocked_at_version": None, "plan": None,
+    }
+
+
+def _apply_transition(record, data):
+    record["task"]["state"] = data["to"]
+    if data["to"] == "BLOCKED":
+        record["blocked_at_version"] = record["version"]
+    if data["from"] == "BLOCKED" and data["to"] == "ASSESSED":
+        for blocker in record["blockers"].values():
+            blocker["resolved"] = True
+
+
+# One applier per event type, shared by live mutations and by restore() (RT-05).
+_APPLIERS = {
+    "AUTHORIZATION_EVALUATED": lambda r, d: r.update(authorization_request=copy.deepcopy(d["request"]),
+                                                     authorization_decision=copy.deepcopy(d["decision"])),
+    "RESULT_RECORDED": lambda r, d: r.update(result={"result_ref": d["result_ref"], "candidate_ref": d["candidate_ref"]}),
+    "EVIDENCE_RECORDED": lambda r, d: r["evidence"].__setitem__(d["evidence"]["evidence_id"], copy.deepcopy(d["evidence"])),
+    "GATES_SET": lambda r, d: r.update(mandatory_gates=copy.deepcopy(d["gates"])),
+    "CLOSURE_RECORDED": lambda r, d: r.update(closure=copy.deepcopy(d["closure"])),
+    "BLOCKER_RECORDED": lambda r, d: r["blockers"].__setitem__(d["blocker"]["blocker_id"], copy.deepcopy(d["blocker"])),
+    "REASSESSMENT_RECORDED": lambda r, d: r.update(reassessment=copy.deepcopy(d)),
+    "PLAN_RECORDED": lambda r, d: r.update(plan=copy.deepcopy(d["plan"])),
+    "TRANSITION": _apply_transition,
+}
+
+
+class TaskWriter:
+    """The single mutation handle issued by TaskStore.claim_writer() (MAEP-006)."""
+
+    _METHODS = {"create_task", "record_authorization_request", "record_result", "record_evidence",
+                "set_mandatory_gates", "record_closure", "record_blocker", "record_reassessment",
+                "record_plan", "apply_transition"}
+
+    def __init__(self, store, key):
+        self._store = store
+        self._key = key
+
+    def __getattr__(self, name):
+        if name not in self._METHODS:
+            raise AttributeError(name)
+        method = getattr(self._store, name)
+        store, key = self._store, self._key
+
+        def call(*args, **kwargs):
+            with store._lock:
+                store._active_writer = key
+                try:
+                    return method(*args, **kwargs)
+                finally:
+                    store._active_writer = None
+        return call
+
+
 def _utc_now():
     return datetime.now(timezone.utc)
 
@@ -33,15 +98,64 @@ def _utc_now():
 class TaskStore:
     """Owns task records; every change is versioned, ledgered first and guard-checked."""
 
-    def __init__(self, ledger_path, *, policy_evaluator=None, clock=None, ledger_append=None):
-        if read_events(ledger_path):
-            raise MAEPError("ledger already holds events; restart recovery (RT-05) is not implemented")
+    def __init__(self, ledger_path, *, policy_evaluator=None, clock=None, ledger_append=None, _restoring=False):
+        if not _restoring and read_events(ledger_path):
+            raise MAEPError("ledger already holds events; use TaskStore.restore to resume from it (RT-05)")
         self._ledger_path = ledger_path
         self._evaluator = policy_evaluator
         self._clock = clock or _utc_now
         self._append = ledger_append or append_event
         self._records = {}
         self._lock = threading.RLock()
+        self._writer_key = None
+        self._active_writer = None
+
+    @classmethod
+    def restore(cls, ledger_path, *, policy_evaluator=None, clock=None, ledger_append=None):
+        """Rebuild a store from its ledger (RT-05). Inconsistent history fails closed.
+
+        Stored authorization decisions are history only: every guard that needs authority
+        re-evaluates the stored request with the evaluator given here.
+        """
+        store = cls(ledger_path, policy_evaluator=policy_evaluator, clock=clock,
+                    ledger_append=ledger_append, _restoring=True)
+        for event in read_events(ledger_path):
+            store._replay(event)
+        return store
+
+    def _replay(self, event):
+        kind, task_id, version, data = (event.get("type"), event.get("task_id"), event.get("version"),
+                                        event.get("data"))
+        if event.get("event_id") != f"{task_id}@{version}" or not isinstance(data, dict):
+            raise MAEPError(f"ledger event {event.get('event_id')} is malformed")
+        if event.get("policy_version") != POLICY_VERSION:
+            raise MAEPError("ledger event policy version does not match the store policy (MAEP-012)")
+        if kind == "TASK_CREATED":
+            if task_id in self._records or version != 1:
+                raise MAEPError(f"ledger history inconsistent at {event['event_id']}")
+            record = _new_record(data["task"])
+            record["version"] = 1
+            self._records[task_id] = record
+            return
+        record = self._records.get(task_id)
+        if record is None or version != record["version"] + 1 or kind not in _APPLIERS:
+            raise MAEPError(f"ledger history inconsistent at {event['event_id']}")
+        if kind == "TRANSITION" and data.get("from") != record["task"]["state"]:
+            raise MAEPError(f"ledger transition does not start from the recorded state at {event['event_id']}")
+        record["version"] = version
+        _APPLIERS[kind](record, data)
+
+    def claim_writer(self):
+        """Issue the only TaskWriter. After this, mutations without it are refused (MAEP-006)."""
+        with self._lock:
+            if self._writer_key is not None:
+                raise MAEPError("task-state writer already claimed; BrainOrchestrator is the sole coordinator")
+            self._writer_key = object()
+            return TaskWriter(self, self._writer_key)
+
+    def _require_writer(self):
+        if self._writer_key is not None and self._active_writer is not self._writer_key:
+            raise MAEPError("task-state writer is claimed; mutate only through it (MAEP-006)")
 
     # ----- reads -------------------------------------------------------------------
 
@@ -58,6 +172,7 @@ class TaskStore:
     def create_task(self, task):
         """Register a new DRAFT task. Returns its version (1)."""
         with self._lock:
+            self._require_writer()
             validate_task(task)
             task = copy.deepcopy(task)
             if task["state"] != "DRAFT":
@@ -73,11 +188,7 @@ class TaskStore:
                         raise MAEPError("TASK input references an unknown task")
                     if predecessor["task"]["state"] in TERMINAL_STATES:
                         validate_linked_task(predecessor["task"], task)
-            record = {
-                "task": task, "version": 0, "authorization_request": None, "authorization_decision": None,
-                "result": None, "evidence": {}, "mandatory_gates": [], "closure": None, "blockers": {},
-                "reassessment": None, "blocked_at_version": None,
-            }
+            record = _new_record(task)
 
             def apply(r):
                 self._records[task["task_id"]] = r
@@ -98,11 +209,7 @@ class TaskStore:
             request = copy.deepcopy(request)
             decision = self._evaluator.evaluate(request, now=self._clock())
 
-            def apply(r):
-                r["authorization_request"] = request
-                r["authorization_decision"] = decision
-
-            self._commit(record, "AUTHORIZATION_EVALUATED", {"request": request, "decision": decision}, apply)
+            self._commit(record, "AUTHORIZATION_EVALUATED", {"request": request, "decision": decision})
             return copy.deepcopy(decision)
 
     def record_result(self, task_id, *, result_ref, candidate_ref, expected_version):
@@ -114,10 +221,7 @@ class TaskStore:
                 raise MAEPError("result_ref and candidate_ref must be non-empty strings")
             result = {"result_ref": result_ref, "candidate_ref": candidate_ref}
 
-            def apply(r):
-                r["result"] = result
-
-            self._commit(record, "RESULT_RECORDED", result, apply)
+            self._commit(record, "RESULT_RECORDED", result)
 
     def record_evidence(self, task_id, evidence, *, expected_version):
         with self._lock:
@@ -127,10 +231,7 @@ class TaskStore:
             if evidence["evidence_id"] in record["evidence"]:
                 raise MAEPError("evidence_id already recorded; append an amendment with a new ID")
 
-            def apply(r):
-                r["evidence"][evidence["evidence_id"]] = evidence
-
-            self._commit(record, "EVIDENCE_RECORDED", {"evidence": evidence}, apply)
+            self._commit(record, "EVIDENCE_RECORDED", {"evidence": evidence})
 
     def set_mandatory_gates(self, task_id, gates, *, expected_version):
         with self._lock:
@@ -145,10 +246,7 @@ class TaskStore:
                     raise MAEPError("gate evidence_refs must name evidence recorded for this task")
             gates = copy.deepcopy(gates)
 
-            def apply(r):
-                r["mandatory_gates"] = gates
-
-            self._commit(record, "GATES_SET", {"gates": gates}, apply)
+            self._commit(record, "GATES_SET", {"gates": gates})
 
     def record_closure(self, task_id, closure, *, expected_version):
         with self._lock:
@@ -157,10 +255,7 @@ class TaskStore:
                 raise MAEPError("closure must be an object")
             closure = copy.deepcopy(closure)
 
-            def apply(r):
-                r["closure"] = closure
-
-            self._commit(record, "CLOSURE_RECORDED", {"closure": closure}, apply)
+            self._commit(record, "CLOSURE_RECORDED", {"closure": closure})
 
     def record_blocker(self, task_id, blocker, *, expected_version):
         with self._lock:
@@ -170,10 +265,7 @@ class TaskStore:
             if blocker["blocker_id"] in record["blockers"]:
                 raise MAEPError("blocker_id already recorded")
 
-            def apply(r):
-                r["blockers"][blocker["blocker_id"]] = blocker
-
-            self._commit(record, "BLOCKER_RECORDED", {"blocker": blocker}, apply)
+            self._commit(record, "BLOCKER_RECORDED", {"blocker": blocker})
 
     def record_reassessment(self, task_id, *, resolution_evidence_refs, risk_assessment, expected_version):
         """Record why a BLOCKED task may reopen; authority is re-checked at the transition."""
@@ -190,10 +282,24 @@ class TaskStore:
             reassessment = {"resolution_evidence_refs": list(refs), "risk_assessment": risk_assessment,
                             "version": record["version"] + 1}
 
-            def apply(r):
-                r["reassessment"] = reassessment
+            self._commit(record, "REASSESSMENT_RECORDED", reassessment)
 
-            self._commit(record, "REASSESSMENT_RECORDED", reassessment, apply)
+    def record_plan(self, task_id, plan, *, expected_version):
+        """Record the ordered steps the coordinator will dispatch. Only while ASSESSED.
+
+        The store checks shape only; the coordinator validates step semantics. The tool
+        boundary reads steps from here, never from its caller.
+        """
+        with self._lock:
+            record = self._open_record(task_id, expected_version)
+            if record["task"]["state"] != "ASSESSED":
+                raise MAEPError("a plan is recorded only while ASSESSED")
+            if not isinstance(plan, list) or not plan or not all(isinstance(s, dict) for s in plan):
+                raise MAEPError("plan must be a non-empty list of step objects")
+            ids = [s.get("step_id") for s in plan]
+            if not all(_nonempty_string(i) for i in ids) or len(set(ids)) != len(ids):
+                raise MAEPError("plan steps need unique non-empty step_id values")
+            self._commit(record, "PLAN_RECORDED", {"plan": copy.deepcopy(plan)})
 
     # ----- transitions -------------------------------------------------------------
 
@@ -207,15 +313,7 @@ class TaskStore:
             if target == "BLOCKED" and not any(not b["resolved"] for b in record["blockers"].values()):
                 raise MAEPError("entering BLOCKED requires a recorded blocker (MAEP-025)")
 
-            def apply(r):
-                r["task"]["state"] = target
-                if target == "BLOCKED":
-                    r["blocked_at_version"] = r["version"]
-                if current == "BLOCKED" and target == "ASSESSED":
-                    for blocker in r["blockers"].values():
-                        blocker["resolved"] = True
-
-            self._commit(record, "TRANSITION", {"from": current, "to": target}, apply)
+            self._commit(record, "TRANSITION", {"from": current, "to": target})
             return self._records[task_id]["version"]
 
     def _derive_guards(self, record, current, target):
@@ -280,6 +378,7 @@ class TaskStore:
         return self._records[task_id]
 
     def _open_record(self, task_id, expected_version):
+        self._require_writer()
         record = self._record(task_id)
         if isinstance(expected_version, bool) or not isinstance(expected_version, int):
             raise MAEPError("expected_version must be an integer")
@@ -289,8 +388,14 @@ class TaskStore:
             raise MAEPError("terminal task accepts no changes; continue with a linked task")
         return record
 
-    def _commit(self, record, event_type, data, apply, new_record=False):
-        """Append the event, then apply the change to a copy and swap it in."""
+    def _commit(self, record, event_type, data, apply=None, new_record=False):
+        """Append the event, then apply the change to a copy and swap it in.
+
+        Live mutations use the same applier as restore() unless one is passed explicitly.
+        """
+        if apply is None:
+            applier = _APPLIERS[event_type]
+            apply = lambda r: applier(r, data)  # noqa: E731
         version = record["version"] + 1
         task_id = record["task"]["task_id"]
         event = {

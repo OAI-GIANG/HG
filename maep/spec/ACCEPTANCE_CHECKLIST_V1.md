@@ -23,6 +23,8 @@
 | AC-19 | RT-01 TaskStore: guards derived from stored facts, CAS versioning, ledger-first writes | PASS-UNIT | T-038; 41 tests; 17/18 mutants killed, 1 equivalent; no runtime caller, no restart recovery (RT-05) |
 | AC-20 | Agent guard hook blocks destructive git operations and delegation-file writes | PASS-UNIT | T-039; 29 tests incl. subprocess runs of the hook; 14/14 mutants killed; not observed firing inside a live Claude Code session; best-effort parser |
 | AC-21 | CI runs MAEP and guard tests on push and pull request, and `main` requires them (RT-07) | PASS-CI; ENFORCED-BY-GITHUB | `.github/workflows/maep-tests.yml`, Python 3.13 and 3.14; ruleset `main-maep` read back via `GET /repos/OAI-GIANG/HG/rules/branches/main`: deletion, non_fast_forward, pull_request, required_status_checks |
+| AC-22 | RT-05 restore and MAEP-006 single writer on the canonical TaskStore | PASS-UNIT, PASS-INTEGRATION (in-process) | T-006, T-040; 17 tests; see RT02_RT05_VALIDATION_RECORD_V1.md |
+| AC-23 | RT-02..RT-04: tool boundary, acceptance gate and BrainOrchestrator on the runtime path | PASS-INTEGRATION (in-process) | T-041..T-045; 59 tests; 17/17 mutants killed; not production, not system-wide |
 
 ## Acceptance decision
 MAEP V1 foundation package passes its local design, schema, and unit-test criteria. It is not a fully integrated HG runtime release. Do not label the whole HG system CLOSED_VERIFIED. AC-12 is deferred until BrainOrchestrator exists; AC-13 passes at foundation scope with the stated tamper-resistance limitation; AC-14 is intentionally not performed or claimed. Full runtime acceptance remains a later phase.
