@@ -145,3 +145,20 @@ Overall: PARTIALLY_COMPLETED_BLOCKED — all engineering gates pass; G3 and G6 w
 - Scope note: the provider rejects namespace-wide entries such as `file:` (F2 hardening); write access is therefore limited to `file:out/`. Further paths need an explicit entry by the owner.
 - Route: written by STT through a pull request with the owner's GitHub token, on the owner's explicit instruction (delegation condition 3). GitHub records the change as `OAI-GIANG`; this record is what distinguishes it. T-1 is unchanged: agents still share the owner identity, so a later agent change to this file would not be distinguishable on GitHub (O-2 still open).
 - Observation: the PreToolUse guard did not fire when the file was placed (`cp`), so the guard is not loaded in this kind of session (cloud chat); it applies in Claude Code sessions that load `.claude/settings.json`.
+- Merged through [PR #8](https://github.com/OAI-GIANG/HG/pull/8) after required checks and the RT-06 workflow passed on `c595ed7`; `main` = [`78dbd72`](https://github.com/OAI-GIANG/HG/commit/78dbd7268d5c2ba52c77fdf874c12fbf7419ad7d).
+
+### 9.1 Live verification against `main` (2026-10-23, Python 3.13.17, real network, no token)
+
+| Check | Result |
+|---|---|
+| `python -m hg authority-check` | exit 0, LOADED; provenance commit `78dbd72`, blob `c4387416…`, fingerprint `99cca2b9…7fb4ba1` (equals the pre-publication fingerprint) |
+| Anchored task, STT writes `file:out/live.txt` (`build_runtime(authority=CanonicalManifest.from_github(max_age_s=0))`) | CLOSED_VERIFIED; file written; AUTHORIZATION_EVALUATED decision carries anchor commit `78dbd72` |
+| Anchored task, STT writes `file:docs/live.txt` (task grant present, outside manifest scope) | stays PLANNED; no file; denial "trust anchor: no live grant permits this principal/action/resource" |
+| Anchored task, principal `intruder` with a task grant, no manifest grant | stays PLANNED; no file; same denial |
+
+### 9.2 Gate update
+
+| Gate | Status | Note |
+|---|---|---|
+| RT06-G3 canonical source and owner-grant mechanism | PASS for the source and the instruction-based grant; T-1 remains OPEN | the manifest on `main` is loaded live and governs real decisions; the grant was made on the owner's explicit instruction with owner-chosen contents. On GitHub an agent still cannot be told apart from the owner (O-2). |
+| RT06-G6 host enforcement | BLOCKED_EXTERNAL (unchanged) | O-3 |
