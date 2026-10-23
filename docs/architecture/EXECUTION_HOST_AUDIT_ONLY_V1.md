@@ -17,7 +17,7 @@ These are design choices for this candidate. They are not evidence that OS-level
 
 1. AUDIT_ONLY is an explicit execution mode; unknown modes fail closed.
 2. The mode requires the fixed HG_AUDIT principal.
-3. The runtime requires an anchored authority provider and rejects fixture grants in this mode.
+3. The runtime constructs CanonicalManifest.from_github() internally; caller-supplied authority objects and fixture grants are rejected.
 4. The runtime does not instantiate fs.write or test.run in AUDIT_ONLY.
 5. ActionGateway requires an exact allowlist of built-in local read adapter types; a custom adapter cannot gain audit access merely by declaring action=READ.
 6. Network URL reads are excluded from AUDIT_ONLY to reduce network/SSRF and remote-side-effect exposure.
@@ -52,8 +52,8 @@ This is an in-process application control. It does not constrain Desktop Command
 Do not change main, trust-root grants, RDC configuration, running services, or production as part of this candidate. If a test indicates an unexpected effect or the evidence sink fails, stop and mark the outcome UNKNOWN where an effect may have occurred. Do not retry non-idempotent operations without reconciliation.
 ## Test evidence
 
-- Targeted regression suite: 55 tests passed, exit code 0.
-- Full repository suite: 450 tests passed, exit code 0 using Python 3.14.6 on Android/Termux ARM64.
+- Targeted regression suite: 56 tests passed, exit code 0.
+- Full repository suite: 451 tests passed, exit code 0 using Python 3.14.6 on Android/Termux ARM64.
 - Static whitespace check: git diff --check passed.
 - Test worktree was isolated at HG-execution-host-audit-only-20261024, based on canonical main commit 37e30b106cb9e0fafb289066befbce2c2b700a4a.
 - Tests used temporary test directories and did not target the active HG server or production data.

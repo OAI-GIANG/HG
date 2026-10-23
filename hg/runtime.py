@@ -50,8 +50,11 @@ def build_runtime(workdir, grants, *, principal=DEFAULT_PRINCIPAL, mode="AUTHORI
     if mode == "AUDIT_ONLY":
         if principal != AUDIT_ONLY_PRINCIPAL:
             raise MAEPError("AUDIT_ONLY requires principal='HG_AUDIT'")
-        if type(authority) is not CanonicalManifest or allow_fixture_grants:
-            raise MAEPError("AUDIT_ONLY requires CanonicalManifest authority; fixture or duck-typed authority is forbidden")
+        if allow_fixture_grants:
+            raise MAEPError("AUDIT_ONLY forbids fixture grants")
+        if authority is not None:
+            raise MAEPError("AUDIT_ONLY loads canonical authority internally; caller-supplied authority is forbidden")
+        authority = CanonicalManifest.from_github()
         if issue_task_grants and list(grants):
             raise MAEPError("AUDIT_ONLY task-grant issuance cannot also accept caller-supplied grants")
     if authority is not None and allow_fixture_grants:

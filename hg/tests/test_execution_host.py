@@ -4,6 +4,7 @@ These tests do not claim OS isolation or complete mediation. They verify only
 that HG's in-process AUDIT_ONLY assembly fails closed and exposes read actions.
 """
 import unittest
+from unittest import mock
 
 from maep.core import MAEPError
 from hg.runtime import AUDIT_ONLY_PRINCIPAL, build_runtime
@@ -52,32 +53,41 @@ class MisdeclaredReadAdapter(ToolAdapter):
 class AuditOnlyRuntimeTests(TempDirMixin):
     def build_audit(self, **kwargs):
         grants = kwargs.pop("grants", [])
-        return build_runtime(
-            self.workdir, grants, principal=AUDIT_ONLY_PRINCIPAL, mode="AUDIT_ONLY",
-            authority=fake_authority(), clock=self.clock, **kwargs
-        )
+        with mock.patch.object(CanonicalManifest, "from_github", return_value=fake_authority()):
+            return build_runtime(
+                self.workdir, grants, principal=AUDIT_ONLY_PRINCIPAL, mode="AUDIT_ONLY",
+                clock=self.clock, **kwargs
+            )
 
     def test_audit_only_requires_fixed_principal(self):
         with self.assertRaisesRegex(MAEPError, "HG_AUDIT"):
             build_runtime(self.workdir, [], principal="STT", mode="AUDIT_ONLY", authority=fake_authority())
         self.assertFalse(self.workdir.exists())
 
-    def test_audit_only_requires_anchored_authority(self):
-        with self.assertRaisesRegex(MAEPError, "CanonicalManifest authority"):
-            build_runtime(self.workdir, [], principal=AUDIT_ONLY_PRINCIPAL, mode="AUDIT_ONLY")
+    def test_audit_only_loads_authority_internally(self):
+        with mock.patch.object(CanonicalManifest, "from_github", return_value=fake_authority()) as loader:
+            runtime = build_runtime(self.workdir, [], principal=AUDIT_ONLY_PRINCIPAL,
+                                    mode="AUDIT_ONLY", clock=self.clock)
+        loader.assert_called_once_with()
+        self.assertEqual(runtime.trust, "anchored")
+
+    def test_audit_only_rejects_caller_supplied_authority(self):
+        with self.assertRaisesRegex(MAEPError, "caller-supplied authority is forbidden"):
+            build_runtime(self.workdir, [], principal=AUDIT_ONLY_PRINCIPAL,
+                          mode="AUDIT_ONLY", authority=fake_authority())
         self.assertFalse(self.workdir.exists())
 
     def test_audit_only_rejects_duck_typed_authority(self):
         class DuckAuthority:
             def current(self):
                 return ({}, {})
-        with self.assertRaisesRegex(MAEPError, "CanonicalManifest authority"):
+        with self.assertRaisesRegex(MAEPError, "caller-supplied authority is forbidden"):
             build_runtime(self.workdir, [], principal=AUDIT_ONLY_PRINCIPAL,
                           mode="AUDIT_ONLY", authority=DuckAuthority())
         self.assertFalse(self.workdir.exists())
 
     def test_audit_only_rejects_fixture_grants(self):
-        with self.assertRaisesRegex(MAEPError, "fixture or duck-typed authority is forbidden"):
+        with self.assertRaisesRegex(MAEPError, "AUDIT_ONLY forbids fixture grants"):
             build_runtime(self.workdir, [], principal=AUDIT_ONLY_PRINCIPAL, mode="AUDIT_ONLY",
                           authority=fake_authority(), allow_fixture_grants=True)
         self.assertFalse(self.workdir.exists())
