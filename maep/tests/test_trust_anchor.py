@@ -108,8 +108,9 @@ class TrustAnchorTests(unittest.TestCase):
         self.assertEqual(fingerprint(doc), fingerprint(json.loads(json.dumps(doc))))
 
     def test_naive_time_is_not_accepted_as_validity_input(self):
+        # Still rejected; since RT-06 F9 the rejection is an explicit denial, not a TypeError crash.
         doc = load_manifest(_fetch())
-        with self.assertRaises(TypeError):
+        with self.assertRaises(TrustAnchorError):
             authorize(doc, principal="owner", action="maep.commit",
                       resource="repo:OAI-GIANG/HG", policy_version="MAEP-1.1.0",
                       now=datetime(2026, 10, 23, 12, 0, 0))
