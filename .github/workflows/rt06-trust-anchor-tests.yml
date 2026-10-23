@@ -1,17 +1,40 @@
 name: rt06-trust-anchor-tests
+
+# Dedicated RT-06 gate: trust-anchor provider, canonical source, anchored runtime and
+# bypass tests on the Python versions main requires. Standard-library unittest only.
+
 on:
   push:
     branches: [rt06/trust-anchor-provider-20261023]
+  pull_request:
   workflow_dispatch:
+
+permissions:
+  contents: read
+
 jobs:
-  pytest:
+  rt06:
+    name: rt06-anchor (${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.13", "3.14"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
-      - name: install
-        run: python -m pip install --quiet pytest
-      - name: run RT-06 tests
-        run: python -m pytest maep/tests/test_trust_anchor.py -q
+          python-version: ${{ matrix.python-version }}
+      - name: Trust-anchor provider and defect regressions
+        run: python -m unittest -v maep.tests.test_trust_anchor maep.tests.test_trust_anchor_defects
+      - name: Canonical source and anchored evaluator
+        run: python -m unittest -v maep.tests.test_canonical_source
+      - name: Anchored runtime and bypass attempts
+        run: python -m unittest -v hg.tests.test_anchored_runtime hg.tests.test_bypass
+      - name: Guard hook (owner-only trust files)
+        run: python -m unittest discover -s .claude/hooks -p "test_*.py" -v
+      - name: Byte-compile
+        run: python -m compileall -q maep hg .claude/hooks
+      - name: Live trust root on main (informational, not a gate)
+        continue-on-error: true
+        run: python -m hg authority-check
