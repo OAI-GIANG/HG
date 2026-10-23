@@ -137,3 +137,11 @@ The record commit itself (docs only) is checked again in CI; its run IDs are in 
 | RT06-G12 no unauthorized change to protected resources | PASS | `main` still `40c9592`; ruleset 25706034 unchanged on read-back; no production; work done in an isolated worktree; no other branch pushed | — |
 
 Overall: PARTIALLY_COMPLETED_BLOCKED — all engineering gates pass; G3 and G6 wait on owner actions O-1, O-2, O-3.
+
+## 9. Addendum — owner grants manifest (O-1), 2026-10-23
+
+- Owner instruction (2026-10-23 18:51 +07:00): "Hãy làm cho trust root hoạt động đi". STT asked for the grant contents instead of choosing them; the owner answered: full authority for Claude to work on HG (write, push, merge, deploy, delete, commit) when appropriate, valid 90 days.
+- Manifest `maep/authority/owner-grants.json`: principal `STT`; actions `maep.read`, `maep.write`, `maep.commit`, `maep.push`, `maep.merge`, `maep.deploy`, `maep.migrate`, `maep.delete`, `maep.execute`; scope `repo:OAI-GIANG/HG`, `file:out/`; issued `2026-10-23T11:53:47Z`, expires `2027-01-21T11:53:47Z`; fingerprint `99cca2b9…7fb4ba1`. Validated with `load_manifest` and `authorize` before publishing.
+- Scope note: the provider rejects namespace-wide entries such as `file:` (F2 hardening); write access is therefore limited to `file:out/`. Further paths need an explicit entry by the owner.
+- Route: written by STT through a pull request with the owner's GitHub token, on the owner's explicit instruction (delegation condition 3). GitHub records the change as `OAI-GIANG`; this record is what distinguishes it. T-1 is unchanged: agents still share the owner identity, so a later agent change to this file would not be distinguishable on GitHub (O-2 still open).
+- Observation: the PreToolUse guard did not fire when the file was placed (`cp`), so the guard is not loaded in this kind of session (cloud chat); it applies in Claude Code sessions that load `.claude/settings.json`.
