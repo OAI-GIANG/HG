@@ -42,5 +42,5 @@ Base: `main` = `ea2bdf1`. Branch: `stt/rt01-enforcement`. Python 3.13.17 locally
 - No restart recovery: a store refuses a ledger that already holds events (RT-05).
 - Authority comes from an injected `PolicyEvaluator` with test grants; no trust-root anchor (RT-06).
 - The guard is a best-effort parser, blind to `$(...)`, `eval`, `xargs` and interpreter one-liners; it fails open if `python3` is missing; an agent that edits it can disable it.
-- Branch protection on `main` is not configured.
+- Branch protection on `main`: configured afterwards by the owner as ruleset `main-maep` (2026-10-23); the session proxy refused the branch-protection and rulesets write APIs (HTTP 403), and rulesets are not enforced on private repositories of free accounts, so the owner made the repository public and imported the ruleset.
 - Internal checks only; no independent review is claimed (MAEP-021).

@@ -1,7 +1,7 @@
 # RT-02..RT-05 Runtime Validation Record V1
 
 Date: 2026-10-23. Executor: STT (Claude cloud session) under `MAEP_OWNER_DELEGATION_V1.md`, on the owner's directive MIID-1.0.
-Base: `main` = `e1c66ee` (PR #3). Branch: `stt/miid-runtime-rt02-rt05`. Python 3.13.17 locally; CI on 3.13 and 3.14.
+Base: `main` = `e1c66ee` (PR #3), rebased onto `039f4b2` (PR #4, docs only). Branch: `stt/miid-runtime-rt02-rt05`. Python 3.13.17 locally; CI on 3.13 and 3.14.
 
 ## Objective and acceptance criteria (RUNTIME_ENFORCEMENT_PLAN_V1 §4)
 | ID | Criterion | Tests |

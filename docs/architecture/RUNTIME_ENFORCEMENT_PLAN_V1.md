@@ -1,6 +1,6 @@
 # Runtime Enforcement Plan V1
 
-- Status: RT-01..RT-05 **IMPLEMENTED, INTEGRATION_TESTED (in-process)** (2026-10-23; RT-01 via PR #3, RT-02..RT-05 and RT-01 extensions on `stt/miid-runtime-rt02-rt05`); RT-06 BLOCKED; RT-07 CI in place, branch protection not configured. See §6.
+- Status: RT-01..RT-05 **IMPLEMENTED, INTEGRATION_TESTED (in-process)** (2026-10-23; RT-01 via PR #3, RT-02..RT-05 and RT-01 extensions on `stt/miid-runtime-rt02-rt05`); RT-06 BLOCKED; RT-07 done (CI plus ruleset `main-maep` on `main`). See §6.
 - Base: MAEP-1.0.0 at `f7f00a75c6a1b1363993c2fb9bc023171f080038` plus the Phase 2 fixes on the same branch as this file.
 - Inputs: `HG_ARCHITECTURE_V1.md`, `BRAIN_ORCHESTRATOR_CONTRACT_V1.md`, `MAEP_INTEGRATION_DESIGN_V1.md`, `DATA_FLOW_TRUST_BOUNDARY_V1.md`.
 - Not available: `BRAIN_ORCHESTRATOR_MASTER_PLAN_V1.md` was never committed to any accessible ref; nothing here depends on it.
@@ -76,7 +76,7 @@ RT-01 to RT-05 are in-process integration tests. They would justify INTEGRATION_
 | RT-05 | `TaskStore.restore`, `pending_from_events`, `ActionGateway.reconcile`, `BrainOrchestrator.reconcile_and_reopen` | restore, gateway and orchestrator restart tests | IMPLEMENTED, INTEGRATION_TESTED |
 | — | `hg/runtime.py`, `hg/__main__.py` | `hg/tests/test_cli.py` (3, fresh process) | IMPLEMENTED, INTEGRATION_TESTED |
 | RT-06 | — | — | BLOCKED: owner to choose a machine-verifiable anchor (protected grants file via reviewed PRs, or signed grants) |
-| RT-07 | CI from PR #3, now also running `hg/tests` | CI run on the pull request | CI in place; branch protection not configured (owner action) |
+| RT-07 | CI from PR #3, now also running `hg/tests` and the self-check; ruleset `main-maep` (PR #4) | CI runs on the pull request | Done: `main` requires `unittest (3.13)` and `unittest (3.14)`, which now include the HG suite |
 
 Spec conflict found and resolved for the spec: an unauthorized task cannot move PLANNED → BLOCKED (not an allowed edge), so it stays PLANNED and the denial is recorded as evidence.
 

@@ -98,7 +98,7 @@ Only mechanisms observable in Claude Code's own working method, re-implemented a
 
 ## 6. Order of work in this change
 
-Extend RT-01 store (restore, writer claim, plan) → RT-02 gateway → RT-03 gate → RT-04 orchestrator → RT-05 restart → runtime assembly and CLI, each with negative tests through the real objects (no mocks of MAEP). C-10 stays BLOCKED on the owner's anchor choice; branch protection (C-11) is an owner action. C-12 onward are the next phase and are not claimed.
+Extend RT-01 store (restore, writer claim, plan) → RT-02 gateway → RT-03 gate → RT-04 orchestrator → RT-05 restart → runtime assembly and CLI, each with negative tests through the real objects (no mocks of MAEP). C-10 stays BLOCKED on the owner's anchor choice; branch protection (C-11) was then done by the owner as ruleset `main-maep` (PR #4). C-12 onward are the next phase and are not claimed.
 
 ## 7. Results after Phase C (branch `stt/miid-runtime-rt02-rt05`, base `e1c66ee`)
 
@@ -113,7 +113,7 @@ Extend RT-01 store (restore, writer claim, plan) → RT-02 gateway → RT-03 gat
 | C-08 | IMPLEMENTED, INTEGRATION_TESTED (fresh process) | `hg/tests/test_cli.py` (3) |
 | C-09 | IMPLEMENTED, INTEGRATION_TESTED | `test_orchestrator.py` RetryLimitTests |
 | C-10 | unchanged: BLOCKED_BY_DEPENDENCY (owner's choice of trust anchor) | — |
-| C-11 | CI now also runs the HG suite; branch protection still an owner action | `.github/workflows/maep-tests.yml` |
+| C-11 | Done: CI also runs the HG suite and self-check; `main` ruleset `main-maep` (PR #4, owner-created) requires those jobs | `.github/workflows/maep-tests.yml`, PR #4 |
 | C-12 … C-21 | unchanged: MISSING / PARTIALLY_IMPLEMENTED; next phase | — |
 
 Baseline vs. after, same commands:
