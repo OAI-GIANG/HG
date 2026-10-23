@@ -190,9 +190,9 @@ class AcceptanceCriteriaTests(StoreTestCase):
     def test_public_api_has_no_state_setter(self):
         public = {name for name in dir(self.store) if not name.startswith("_")}
         self.assertEqual(public, {
-            "apply_transition", "create_task", "record_authorization_request", "record_blocker",
-            "record_closure", "record_evidence", "record_reassessment", "record_result",
-            "set_mandatory_gates", "snapshot",
+            "apply_transition", "claim_writer", "create_task", "record_authorization_request", "record_blocker",
+            "record_closure", "record_evidence", "record_plan", "record_reassessment", "record_result",
+            "restore", "set_mandatory_gates", "snapshot",
         })
 
     def test_forbidden_shortcut_denied_and_not_logged(self):
