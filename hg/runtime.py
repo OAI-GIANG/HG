@@ -23,6 +23,7 @@ from maep.core import MAEPError
 from maep.policy import PolicyEvaluator
 from maep.task_store import TaskStore
 from hg.brain.orchestrator import BrainOrchestrator
+from hg.tools.code import CodeDiffAdapter, CodeSearchAdapter, SymbolIndexAdapter, TestRunAdapter, UrlReadAdapter
 from hg.tools.gateway import ActionGateway, LocalFileReadAdapter, LocalFileWriteAdapter
 from hg.verification.evidence import AcceptanceGate, EventLog
 
@@ -70,7 +71,9 @@ def build_runtime(workdir, grants, *, principal=DEFAULT_PRINCIPAL, mode="AUTHORI
             trust = "anchored"
     store = open_task_store(workdir / "tasks.jsonl", evaluator, clock)
     actions = EventLog(workdir / "actions.jsonl", clock=clock)
-    adapters = [LocalFileWriteAdapter(root), LocalFileReadAdapter(root), *extra_adapters]
+    adapters = [LocalFileWriteAdapter(root), LocalFileReadAdapter(root), CodeSearchAdapter(root),
+                SymbolIndexAdapter(root), CodeDiffAdapter(root), TestRunAdapter(root), UrlReadAdapter(),
+                *extra_adapters]
     gateway = ActionGateway(store, evaluator, actions, adapters, principal=principal, mode=mode)
     gate = AcceptanceGate(clock=clock)
     orchestrator = BrainOrchestrator(store, gateway, gate, principal=principal, verifiers=verifiers,

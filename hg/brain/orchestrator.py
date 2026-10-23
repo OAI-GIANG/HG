@@ -54,6 +54,7 @@ class BrainOrchestrator:
         self._verifiers = verifiers
         self._issuer = issuer          # TaskGrantIssuer: per-task grants derived from the owner manifest
         self._memory = memory          # MemoryStore: outcomes recorded as episodic memory
+        self._outcomes = {}            # task_id -> full step outcomes of the last run (in memory only)
 
     # ---------- helpers ----------
 
@@ -127,7 +128,7 @@ class BrainOrchestrator:
 
     def run(self, task_id):
         self._move(task_id, "RUNNING")
-        outcomes = []
+        outcomes, full = [], []
         for step in self._store.snapshot(task_id)["plan"]:
             attempts = 0
             while True:
@@ -136,6 +137,9 @@ class BrainOrchestrator:
                 # FAILED means a known failure with no effect, so a retry is not a blind replay.
                 if outcome["status"] != "FAILED" or retry_decision(attempts) == "STOP":
                     break
+            full.append({"step_id": step["step_id"], "tool": step["tool"], "status": outcome["status"],
+                         "observed": dict(outcome.get("observed") or {})})
+            self._outcomes[task_id] = full
             outcomes.append({"step_id": step["step_id"], "status": outcome["status"],
                              "reason": outcome["reason"], "attempts": attempts,
                              "action_id": outcome.get("action_id"),
@@ -177,7 +181,8 @@ class BrainOrchestrator:
             if verifier is None:
                 continue                      # gate stays NOT_RUN; never assumed PASS (MAEP-024)
             try:
-                passed, detail = verifier(self._store.snapshot(task_id))
+                passed, detail = verifier(dict(self._store.snapshot(task_id),
+                                               outcomes=list(self._outcomes.get(task_id, []))))
                 result = "PASS" if passed is True else "FAIL"
             except Exception as exc:
                 result, detail = "FAIL", f"verifier raised {type(exc).__name__}: {exc}"
