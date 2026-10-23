@@ -49,12 +49,12 @@ class AnthropicTests(unittest.TestCase):
         self.assertNotIn("temperature", call["payload"])            # removed in 2026-10-21
         self.assertEqual((response["text"], response["usage"]["output_tokens"]), ("hi there", 3))
 
-    def test_missing_key_is_unavailable_and_sends_nothing(self):
+    def test_missing_key_is_not_configured_and_sends_nothing(self):
         http = FakeHTTP()
         with mock.patch.dict(os.environ, {}, clear=True):
             with self.assertRaises(ProviderError) as ctx:
                 AnthropicProvider(http_post=http).complete(REQ)
-        self.assertEqual(ctx.exception.kind, "UNAVAILABLE")
+        self.assertEqual(ctx.exception.kind, "NOT_CONFIGURED")
         self.assertEqual(http.calls, [])
 
     def test_status_classification(self):
@@ -116,6 +116,15 @@ class RouterTests(TempDirMixin):
         response = self.router(p).complete(REQ)
         self.assertEqual(response["text"], "answer")
         self.assertEqual([a["error"] for a in response["attempts"]], ["UNAVAILABLE", None])
+
+    def test_missing_configuration_is_not_retried(self):
+        sleeps = []
+        with mock.patch.dict(os.environ, {}, clear=True):
+            router = ModelRouter([AnthropicProvider(http_post=FakeHTTP()), ScriptedProvider("b", ["local"])],
+                                 sleep=sleeps.append)
+            response = router.complete(REQ)
+        self.assertEqual((response["provider"], sleeps), ("b", []))
+        self.assertEqual(response["attempts"][0]["error"], "NOT_CONFIGURED")
 
     def test_non_retryable_falls_back_without_retry(self):
         a = ScriptedProvider("a", [ProviderError("REFUSED", "no"), "never"])

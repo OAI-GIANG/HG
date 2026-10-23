@@ -26,4 +26,4 @@ python -m unittest discover -s maep/tests -v
 python -m unittest discover -s hg/tests -t . -v
 ```
 
-What is and is not built: `docs/architecture/MIID_AUDIT_AND_CAPABILITY_MATRIX_V1.md`. Grants are not yet anchored to the owner trust root (RT-06); reasoning, model providers and layered memory are the next phase.
+Grants are anchored to the owner manifest on `main` (RT-06). The intelligence layer -- model router, planner, memory, context, research, options, code tools, learning loop, benchmark, health -- is in `hg/` (MIID Phase D); a live model is optional and not configured here. What is and is not built: `docs/architecture/MIID_AUDIT_AND_CAPABILITY_MATRIX_V1.md`, `docs/architecture/MIID_PHASE_D_RECORD_V1.md`.

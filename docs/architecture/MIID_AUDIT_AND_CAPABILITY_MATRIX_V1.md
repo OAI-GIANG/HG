@@ -130,3 +130,23 @@ Baseline vs. after, same commands:
 These are test counts and pass rates on a fixed suite, not measures of intelligence or general capability (MIID §15).
 
 Next phase, in priority order: RT-06 trust-root anchoring (needs owner choice), then C-12 model-provider contract with an offline mode, C-14 layered memory with provenance, C-18 learning loop fed by the ledgers, C-19 benchmark harness.
+
+## 8. Results after Phase D (branch `stt/miid-phase-d-intelligence`, base `29a2657`)
+
+Full record: `MIID_PHASE_D_RECORD_V1.md`.
+
+| ID | New status |
+|---|---|
+| C-10 | Done (RT-06): trust root live on `main`; T-1 open |
+| C-12 | IMPLEMENTED, INTEGRATION_TESTED (test doubles); live model BLOCKED_EXTERNAL (no key, no local model) |
+| C-13 | IMPLEMENTED, INTEGRATION_TESTED; live with the structured planner; manifest-issued per-task grants |
+| C-14 | IMPLEMENTED, INTEGRATION_TESTED; live |
+| C-15 | IMPLEMENTED, INTEGRATION_TESTED |
+| C-16 | IMPLEMENTED, INTEGRATION_TESTED (extractive) |
+| C-17 | IMPLEMENTED, UNIT_TESTED |
+| C-18 | IMPLEMENTED, INTEGRATION_TESTED |
+| C-19 | IMPLEMENTED, INTEGRATION_TESTED, ENFORCED in the required CI jobs |
+| C-20 | IMPLEMENTED, INTEGRATION_TESTED; `test.run` live under the trust root |
+| C-21 | IMPLEMENTED, INTEGRATION_TESTED; live |
+
+All 21 justified capabilities now exist in code with tests. The remaining external dependency for HG's own reasoning is a live model, which the owner provides through a key or a local model.

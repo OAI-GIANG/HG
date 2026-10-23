@@ -10,6 +10,7 @@ back or stop:
     REFUSED          the provider rejected credentials or permission (not retryable)
     INVALID_REQUEST  the request itself is wrong (not retryable)
     INVALID_RESPONSE the provider answered with something unusable (retryable once)
+    NOT_CONFIGURED   a required setting (e.g. an API key) is missing (not retryable)
 
 Claude is one optional provider (MIID §4, §13): nothing in HG requires it. With
 `offline=True` the router uses only providers marked offline (a local model).
@@ -32,7 +33,7 @@ import urllib.request
 
 from maep.core import MAEPError
 
-ERROR_KINDS = {"UNAVAILABLE", "TIMEOUT", "REFUSED", "INVALID_REQUEST", "INVALID_RESPONSE"}
+ERROR_KINDS = {"UNAVAILABLE", "TIMEOUT", "REFUSED", "INVALID_REQUEST", "INVALID_RESPONSE", "NOT_CONFIGURED"}
 RETRYABLE = {"UNAVAILABLE", "TIMEOUT", "INVALID_RESPONSE"}
 
 
@@ -114,7 +115,7 @@ class AnthropicProvider(ModelProvider):
     def complete(self, request):
         key = os.environ.get(self._key_env)
         if not key:
-            raise ProviderError("UNAVAILABLE", f"{self._key_env} is not set")
+            raise ProviderError("NOT_CONFIGURED", f"{self._key_env} is not set")
         payload = {"model": self.model, "max_tokens": request["max_tokens"], "messages": request["messages"]}
         if request["system"]:
             payload["system"] = request["system"]

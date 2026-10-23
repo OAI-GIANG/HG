@@ -94,6 +94,11 @@ class CodeToolTests(ToolBase):
         action = rt.gateway.pending_actions("T-1")[0]["action_id"]
         self.assertEqual(rt.gateway.reconcile(action)["finding"], "UNKNOWN")    # cannot be inspected; stays blocked
 
+    def test_test_run_declares_its_risk(self):
+        rt = self.build([])
+        entry = next(t for t in rt.gateway.registry() if t["name"] == "test.run")
+        self.assertEqual((entry["action"], entry["idempotent"], entry["risk"]), ("EXECUTE", False, "HIGH"))
+
     def test_test_run_requires_execute_permission(self):
         self.put("out/tests/test_ok.py", PASSING)
         steps = self.plan({"operations": [{"op": "test", "path": "out/tests"}]})
@@ -143,6 +148,12 @@ class UrlReadTests(ToolBase):
     def test_http_error_is_a_known_failure(self):
         _rt, final = self.run_goal({"operations": [{"op": "fetch", "url": self.base + "missing"}]}, task=self.url_task())
         self.assertEqual(final["task"]["state"], "BLOCKED")
+
+    def test_credentials_in_url_rejected_even_inside_scope(self):
+        from hg.brain.planner import PlanRejected
+        inside = self.base.replace("http://", "http://user:pw@") + "page"
+        with self.assertRaisesRegex(PlanRejected, "credentials"):
+            self.plan({"operations": [{"op": "fetch", "url": inside}]}, self.url_task())
 
     def test_invalid_urls_rejected_at_planning(self):
         from hg.brain.planner import PlanRejected

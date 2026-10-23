@@ -57,6 +57,9 @@ python -m unittest discover -s .claude/hooks -p "test_*.py" -v
 python -m hg selfcheck                      # end-to-end runtime check in a temp dir
 python -m hg status --workdir DIR           # read-only state from a runtime's ledgers
 python -m hg authority-check                # live read of the trust root on main (RT-06)
+python -m hg bench                          # fixed benchmark; fails on unauthorized effects / false closures
+python -m hg learn --workdir DIR            # failures in a runtime's ledgers -> lessons + proposed cases
+python -m hg health --workdir DIR [--trust] # health report from a runtime's ledgers
 ```
 
 CI runs all three suites on every push and pull request (`.github/workflows/maep-tests.yml`).
@@ -74,12 +77,13 @@ End each task with: objective, scope, changes (commit SHAs), tests run (command,
 - Owner standing delegation (MAEP-1.1.0) is DESIGN: recorded policy that guides agents.
 - RT-06 trust anchor: `build_runtime(authority=CanonicalManifest.from_github())` makes every runtime decision also require a live grant in `maep/authority/owner-grants.json` on `main`, read at a resolved commit; without it the runtime refuses to start unless `allow_fixture_grants=True` (tests, self-check). Adapters act only with a gateway permit. ENFORCED on the HG runtime path, application level. The manifest exists on `main` since 2026-10-23 (PR #8: principal STT, all MAEP actions, scope `repo:OAI-GIANG/HG` and `file:out/`, expires 2027-01-21) and is loaded live by `python -m hg authority-check`. Agents still share the owner's GitHub identity, so `main` does not distinguish owner from agent (finding T-1). See `maep/spec/RT06_VALIDATION_RECORD_V1.md`.
 - Agent guard also blocks writes to `maep/authority/owner-grants.json` (owner-only trust file).
+- Intelligence layer (MIID Phase D, C-12..C-21): model router (Claude optional, local model, offline mode), planner with validate-and-revise and manifest-issued per-task grants (`build_runtime(issue_task_grants=True)`), layered memory, context builder, research synthesis, rubric options, code tools (`code.search`, `code.symbols`, `code.diff`, `test.run`, `url.read`), learning loop, benchmark (CI step), health. No live model is configured (no API key, no local model): model planning is BLOCKED_EXTERNAL; the structured planner works offline. See `docs/architecture/MIID_PHASE_D_RECORD_V1.md`.
 - Audit and capability matrix: `docs/architecture/MIID_AUDIT_AND_CAPABILITY_MATRIX_V1.md`.
 - Plan: `docs/architecture/RUNTIME_ENFORCEMENT_PLAN_V1.md`.
 
 ## Automated checks
 
-- In place: CI workflow running the MAEP, HG runtime and guard suites plus `python -m hg selfcheck` on every push and pull request.
+- In place: CI workflow running the MAEP, HG runtime and guard suites, `python -m hg selfcheck` and `python -m hg bench` on every push and pull request.
 - In place: GitHub ruleset `main-maep` (id 25706034) on the default branch: no deletion, no force push, changes only through a pull request (0 approvals), and `unittest (3.13)` and `unittest (3.14)` must pass. Bypass list empty. Owner-created on 2026-10-23 after the repository was made public.
 - Proposed:
   - A test asserting every rule MAEP-001..028 is mapped in `maep/spec/MAEP_CONFORMANCE_TEST_CATALOGUE_V1.md`.

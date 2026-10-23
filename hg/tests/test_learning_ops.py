@@ -83,6 +83,12 @@ class RegressionCaseTests(TempDirMixin):
             with self.assertRaises(MAEPError):
                 load_cases(path)
 
+    def test_unexpected_effect_is_reported(self):
+        case = dict(load_cases()[0], expect={"no_effect": True})          # granted write, but declared effect-free
+        result = run_case(case, Path(self.tmp) / "e")
+        self.assertFalse(result["passed"])
+        self.assertIn("1 effect(s) started where none was allowed", result["mismatches"])
+
     def test_mismatch_is_reported(self):
         case = dict(load_cases()[0], grants="none")                       # expects CLOSED but has no grant
         result = run_case(case, Path(self.tmp) / "c")

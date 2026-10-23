@@ -57,6 +57,12 @@ Run: `python -m unittest discover -s maep/tests -v`. Test names are stable ancho
 | T-049 | hg/tests/test_bypass | MAEP-005, 017, 023 | direct adapter calls, forged/reused/other-resource permits and unanchored runtimes cause no effect |
 | T-050 | .claude/hooks/test_maep_guard.py OwnerGrantsFileTests | MAEP-017 | agent shell and edit-tool writes to owner-grants.json blocked |
 
+| T-051 | hg/tests/test_providers.py | MAEP-005, 014 | provider errors classified; non-retryable not retried; offline mode never calls remote providers; no prompt text or key in ledgers |
+| T-052 | hg/tests/test_planner.py, maep/tests/test_issuer.py | MAEP-003, 004, 005, 009, 014, 017 | planners cannot choose resource/action/authorization; invalid plans revised at most 3 times then rejected with no effect; per-task grants issued only when the owner manifest permits every step |
+| T-053 | hg/tests/test_memory.py | MAEP-009, 010, 015, 019 | FACT needs evidence; contradictions refused unless superseded; history preserved; tampering reported on restore; memory never grants authority; constraints never dropped from context |
+| T-054 | hg/tests/test_tools_research.py | MAEP-003, 005, 009, 018, 020 | code/URL tools only through the gateway; EXECUTE needs an EXECUTE grant; interrupted test runs stay UNKNOWN; research claims cite sources; fake citations discarded |
+| T-055 | hg/tests/test_learning_ops.py | MAEP-008, 014, 015, 024 | recurring failures become lessons and guard cases; benchmark fails on unauthorized effects, false closures, failed cases or regressions; health flags pending actions and corrupt ledgers |
+
 ## Test layers and limits
 - Unit tests: executable local invariants in `core.py`.
 - Schema-file tests: JSON syntax, dialect marker, required/property declaration only.

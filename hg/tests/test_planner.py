@@ -72,6 +72,11 @@ class ModelPlannerTests(TempDirMixin):
         self.assertEqual((steps[0]["resource"], steps[0]["action"], steps[0]["authorization_id"]),
                          ("file:out/hello.txt", "WRITE", "T-1/S-1"))
 
+    def test_resource_smuggled_into_params_is_rejected(self):
+        bad = {"steps": [{"tool": "fs.write", "params": {"path": "out/a.txt", "content": "x", "resource": "file:/etc"}}]}
+        with self.assertRaisesRegex(PlanRejected, "invalid params"):
+            ModelPlanner(router(bad, bad, bad)).plan(self.task, "x", self.rt.gateway)
+
     def test_rejected_plan_is_revised_with_the_problems(self):
         bad = {"steps": [{"tool": "fs.write", "params": {"path": "docs/x.txt", "content": "x"}}]}
         scripted = ScriptedProvider("scripted", [bad, {"steps": [WRITE]}])
