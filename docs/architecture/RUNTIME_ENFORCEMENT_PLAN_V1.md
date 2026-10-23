@@ -1,6 +1,6 @@
 # Runtime Enforcement Plan V1
 
-- Status: **DESIGN — NOT IMPLEMENTED**
+- Status: **DESIGN — RT-01 IMPLEMENTED and UNIT_TESTED (2026-10-23); RT-02..RT-06 not implemented; RT-07 CI in place**
 - Base: MAEP-1.0.0 at `f7f00a75c6a1b1363993c2fb9bc023171f080038` plus the Phase 2 fixes on the same branch as this file.
 - Inputs: `HG_ARCHITECTURE_V1.md`, `BRAIN_ORCHESTRATOR_CONTRACT_V1.md`, `MAEP_INTEGRATION_DESIGN_V1.md`, `DATA_FLOW_TRUST_BOUNDARY_V1.md`.
 - Not available: `BRAIN_ORCHESTRATOR_MASTER_PLAN_V1.md` was never committed to any accessible ref; nothing here depends on it.
@@ -18,14 +18,14 @@ Consequence: every MAEP guard is currently advisory. `transition()` accepts guar
 | Task contract | 001-002 | `validate_task` | none | IMPLEMENTED, UNIT_TESTED |
 | Action authorization | 003-005, 019 | `PolicyEvaluator.evaluate` over `authorize_action` | none | IMPLEMENTED, UNIT_TESTED; BLOCKED_FOR_TRUST_INTEGRATION |
 | Sole coordinator | 006 | none | none | MISSING |
-| State transitions | 007, 026 | `transition`, `validate_linked_task` | none | IMPLEMENTED, UNIT_TESTED; guards caller-supplied |
+| State transitions | 007, 026 | `transition`, `validate_linked_task`; `TaskStore.apply_transition` derives guards from stored facts (RT-01) | none | IMPLEMENTED, UNIT_TESTED; no runtime caller yet |
 | Acceptance/closure | 008, 013 | `evaluate_gate`, `validate_closure` | none | IMPLEMENTED, UNIT_TESTED |
 | Evidence binding | 010-012 | `validate_evidence`, `assess_candidate_change` | none | IMPLEMENTED, UNIT_TESTED |
 | Retry/recovery | 014, 018 | `retry_decision`, `recovery_decision` | none | IMPLEMENTED, UNIT_TESTED |
 | Event history | 015 | `ledger.append_event` | none | IMPLEMENTED, UNIT_TESTED; single writer, not tamper-proof |
 | Read-only mode | 023 | `enforce_execution_mode` | none | IMPLEMENTED, UNIT_TESTED |
 
-No row is ENFORCED or INTEGRATION_TESTED.
+No row is ENFORCED or INTEGRATION_TESTED. Agent-side, the PreToolUse guard hook (`.claude/hooks/maep_guard.py`) blocks destructive git operations and writes to the delegation file in Claude Code sessions; see `maep/spec/RT01_VALIDATION_RECORD_V1.md`.
 
 ## 3. Target components
 

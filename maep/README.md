@@ -9,6 +9,7 @@ MAEP is a cross-cutting governance layer for task intake, authority, state trans
 - `core.py`: fail-closed governance primitives implemented with Python standard library.
 - `policy.py`: `PolicyEvaluator`, which takes grants and condition facts from sources fixed at construction instead of from the request. It is not a trust root.
 - `ledger.py`: single-writer append-only JSONL event/evidence ledger (not tamper-proof against privileged filesystem edits).
+- `task_store.py`: `TaskStore`, the task-state owner (RT-01). It derives every transition guard from facts it recorded, writes the ledger before memory, and rejects stale `expected_version`. In-process only; no restart recovery yet (RT-05).
 - `tests/`: standard-library conformance tests.
 - `spec/MAEP_CONFORMANCE_TEST_CATALOGUE_V1.md`: rule-to-test catalogue.
 - `spec/ACCEPTANCE_CHECKLIST_V1.md`: implementation and integration acceptance status.

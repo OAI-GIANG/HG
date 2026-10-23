@@ -41,6 +41,8 @@ Run: `python -m unittest discover -s maep/tests -v`. Test names are stable ancho
 | T-035 | ClosureInputValidationTests | MAEP-008, 013 | closure rejects non-list or non-string limitations, empty/naive/unparseable closed_at, and malformed criteria/evidence with MAEPError |
 | T-036 | RetryDecisionTypeTests | MAEP-014 | bool, float, string and negative attempt counts and non-bool stop flags rejected |
 | T-037 | test_policy_evaluator (all classes) | MAEP-003, 004, 005, 017, 019 | authority only from the evaluator's grant store and condition provider; caller-asserted decision/conditions/flags, expired, not-yet-valid, non-expiring (default), unknown and mismatched requests denied; invalid policy rejected at construction |
+| T-038 | test_task_store (all classes) | MAEP-003, 007, 012, 015, 025, 026 | RT-01: no caller-supplied guards; RUNNING->VERIFYING denied without result; stale or bool expected_version rejected; ledger failure leaves state unchanged; authority re-evaluated at AUTHORIZED, RUNNING and reopening; evidence bound to the current candidate; BLOCKED needs a blocker, reopening needs a fresh reassessment; terminal tasks frozen |
+| T-039 | .claude/hooks/test_maep_guard.py | MAEP-005, 015, 016, 017, 027 | force/mirror/all/prune pushes, direct pushes to main, deleting or lease-forcing main and recovery/*, hard reset with changes, clean with files, rm -r of .git, and delegation-file writes are blocked; unparseable risky input fails closed |
 
 ## Test layers and limits
 - Unit tests: executable local invariants in `core.py`.
