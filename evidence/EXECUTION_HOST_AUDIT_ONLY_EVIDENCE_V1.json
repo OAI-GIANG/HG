@@ -16,14 +16,14 @@
       "id": "EH-AUDIT-UNIT",
       "command": "PYTHONDONTWRITEBYTECODE=1 python -m unittest hg.tests.test_execution_host maep.tests.test_policy_controls hg.tests.test_gateway",
       "result": "PASS",
-      "tests": 55,
+      "tests": 56,
       "exit_code": 0
     },
     {
       "id": "EH-AUDIT-FULL",
       "command": "PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -q",
       "result": "PASS",
-      "tests": 450,
+      "tests": 451,
       "exit_code": 0
     },
     {
@@ -39,8 +39,8 @@
       "bytes": 22862
     },
     "hg/runtime.py": {
-      "sha256": "3f98fe08d785b9a1a8a2eacad252db948e8f0bba9f00b21a540a8920c38b835d",
-      "bytes": 5729
+      "sha256": "cc492733e3d19a37510c0b5880a6140977ddaccd2fa82370ba3f13f830bda207",
+      "bytes": 5830
     },
     "hg/tools/gateway.py": {
       "sha256": "86ec727ba92a9264edaaad65538b8d03bbc72e7eaaaaa4b6123f5b817b9e6b45",
@@ -51,12 +51,12 @@
       "bytes": 4049
     },
     "hg/tests/test_execution_host.py": {
-      "sha256": "1c9c5b407cb0141f391358e5f3c164153b594ab94ca849032dca1568d359615d",
-      "bytes": 5938
+      "sha256": "9d8b2757f3fb6bfe05ab28f5df20224eb52ae74b320c83018299bc5b06d16f1d",
+      "bytes": 6538
     },
     "docs/architecture/EXECUTION_HOST_AUDIT_ONLY_V1.md": {
-      "sha256": "364b845e0431a6196788958e73e1f926c7824230f9b197276903c77de984d407",
-      "bytes": 4294
+      "sha256": "7a050dcc3d77d1527e35190c7def55dec0c3157a2434a40447e08980ca313be9",
+      "bytes": 4335
     }
   },
   "security_state": {
@@ -77,8 +77,8 @@
     "The canonical main owner-grants manifest currently does not grant a distinct HG_AUDIT principal; production audit mode must fail closed until an owner-authorized trust-root change is merged.",
     "No production files, running services, RDC configuration, permissions, principal configuration, or PIDs were changed."
   ],
-  "candidate_commit": "6e274ea5cdfd10635bbd5b93ec4a132bad5d594b",
-  "tested_candidate_commit": "6e274ea5cdfd10635bbd5b93ec4a132bad5d594b",
+  "candidate_commit": "51eb1cefb7d94312f7711d560423347889c4e9ce",
+  "tested_candidate_commit": "51eb1cefb7d94312f7711d560423347889c4e9ce",
   "integrity_check": {
     "result": "PASS",
     "method": "SHA-256 recomputation of every listed source/test/doc file",
