@@ -9,7 +9,7 @@ Run: `python -m unittest discover -s maep/tests -v`. Test names are stable ancho
 | T-003 | AuthorizationTests.test_exact_authorization_allowed | MAEP-003, 004 | exact authorized action accepted |
 | T-004 | AuthorizationTests.test_wrong_resource_denied / test_scope_escalation_denied | MAEP-004 | mismatched resource/scope denied |
 | T-005 | AuthorizationTests.test_untrusted_allow_not_enough / test_expired_grant_denied | MAEP-005 | missing trusted allow or expired grant denied |
-| T-006 | Integration test pending | MAEP-006 | BrainOrchestrator sole task-state owner; runtime not present yet |
+| T-006 | test_task_store_restore WriterClaimTests; hg/tests/test_orchestrator.py SoleCoordinatorTests | MAEP-006 | second writer claim and second orchestrator refused; every store mutation without the claimed writer refused |
 | T-007 | TransitionTests.test_valid_transition / test_forbidden_shortcut_rejected | MAEP-007 | valid edge accepted, shortcut rejected |
 | T-008 | GateAndClosureTests.test_valid_closure / test_closure_missing_gate_rejected | MAEP-008, 013 | only complete evidence/gates permit closure |
 | T-009 | ReportingAndRetryTests.test_not_run_cannot_be_reported_pass | MAEP-009, 024 | NOT_RUN cannot be promoted to PASS |
@@ -44,9 +44,17 @@ Run: `python -m unittest discover -s maep/tests -v`. Test names are stable ancho
 | T-038 | test_task_store (all classes) | MAEP-003, 007, 012, 015, 025, 026 | RT-01: no caller-supplied guards; RUNNING->VERIFYING denied without result; stale or bool expected_version rejected; ledger failure leaves state unchanged; authority re-evaluated at AUTHORIZED, RUNNING and reopening; evidence bound to the current candidate; BLOCKED needs a blocker, reopening needs a fresh reassessment; terminal tasks frozen |
 | T-039 | .claude/hooks/test_maep_guard.py | MAEP-005, 015, 016, 017, 027 | force/mirror/all/prune pushes, direct pushes to main, deleting or lease-forcing main and recovery/*, hard reset with changes, clean with files, rm -r of .git, and delegation-file writes are blocked; unparseable risky input fails closed |
 
+| T-040 | test_task_store_restore RestoreTests | MAEP-012, 015, 018, 026 | RT-05: restore reproduces every record field; inconsistent versions, event IDs, start states, policy versions and event types fail closed; authority re-evaluated after restart |
+| T-041 | hg/tests/test_gateway.py DeniedEffectTests | MAEP-003, 005, 019, 023 | no effect after expiry, in READ_ONLY, on planned/real effect or scope mismatch, unknown tool or task, unplanned step, or failed evidence capture |
+| T-042 | hg/tests/test_gateway.py ReconcileBeforeRetryTests; test_orchestrator.py RecoveryTests | MAEP-018, 025 | UNKNOWN outcome blocks further effects, survives restart, is reconciled against live state, never replayed; reopening needs fresh authority and a risk assessment |
+| T-043 | hg/tests/test_acceptance.py; test_orchestrator.py NoFalseClosureTests | MAEP-008, 011, 013, 015, 024 | NOT_RUN, FAIL, wrong-candidate, unlinked or other-task evidence never closes a task; failures preserved |
+| T-044 | hg/tests/test_orchestrator.py AuthorityTests, RetryLimitTests | MAEP-003, 005, 014 | a plan with any unauthorized step never starts; known failures retried at most three times |
+| T-045 | hg/tests/test_cli.py | MAEP-006, 008, 023 | `python -m hg selfcheck` in a fresh process: authorized task closes, ungranted task never executes, READ_ONLY blocks; `status` writes nothing |
+
 ## Test layers and limits
 - Unit tests: executable local invariants in `core.py`.
 - Schema-file tests: JSON syntax, dialect marker, required/property declaration only.
 - NOT RUN: full JSON Schema Draft 2020-12 meta-schema validation because no standards-complete validator is available in the checked Termux environment.
-- NOT RUN: BrainOrchestrator end-to-end integration, persistent append-only storage, runtime tool adapters, Android crash recovery, GitHub permissions, deploy/migration integration.
+- RUN (in-process): BrainOrchestrator integration, local-filesystem tool adapters, ledger-based restart recovery — `python -m unittest discover -s hg/tests -t . -v`.
+- NOT RUN: production deployment, OS-level isolation, trust-root-anchored grants (RT-06), Android crash recovery, GitHub permissions, deploy/migration integration.
 - Internal review only; no independent review is claimed.

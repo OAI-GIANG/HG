@@ -52,27 +52,32 @@ Do not say something was read, changed, run or verified without the evidence for
 
 ```sh
 python -m unittest discover -s maep/tests -v
+python -m unittest discover -s hg/tests -t . -v
 python -m unittest discover -s .claude/hooks -p "test_*.py" -v
+python -m hg selfcheck                      # end-to-end runtime check in a temp dir
+python -m hg status --workdir DIR           # read-only state from a runtime's ledgers
 ```
 
-CI runs both on every push and pull request (`.github/workflows/maep-tests.yml`).
+CI runs all three suites on every push and pull request (`.github/workflows/maep-tests.yml`).
 
 ## Reporting
 
 End each task with: objective, scope, changes (commit SHAs), tests run (command, exit code, counts), evidence, BLOCKED/UNVERIFIED items, risks, checkpoint, next action.
 
-## Enforcement status (at the time of this draft)
+## Enforcement status (updated 2026-10-23)
 
-- No HG runtime, BrainOrchestrator or tool adapter exists, and no MAEP primitive is called from a runtime path. Nothing is ENFORCED system-wide.
-- `maep/core.py`, `maep/policy.py`, `maep/ledger.py` and `maep/task_store.py` (RT-01) are IMPLEMENTED and UNIT_TESTED. Task state changes go through `TaskStore.apply_transition`, which derives guards itself; nothing calls it from a runtime yet.
+- An in-process HG runtime exists (`hg/`, assembled by `hg/runtime.py`): BrainOrchestrator claims the TaskStore's only writer; ActionGateway re-checks policy, execution mode, planned-vs-real effect and adapter scope before every effect; AcceptanceGate computes gates and closure that the TaskStore re-validates; unreconciled actions survive restart and block further effects (RT-02..RT-05).
+- These boundaries are ENFORCED **on the HG runtime path only**, shown by negative tests through them, and INTEGRATION_TESTED in-process. Nothing is ENFORCED system-wide: code that bypasses `hg/`, or reaches private attributes in the same process, is not stopped. No production deployment exists.
+- `maep/core.py`, `maep/policy.py`, `maep/ledger.py` and `maep/task_store.py` are IMPLEMENTED and UNIT_TESTED, and now called from the runtime path. `TaskStore` gained `restore` (RT-05), `claim_writer` (MAEP-006) and `record_plan`.
 - Agent guard: `.claude/settings.json` runs `.claude/hooks/maep_guard.py` before Bash and edit tools. It blocks force/mirror/prune pushes, direct pushes to `main`, deleting or force-pushing `main` and `recovery/*`, `git reset --hard` with changes, `git clean -f` with files, `rm -r` of `.git`, and writes to the delegation file. It is a best-effort parser (blind to `$(...)`, `eval`, interpreter one-liners) and an agent that edits it can disable it; weakening it is a policy change (MAEP-017, 028).
-- Owner standing delegation (MAEP-1.1.0) is DESIGN: recorded policy that guides agents; no runtime boundary enforces its conditions.
+- Owner standing delegation (MAEP-1.1.0) is DESIGN: recorded policy that guides agents; runtime grants are not loaded from the trust root yet (RT-06 BLOCKED on the owner's choice of anchor).
+- Audit and capability matrix: `docs/architecture/MIID_AUDIT_AND_CAPABILITY_MATRIX_V1.md`.
 - Plan: `docs/architecture/RUNTIME_ENFORCEMENT_PLAN_V1.md`.
 
 ## Automated checks
 
-- In place: CI workflow running both suites on every push and pull request.
+- In place: CI workflow running the MAEP, HG runtime and guard suites plus `python -m hg selfcheck` on every push and pull request.
 - Proposed:
   - Branch protection on `main` requiring that CI check (repository setting).
   - A test asserting every rule MAEP-001..028 is mapped in `maep/spec/MAEP_CONFORMANCE_TEST_CATALOGUE_V1.md`.
-  - Once a runtime exists: a test failing if task state is mutated outside the task-state owner, and one failing if a side-effecting adapter runs without a PolicyEvaluator decision.
+- Done (runtime path): a test fails if task state is mutated without the claimed writer (`maep/tests/test_task_store_restore.py`, `hg/tests/test_orchestrator.py`), and if a side effect runs without a PolicyEvaluator ALLOW (`hg/tests/test_gateway.py`).
