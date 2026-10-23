@@ -62,3 +62,5 @@ RT-01 to RT-05 are in-process integration tests. They would justify INTEGRATION_
 - **Q-4 Guard names.** `state-transition.schema.json` leaves `guard_id` free-form. New names used: `result_recorded`, `candidate_ref`, `blocker_resolution_evidence_refs`, `authority_reassessed`, `risk_reassessed`.
 - **Q-5 Trust root.** Options: (a) grants file changed only through owner-reviewed PRs to a protected branch; (b) owner-signed grants (needs key management); (c) an external identity provider. Each has different tooling and recovery costs.
 - **Q-6 Version.** The Phase 2 changes align code with existing spec text and keep `POLICY_VERSION = "MAEP-1.0.0"`. Removing `transition(new_task=...)` is an API change; decide whether MAEP-028 calls for a new version.
+
+**Resolution (2026-10-23, MAEP-1.1.0):** Q-1 to Q-4 accepted as implemented; Q-5 trust root is the owner `OAI-GIANG`; Q-6 `POLICY_VERSION` raised to `MAEP-1.1.0`. RT-06 now depends on choosing a machine-verifiable anchor for that trust root. Details and who decided each item: `maep/spec/MAEP_OWNER_DELEGATION_V1.md` §4.

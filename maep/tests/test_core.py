@@ -12,7 +12,7 @@ def valid_task():
         "inputs": [], "outputs": [{"name": "report", "description": "result"}],
         "acceptance_criteria": [{"criterion_id": "AC-1", "description": "accurate", "mandatory": True, "evidence_types": ["TEST_RESULT"]}],
         "evidence_requirements": ["test output"], "risks": [], "stop_conditions": ["scope exceeded"],
-        "next_action": "verify", "state": "READY", "policy_version": "MAEP-1.0.0"
+        "next_action": "verify", "state": "READY", "policy_version": "MAEP-1.1.0"
     }
 
 
@@ -28,7 +28,7 @@ def valid_grant():
     return {
         "authorization_id": "AUTH-1", "principal": "owner", "action": "WRITE",
         "resource": "repo:HG/maep", "scope": ["maep/"], "conditions": [],
-        "task_id": "T-1", "policy_version": "MAEP-1.0.0", "decision": "ALLOW",
+        "task_id": "T-1", "policy_version": "MAEP-1.1.0", "decision": "ALLOW",
         "issued_at": "2026-10-22T09:00:00+00:00", "expires_at": "2026-10-23T09:00:00+00:00"
     }
 
@@ -74,7 +74,7 @@ class EvidenceTests(unittest.TestCase):
 class AuthorizationTests(unittest.TestCase):
     def setUp(self):
         self.request = {"principal": "owner", "action": "WRITE", "resource": "repo:HG/maep",
-                        "scope": ["maep/"], "task_id": "T-1", "policy_version": "MAEP-1.0.0"}
+                        "scope": ["maep/"], "task_id": "T-1", "policy_version": "MAEP-1.1.0"}
         self.now = datetime(2026, 10, 22, 10, tzinfo=timezone.utc)
 
     def test_exact_authorization_allowed(self):
@@ -165,55 +165,55 @@ class GateAndClosureTests(unittest.TestCase):
         ev = valid_evidence()
         gate = {"required": True, "status": "PASS", "evidence_refs": ["E-1"], "not_applicable_reason": ""}
         closure = {
-            "final_state": "CLOSED_VERIFIED", "candidate_ref": "abc123", "policy_version": "MAEP-1.0.0",
+            "final_state": "CLOSED_VERIFIED", "candidate_ref": "abc123", "policy_version": "MAEP-1.1.0",
             "criteria_results": [{"criterion_id": "AC-1", "status": "PASS", "evidence_refs": ["E-1"]}],
             "evidence_refs": ["E-1"], "limitations": [], "closed_at": "2026-10-22T10:00:00Z"
         }
         self.assertTrue(validate_closure(closure, mandatory_gates=[gate], evidence_by_id={"E-1": ev},
-                                         candidate_ref="abc123", policy_version="MAEP-1.0.0"))
+                                         candidate_ref="abc123", policy_version="MAEP-1.1.0"))
 
     def test_closure_candidate_mismatch_rejected(self):
-        closure = {"final_state": "CLOSED_VERIFIED", "candidate_ref": "old", "policy_version": "MAEP-1.0.0"}
+        closure = {"final_state": "CLOSED_VERIFIED", "candidate_ref": "old", "policy_version": "MAEP-1.1.0"}
         with self.assertRaises(MAEPError):
             validate_closure(closure, mandatory_gates=[], evidence_by_id={},
-                             candidate_ref="new", policy_version="MAEP-1.0.0")
+                             candidate_ref="new", policy_version="MAEP-1.1.0")
 
     def test_closure_rejects_wrong_candidate_evidence(self):
         ev = valid_evidence()
         ev["candidate_ref"] = "different-candidate"
         closure = {
-            "final_state": "CLOSED_VERIFIED", "candidate_ref": "abc123", "policy_version": "MAEP-1.0.0",
+            "final_state": "CLOSED_VERIFIED", "candidate_ref": "abc123", "policy_version": "MAEP-1.1.0",
             "criteria_results": [{"criterion_id": "AC-1", "status": "PASS", "evidence_refs": ["E-1"]}],
             "evidence_refs": ["E-1"], "limitations": [], "closed_at": "2026-10-22T10:00:00Z"
         }
         gate = {"required": True, "status": "PASS", "evidence_refs": ["E-1"]}
         with self.assertRaises(MAEPError):
             validate_closure(closure, mandatory_gates=[gate], evidence_by_id={"E-1": ev},
-                             candidate_ref="abc123", policy_version="MAEP-1.0.0")
+                             candidate_ref="abc123", policy_version="MAEP-1.1.0")
 
     def test_closure_requires_evidence_per_criterion(self):
         ev = valid_evidence()
         closure = {
-            "final_state": "CLOSED_VERIFIED", "candidate_ref": "abc123", "policy_version": "MAEP-1.0.0",
+            "final_state": "CLOSED_VERIFIED", "candidate_ref": "abc123", "policy_version": "MAEP-1.1.0",
             "criteria_results": [{"criterion_id": "AC-1", "status": "PASS", "evidence_refs": []}],
             "evidence_refs": ["E-1"], "limitations": [], "closed_at": "2026-10-22T10:00:00Z"
         }
         gate = {"required": True, "status": "PASS", "evidence_refs": ["E-1"]}
         with self.assertRaises(MAEPError):
             validate_closure(closure, mandatory_gates=[gate], evidence_by_id={"E-1": ev},
-                             candidate_ref="abc123", policy_version="MAEP-1.0.0")
+                             candidate_ref="abc123", policy_version="MAEP-1.1.0")
 
     def test_closure_missing_gate_rejected(self):
         ev = valid_evidence()
         closure = {
-            "final_state": "CLOSED_VERIFIED", "candidate_ref": "abc123", "policy_version": "MAEP-1.0.0",
+            "final_state": "CLOSED_VERIFIED", "candidate_ref": "abc123", "policy_version": "MAEP-1.1.0",
             "criteria_results": [{"criterion_id": "AC-1", "status": "PASS", "evidence_refs": ["E-1"]}],
             "evidence_refs": ["E-1"], "limitations": [], "closed_at": "2026-10-22T10:00:00Z"
         }
         gate = {"required": True, "status": "NOT_RUN", "evidence_refs": []}
         with self.assertRaises(MAEPError):
             validate_closure(closure, mandatory_gates=[gate], evidence_by_id={"E-1": ev},
-                             candidate_ref="abc123", policy_version="MAEP-1.0.0")
+                             candidate_ref="abc123", policy_version="MAEP-1.1.0")
 
 
 if __name__ == "__main__":

@@ -11,7 +11,7 @@ def grant(**overrides):
     record = {
         "authorization_id": "AUTH-1", "principal": "owner", "action": "WRITE",
         "resource": "repo:HG/maep", "scope": ["maep/"], "conditions": ["owner-approved"],
-        "task_id": "T-1", "policy_version": "MAEP-1.0.0", "decision": "ALLOW",
+        "task_id": "T-1", "policy_version": "MAEP-1.1.0", "decision": "ALLOW",
         "issued_at": "2026-10-22T09:00:00+00:00", "expires_at": "2026-10-23T09:00:00+00:00"
     }
     record.update(overrides)
@@ -21,7 +21,7 @@ def grant(**overrides):
 def request(**overrides):
     record = {"authorization_id": "AUTH-1", "principal": "owner", "action": "WRITE",
               "resource": "repo:HG/maep", "scope": ["maep/"], "task_id": "T-1",
-              "policy_version": "MAEP-1.0.0"}
+              "policy_version": "MAEP-1.1.0"}
     record.update(overrides)
     return record
 
@@ -35,7 +35,7 @@ class AllowTests(unittest.TestCase):
         decision = PolicyEvaluator([grant()], facts("owner-approved")).evaluate(request(), now=NOW)
         self.assertEqual(decision["decision"], "ALLOW")
         self.assertEqual(decision["authorization_id"], "AUTH-1")
-        self.assertEqual(decision["policy_version"], "MAEP-1.0.0")
+        self.assertEqual(decision["policy_version"], "MAEP-1.1.0")
         self.assertEqual(decision["evaluated_at"], NOW.isoformat())
 
     def test_non_expiring_grant_allowed_only_when_configured(self):

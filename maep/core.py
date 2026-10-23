@@ -5,7 +5,7 @@ principals. Callers must supply a trusted policy decision and authenticated iden
 """
 from datetime import datetime, timezone
 
-POLICY_VERSION = "MAEP-1.0.0"
+POLICY_VERSION = "MAEP-1.1.0"
 STATES = {
     "DRAFT", "READY", "ASSESSED", "PLANNED", "AUTHORIZED", "RUNNING",
     "VERIFYING", "ACCEPTED", "CLOSED_VERIFIED", "BLOCKED", "FAILED",

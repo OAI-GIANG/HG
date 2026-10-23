@@ -1,6 +1,6 @@
 # MAEP — HG Operating Governance
 
-Policy version: MAEP-1.0.0. Status: implemented and locally tested foundation; runtime integration remains deferred.
+Policy version: MAEP-1.1.0 (supersedes MAEP-1.0.0; see `spec/MAEP_OWNER_DELEGATION_V1.md`). Status: implemented and locally tested foundation; runtime integration remains deferred.
 
 MAEP is a cross-cutting governance layer for task intake, authority, state transitions, evidence, acceptance, recovery and closure. It is not a sixth HG domain. BrainOrchestrator remains the sole task coordinator.
 

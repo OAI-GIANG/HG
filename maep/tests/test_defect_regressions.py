@@ -14,7 +14,7 @@ def evidence():
 
 def closure(**overrides):
     record = {
-        "final_state": "CLOSED_VERIFIED", "candidate_ref": "abc123", "policy_version": "MAEP-1.0.0",
+        "final_state": "CLOSED_VERIFIED", "candidate_ref": "abc123", "policy_version": "MAEP-1.1.0",
         "criteria_results": [{"criterion_id": "AC-1", "status": "PASS", "evidence_refs": ["E-1"]}],
         "evidence_refs": ["E-1"], "limitations": [], "closed_at": "2026-10-22T10:00:00Z"
     }
@@ -26,7 +26,7 @@ def close(record, evidence_by_id=None):
     gate = {"required": True, "status": "PASS", "evidence_refs": ["E-1"]}
     return validate_closure(record, mandatory_gates=[gate],
                             evidence_by_id={"E-1": evidence()} if evidence_by_id is None else evidence_by_id,
-                            candidate_ref="abc123", policy_version="MAEP-1.0.0")
+                            candidate_ref="abc123", policy_version="MAEP-1.1.0")
 
 
 def draft_task(task_id="T-2", predecessor="T-1", state="DRAFT"):

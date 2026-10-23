@@ -1,5 +1,5 @@
 # MAEP Constitution V1
-Policy: MAEP-1.0.0. Status: normative V1 draft pending test evidence.
+Policy: MAEP-1.1.0 (supersedes MAEP-1.0.0). Status: normative V1 draft pending test evidence.
 
 ## Priority
 1. Platform safety and law.
@@ -44,3 +44,7 @@ An exception records rule ID, reason, scope, authorizer, expiry/completion condi
 
 ## Boundary
 MAEP is cross-cutting, not a sixth functional domain. The five domains remain HG Brain, Memory & Knowledge, Creativity & Research, Tools & Automation, Security & Verification. No competing orchestrator is authorized.
+
+## Version history
+- MAEP-1.1.0 (2026-10-23): owner standing delegation and trust root (`MAEP_OWNER_DELEGATION_V1.md`); removal of `transition(new_task=...)`. Rules MAEP-001..028 unchanged.
+- MAEP-1.0.0 (2026-10-22): initial rule registry. Superseded by MAEP-1.1.0.
