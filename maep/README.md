@@ -7,6 +7,7 @@ MAEP is a cross-cutting governance layer for task intake, authority, state trans
 - `spec/`: constitution, execution protocol, authority, evidence/acceptance, evolution, threat model, state transitions, traceability, risks and ADRs.
 - `schemas/`: six JSON Schema Draft 2020-12 contract files.
 - `core.py`: fail-closed governance primitives implemented with Python standard library.
+- `policy.py`: `PolicyEvaluator`, which takes grants and condition facts from sources fixed at construction instead of from the request. It is not a trust root.
 - `ledger.py`: single-writer append-only JSONL event/evidence ledger (not tamper-proof against privileged filesystem edits).
 - `tests/`: standard-library conformance tests.
 - `spec/MAEP_CONFORMANCE_TEST_CATALOGUE_V1.md`: rule-to-test catalogue.

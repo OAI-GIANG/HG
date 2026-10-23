@@ -2,7 +2,7 @@ import unittest
 from datetime import datetime, timezone
 from maep.core import (
     MAEPError, authorize_action, evaluate_gate, transition,
-    validate_closure, validate_evidence, validate_task
+    validate_closure, validate_evidence, validate_linked_task, validate_task
 )
 
 
@@ -135,7 +135,8 @@ class TransitionTests(unittest.TestCase):
             transition("FAILED", "DRAFT")
 
     def test_new_linked_task_can_start(self):
-        self.assertEqual(transition("FAILED", "DRAFT", new_task=True), "DRAFT")
+        successor = {"task_id": "T-2", "state": "DRAFT", "inputs": [{"ref_id": "T-1", "kind": "TASK"}]}
+        self.assertTrue(validate_linked_task({"task_id": "T-1", "state": "FAILED"}, successor))
 
     def test_acceptance_requires_gates(self):
         with self.assertRaises(MAEPError):

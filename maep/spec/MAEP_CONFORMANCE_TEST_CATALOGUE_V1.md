@@ -35,6 +35,12 @@ Run: `python -m unittest discover -s maep/tests -v`. Test names are stable ancho
 | T-029 | SchemaFileTests.test_all_six_contracts_exist_and_parse | all six contracts | all JSON documents parse and declare 2020-12 |
 | T-030 | SchemaFileTests.test_required_fields_are_declared | all six contracts | required fields exist in properties |
 | T-031 | ClaimClassificationTests | MAEP-009 | facts require evidence; inference/hypothesis/proposal disclose limitations |
+| T-032 | VerifyingEntryGuardTests | MAEP-007 | entering VERIFYING requires a recorded result and non-empty candidate_ref |
+| T-033 | BlockerReassessmentGuardTests | MAEP-007, 025 | BLOCKED -> ASSESSED requires resolution evidence refs and fresh authority and risk assessment |
+| T-034 | TerminalContinuationTests / TransitionTests.test_new_linked_task_can_start | MAEP-026 | no caller flag reopens a terminal task; continuation is a new DRAFT task with a TASK input reference to its predecessor |
+| T-035 | ClosureInputValidationTests | MAEP-008, 013 | closure rejects non-list or non-string limitations, empty/naive/unparseable closed_at, and malformed criteria/evidence with MAEPError |
+| T-036 | RetryDecisionTypeTests | MAEP-014 | bool, float, string and negative attempt counts and non-bool stop flags rejected |
+| T-037 | test_policy_evaluator (all classes) | MAEP-003, 004, 005, 017, 019 | authority only from the evaluator's grant store and condition provider; caller-asserted decision/conditions/flags, expired, not-yet-valid, non-expiring (default), unknown and mismatched requests denied; invalid policy rejected at construction |
 
 ## Test layers and limits
 - Unit tests: executable local invariants in `core.py`.
