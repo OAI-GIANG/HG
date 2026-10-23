@@ -17,6 +17,8 @@ import uuid
 
 from maep.core import MAEPError, _nonempty_string, retry_decision
 from hg.brain.plan import step_request, validate_plan
+from hg.brain.context import build_context
+from hg.brain.planner import PlanRejected
 
 COLLECTOR = "hg.security_verification"
 INTERNAL_LIMITATION = "in-process verifier; internal check, not independent review"
@@ -39,7 +41,7 @@ def _candidate_ref(outcomes):
 
 
 class BrainOrchestrator:
-    def __init__(self, store, gateway, acceptance_gate, *, principal, verifiers=None):
+    def __init__(self, store, gateway, acceptance_gate, *, principal, verifiers=None, issuer=None, memory=None):
         if not _nonempty_string(principal):
             raise MAEPError("orchestrator principal must be non-empty")
         verifiers = dict(verifiers or {})
@@ -51,6 +53,9 @@ class BrainOrchestrator:
         self._gate = acceptance_gate
         self._principal = principal
         self._verifiers = verifiers
+        self._issuer = issuer          # TaskGrantIssuer: per-task grants derived from the owner manifest
+        self._memory = memory          # MemoryStore: outcomes recorded as episodic memory
+        self._outcomes = {}            # task_id -> full step outcomes of the last run (in memory only)
 
     # ---------- helpers ----------
 
@@ -105,6 +110,14 @@ class BrainOrchestrator:
         The store holds one authorization request per task (the first step's); the
         gateway re-checks each step's own request immediately before its effect.
         """
+        if self._issuer is not None:
+            # Grants exist only if the live owner manifest permits every step (none otherwise).
+            grants, provenance = self._issuer.issue_for_plan(task_id, self._store.snapshot(task_id)["plan"])
+            self.record_observation(task_id, source_ref=f"owner-manifest:{provenance.get('commit')}",
+                                    method="TaskGrantIssuer.issue_for_plan",
+                                    result=f"ISSUED {len(grants)} grant(s) expiring "
+                                           f"{min(g['expires_at'] for g in grants)}",
+                                    limitations=["derived from the canonical manifest on main; re-checked at each effect"])
         denied = [p for p in self._gateway.preflight(task_id) if p["decision"]["decision"] != "ALLOW"]
         if denied:
             reasons = "; ".join(f"{p['step_id']}: {p['decision']['reason']}" for p in denied)
@@ -116,7 +129,7 @@ class BrainOrchestrator:
 
     def run(self, task_id):
         self._move(task_id, "RUNNING")
-        outcomes = []
+        outcomes, full = [], []
         for step in self._store.snapshot(task_id)["plan"]:
             attempts = 0
             while True:
@@ -125,6 +138,9 @@ class BrainOrchestrator:
                 # FAILED means a known failure with no effect, so a retry is not a blind replay.
                 if outcome["status"] != "FAILED" or retry_decision(attempts) == "STOP":
                     break
+            full.append({"step_id": step["step_id"], "tool": step["tool"], "status": outcome["status"],
+                         "observed": dict(outcome.get("observed") or {})})
+            self._outcomes[task_id] = full
             outcomes.append({"step_id": step["step_id"], "status": outcome["status"],
                              "reason": outcome["reason"], "attempts": attempts,
                              "action_id": outcome.get("action_id"),
@@ -166,7 +182,8 @@ class BrainOrchestrator:
             if verifier is None:
                 continue                      # gate stays NOT_RUN; never assumed PASS (MAEP-024)
             try:
-                passed, detail = verifier(self._store.snapshot(task_id))
+                passed, detail = verifier(dict(self._store.snapshot(task_id),
+                                               outcomes=list(self._outcomes.get(task_id, []))))
                 result = "PASS" if passed is True else "FAIL"
             except Exception as exc:
                 result, detail = "FAIL", f"verifier raised {type(exc).__name__}: {exc}"
@@ -187,12 +204,53 @@ class BrainOrchestrator:
         self._move(task_id, "CLOSED_VERIFIED")  # the store re-validates the closure itself
         return self._store.snapshot(task_id)["closure"]
 
+    def execute_goal(self, task, goal, planner, *, context=None):
+        """Plan a goal with `planner`, then authorize, run, verify and close as far as evidence allows.
+
+        A rejected plan leaves the task ASSESSED (the state table has no ASSESSED -> BLOCKED
+        edge) with the planner's problems preserved as evidence.
+        """
+        task_id = self.submit_task(task)
+        self.assess(task_id)
+        if context is None and self._memory is not None:
+            # C-15: constraints pinned, relevant memory fenced as data.
+            context = build_context(self._store.snapshot(task_id)["task"], memory=self._memory)["text"]
+        try:
+            steps = planner.plan(self._store.snapshot(task_id)["task"], goal, self._gateway, context=context)
+        except PlanRejected as exc:
+            self.record_observation(task_id, source_ref=f"planner:{planner.name}", method="check_plan",
+                                    result="PLAN_REJECTED: " + "; ".join(exc.problems)[:900],
+                                    limitations=["plan proposals are untrusted until validated"])
+            return self._finish_record(task_id)
+        except Exception as exc:     # provider unavailable, etc.: no plan, no effect
+            self.record_observation(task_id, source_ref=f"planner:{planner.name}", method="plan",
+                                    result=f"PLANNER_UNAVAILABLE: {type(exc).__name__}: {exc}"[:900],
+                                    limitations=["no plan was produced"])
+            return self._finish_record(task_id)
+        trace = getattr(planner, "last_trace", [])
+        self.record_observation(task_id, source_ref=f"planner:{planner.name}", method="check_plan",
+                                result=f"PLAN_ACCEPTED: {len(steps)} step(s) after {len(trace) or 1} attempt(s)",
+                                limitations=["a plan is a proposal; authorization is checked separately"])
+        self.plan(task_id, steps)
+        self._authorize_and_finish(task_id)
+        return self._finish_record(task_id)
+
+    def _finish_record(self, task_id):
+        snapshot = self._store.snapshot(task_id)
+        if self._memory is not None:
+            try:
+                self._memory.record_task_outcome(snapshot)
+            except Exception:
+                pass    # memory is best-effort; it never changes task state or authority
+        return snapshot
+
     def execute_task(self, task, steps):
         """Drive one task as far as evidence allows. Returns the final snapshot."""
         task_id = self.submit_task(task)
         self.assess(task_id)
         self.plan(task_id, steps)
-        return self._authorize_and_finish(task_id)
+        self._authorize_and_finish(task_id)
+        return self._finish_record(task_id)
 
     def _authorize_and_finish(self, task_id):
         # The state table allows PLANNED -> AUTHORIZED only, so a task without authority
@@ -240,4 +298,5 @@ class BrainOrchestrator:
             self._move(task_id, "PLANNED")
         elif state != "PLANNED":
             raise MAEPError(f"resume requires ASSESSED or PLANNED, task is {state}")
-        return self._authorize_and_finish(task_id)
+        self._authorize_and_finish(task_id)
+        return self._finish_record(task_id)

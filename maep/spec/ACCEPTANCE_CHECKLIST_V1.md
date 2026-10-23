@@ -26,6 +26,7 @@
 | AC-22 | RT-05 restore and MAEP-006 single writer on the canonical TaskStore | PASS-UNIT, PASS-INTEGRATION (in-process) | T-006, T-040; 17 tests; see RT02_RT05_VALIDATION_RECORD_V1.md |
 | AC-23 | RT-02..RT-04: tool boundary, acceptance gate and BrainOrchestrator on the runtime path | PASS-INTEGRATION (in-process) | T-041..T-045; 59 tests; 17/17 mutants killed; not production, not system-wide |
 | AC-24 | RT-06 trust anchor on the HG runtime path, bypasses closed | PASS-INTEGRATION (in-process); PASS-LIVE for the trust root on main | T-046..T-050; RT06_VALIDATION_RECORD_V1.md §9: authority-check LOADED at 78dbd72, live anchored task closed, out-of-scope and other-principal tasks denied; owner/agent identity still not separated (T-1) |
+| AC-25 | MIID Phase D intelligence layer (C-12..C-21) on the governed runtime | PASS-INTEGRATION (in-process); PASS-LIVE for structured goals under the trust root; BLOCKED_EXTERNAL for live model reasoning | T-051..T-055; MIID_PHASE_D_RECORD_V1.md; benchmark 10/10, 0 unauthorized effects, 0 false closures |
 
 ## Acceptance decision
 MAEP V1 foundation package passes its local design, schema, and unit-test criteria. It is not a fully integrated HG runtime release. Do not label the whole HG system CLOSED_VERIFIED. AC-12 is deferred until BrainOrchestrator exists; AC-13 passes at foundation scope with the stated tamper-resistance limitation; AC-14 is intentionally not performed or claimed. Full runtime acceptance remains a later phase.

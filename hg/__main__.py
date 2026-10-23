@@ -3,6 +3,9 @@
     python -m hg selfcheck [--workdir DIR]   run the runtime self-check scenarios
     python -m hg status --workdir DIR        read-only task and pending-action report
     python -m hg authority-check             read the canonical owner manifest (RT-06), live
+    python -m hg bench [--json P] [--baseline P]   fixed benchmark suite; exit 1 on invariant/regression
+    python -m hg learn --workdir DIR [--threshold N] [--cases-out P]   failures -> lessons
+    python -m hg health --workdir DIR [--trust]    health report from a runtime's ledgers
 
 selfcheck exercises the real runtime path (BrainOrchestrator -> TaskStore -> ActionGateway
 -> local filesystem -> AcceptanceGate) in a scratch directory. Its grants are self-check
@@ -129,7 +132,40 @@ def main(argv=None):
     st = sub.add_parser("status", help="read-only report from a runtime work directory")
     st.add_argument("--workdir", required=True)
     sub.add_parser("authority-check", help="read the canonical owner manifest from main (network)")
+    bench = sub.add_parser("bench", help="run the fixed benchmark suite (offline)")
+    bench.add_argument("--json", help="write the full report to this file")
+    bench.add_argument("--baseline", help="compare against a previous report; regressions fail the run")
+    learn = sub.add_parser("learn", help="classify failures in a runtime's ledgers into lessons")
+    learn.add_argument("--workdir", required=True, action="append")
+    learn.add_argument("--threshold", type=int, default=2)
+    learn.add_argument("--cases-out", help="write proposed regression cases (for review) to this file")
+    hl = sub.add_parser("health", help="health report from a runtime's ledgers")
+    hl.add_argument("--workdir", required=True)
+    hl.add_argument("--trust", action="store_true", help="also read the trust root on main (network)")
     args = parser.parse_args(argv)
+
+    if args.command == "bench":
+        from hg.verification.benchmark import run_benchmark, verdict
+        report = run_benchmark()
+        baseline = json.loads(Path(args.baseline).read_text(encoding="utf-8")) if args.baseline else None
+        problems = verdict(report, baseline)
+        report["verdict"] = problems or ["PASS"]
+        if args.json:
+            Path(args.json).write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
+        print(json.dumps({"metrics": report["metrics"], "verdict": report["verdict"]}, indent=2, ensure_ascii=False))
+        return 1 if problems else 0
+    if args.command == "learn":
+        from hg.verification.learning import analyze, proposed_cases_json
+        report = analyze(args.workdir, threshold=args.threshold)
+        if args.cases_out:
+            Path(args.cases_out).write_text(proposed_cases_json(report), encoding="utf-8")
+        print(json.dumps(report, indent=2, ensure_ascii=False))
+        return 0
+    if args.command == "health":
+        from hg.ops import health
+        report = health(Path(args.workdir), trust_loader=load_canonical_manifest if args.trust else None)
+        print(json.dumps(report, indent=2, ensure_ascii=False))
+        return {"OK": 0, "DEGRADED": 1}.get(report["status"], 2)
 
     if args.command == "authority-check":
         code, report = authority_check()

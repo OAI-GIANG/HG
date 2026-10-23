@@ -18,10 +18,12 @@ from types import SimpleNamespace
 
 from maep.ledger import read_events
 from maep.authority.anchored import AnchoredPolicyEvaluator
+from maep.authority.issuer import IssuedGrantEvaluator, TaskGrantIssuer
 from maep.core import MAEPError
 from maep.policy import PolicyEvaluator
 from maep.task_store import TaskStore
 from hg.brain.orchestrator import BrainOrchestrator
+from hg.tools.code import CodeDiffAdapter, CodeSearchAdapter, SymbolIndexAdapter, TestRunAdapter, UrlReadAdapter
 from hg.tools.gateway import ActionGateway, LocalFileReadAdapter, LocalFileWriteAdapter
 from hg.verification.evidence import AcceptanceGate, EventLog
 
@@ -41,9 +43,11 @@ def open_task_store(path, evaluator, clock):
 
 def build_runtime(workdir, grants, *, principal=DEFAULT_PRINCIPAL, mode="AUTHORIZED_EXECUTION",
                   verifiers=None, clock=None, extra_adapters=(), condition_provider=None, authority=None,
-                  allow_fixture_grants=False):
+                  allow_fixture_grants=False, issue_task_grants=False, memory=None, grant_ttl_s=3600):
     if authority is not None and allow_fixture_grants:
         raise MAEPError("pass either authority or allow_fixture_grants, not both")
+    if issue_task_grants and (authority is None or list(grants)):
+        raise MAEPError("issue_task_grants needs authority and no caller-supplied grants")
     if authority is None and not allow_fixture_grants:
         raise MAEPError("unanchored runtime refused: pass authority=CanonicalManifest.from_github(), "
                         "or allow_fixture_grants=True for tests and self-checks (RT-06)")
@@ -52,16 +56,31 @@ def build_runtime(workdir, grants, *, principal=DEFAULT_PRINCIPAL, mode="AUTHORI
     root = workdir / "root"
     root.mkdir(exist_ok=True)
     clock = clock or utcnow
-    evaluator = PolicyEvaluator(list(grants), condition_provider or (lambda _condition, _request: False))
-    trust = "fixture"
-    if authority is not None:
-        evaluator = AnchoredPolicyEvaluator(evaluator, authority)   # one evaluator for store and gateway
-        trust = "anchored"
+    issuer = None
+    if issue_task_grants:
+        # Autonomous mode: per-task grants are issued only from the owner manifest on main.
+        inner = IssuedGrantEvaluator(condition_provider=condition_provider)
+        evaluator = AnchoredPolicyEvaluator(inner, authority)
+        issuer = TaskGrantIssuer(authority, inner, principal=principal, ttl_s=grant_ttl_s, clock=clock)
+        trust = "anchored+issued"
+    else:
+        evaluator = PolicyEvaluator(list(grants), condition_provider or (lambda _condition, _request: False))
+        trust = "fixture"
+        if authority is not None:
+            evaluator = AnchoredPolicyEvaluator(evaluator, authority)   # one evaluator for store and gateway
+            trust = "anchored"
+    if memory is True:
+        from hg.memory.store import MemoryStore
+        memory = MemoryStore(workdir / "memory.jsonl", clock=clock)
     store = open_task_store(workdir / "tasks.jsonl", evaluator, clock)
     actions = EventLog(workdir / "actions.jsonl", clock=clock)
-    adapters = [LocalFileWriteAdapter(root), LocalFileReadAdapter(root), *extra_adapters]
+    adapters = [LocalFileWriteAdapter(root), LocalFileReadAdapter(root), CodeSearchAdapter(root),
+                SymbolIndexAdapter(root), CodeDiffAdapter(root), TestRunAdapter(root), UrlReadAdapter(),
+                *extra_adapters]
     gateway = ActionGateway(store, evaluator, actions, adapters, principal=principal, mode=mode)
     gate = AcceptanceGate(clock=clock)
-    orchestrator = BrainOrchestrator(store, gateway, gate, principal=principal, verifiers=verifiers)
-    return SimpleNamespace(workdir=workdir, root=root, clock=clock, evaluator=evaluator, trust=trust, store=store,
+    orchestrator = BrainOrchestrator(store, gateway, gate, principal=principal, verifiers=verifiers,
+                                     issuer=issuer, memory=memory)
+    return SimpleNamespace(workdir=workdir, root=root, clock=clock, evaluator=evaluator, trust=trust, memory=memory,
+                           store=store,
                            actions=actions, gateway=gateway, gate=gate, orch=orchestrator)

@@ -69,6 +69,7 @@ class ToolAdapter:
     timeout_s = 10.0
     description = ""
     params_schema = {}       # param name -> python type
+    ledger_exclude = {"content"}   # bulky or sensitive observed fields kept out of the ledger
     _gateway_key = None      # set once by the ActionGateway the adapter is registered with
 
     def bind(self, key):
@@ -264,6 +265,13 @@ class ActionGateway:
     def registry(self):
         return [a.describe() for a in self._adapters.values()]
 
+    def tool(self, name):
+        """The registered adapter (for planning checks); effects still need a gateway permit."""
+        return self._adapters.get(name)
+
+    def tool_names(self):
+        return sorted(self._adapters)
+
     def pending_actions(self, task_id=None):
         return [dict(p) for p in self._pending.values() if task_id is None or p["task_id"] == task_id]
 
@@ -345,7 +353,7 @@ class ActionGateway:
 
         status, reason, observed = self._run(adapter, params, _Permit(self._key, resource, action_id))
         record = {"action_id": action_id, "step_id": step_id, "status": status, "reason": reason,
-                  "observed": {k: v for k, v in observed.items() if k != "content"}}
+                  "observed": {k: v for k, v in observed.items() if k not in adapter.ledger_exclude}}
         try:
             self._log.append("ACTION_COMPLETED", task_id, record)
         except Exception as exc:
