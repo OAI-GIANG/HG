@@ -1,0 +1,26 @@
+{
+  "trust_root": "main",
+  "policy_version": "MAEP-1.1.0",
+  "grants": [
+    {
+      "principal": "STT",
+      "actions": [
+        "maep.read",
+        "maep.write",
+        "maep.commit",
+        "maep.push",
+        "maep.merge",
+        "maep.deploy",
+        "maep.migrate",
+        "maep.delete",
+        "maep.execute"
+      ],
+      "scope": [
+        "repo:OAI-GIANG/HG",
+        "file:out/"
+      ],
+      "issued_at": "2026-10-23T11:53:47Z",
+      "expires_at": "2027-01-21T11:53:47Z"
+    }
+  ]
+}
