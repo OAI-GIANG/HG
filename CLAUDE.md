@@ -72,7 +72,7 @@ End each task with: objective, scope, changes (commit SHAs), tests run (command,
 ## Automated checks
 
 - In place: CI workflow running both suites on every push and pull request.
+- In place: GitHub ruleset `main-maep` (id 25706034) on the default branch: no deletion, no force push, changes only through a pull request (0 approvals), and `unittest (3.13)` and `unittest (3.14)` must pass. Bypass list empty. Owner-created on 2026-10-23 after the repository was made public.
 - Proposed:
-  - Branch protection on `main` requiring that CI check (repository setting).
   - A test asserting every rule MAEP-001..028 is mapped in `maep/spec/MAEP_CONFORMANCE_TEST_CATALOGUE_V1.md`.
   - Once a runtime exists: a test failing if task state is mutated outside the task-state owner, and one failing if a side-effecting adapter runs without a PolicyEvaluator decision.

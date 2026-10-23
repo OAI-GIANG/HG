@@ -1,6 +1,6 @@
 # Runtime Enforcement Plan V1
 
-- Status: **DESIGN — RT-01 IMPLEMENTED and UNIT_TESTED (2026-10-23); RT-02..RT-06 not implemented; RT-07 CI in place**
+- Status: **DESIGN — RT-01 IMPLEMENTED and UNIT_TESTED (2026-10-23); RT-02..RT-06 not implemented; RT-07 done (CI plus ruleset `main-maep` on `main`)**
 - Base: MAEP-1.0.0 at `f7f00a75c6a1b1363993c2fb9bc023171f080038` plus the Phase 2 fixes on the same branch as this file.
 - Inputs: `HG_ARCHITECTURE_V1.md`, `BRAIN_ORCHESTRATOR_CONTRACT_V1.md`, `MAEP_INTEGRATION_DESIGN_V1.md`, `DATA_FLOW_TRUST_BOUNDARY_V1.md`.
 - Not available: `BRAIN_ORCHESTRATOR_MASTER_PLAN_V1.md` was never committed to any accessible ref; nothing here depends on it.
