@@ -56,6 +56,7 @@ python -m unittest discover -s hg/tests -t . -v
 python -m unittest discover -s .claude/hooks -p "test_*.py" -v
 python -m hg selfcheck                      # end-to-end runtime check in a temp dir
 python -m hg status --workdir DIR           # read-only state from a runtime's ledgers
+python -m hg authority-check                # live read of the trust root on main (RT-06)
 ```
 
 CI runs all three suites on every push and pull request (`.github/workflows/maep-tests.yml`).
@@ -70,7 +71,9 @@ End each task with: objective, scope, changes (commit SHAs), tests run (command,
 - These boundaries are ENFORCED **on the HG runtime path only**, shown by negative tests through them, and INTEGRATION_TESTED in-process. Nothing is ENFORCED system-wide: code that bypasses `hg/`, or reaches private attributes in the same process, is not stopped. No production deployment exists.
 - `maep/core.py`, `maep/policy.py`, `maep/ledger.py` and `maep/task_store.py` are IMPLEMENTED and UNIT_TESTED, and now called from the runtime path. `TaskStore` gained `restore` (RT-05), `claim_writer` (MAEP-006) and `record_plan`.
 - Agent guard: `.claude/settings.json` runs `.claude/hooks/maep_guard.py` before Bash and edit tools. It blocks force/mirror/prune pushes, direct pushes to `main`, deleting or force-pushing `main` and `recovery/*`, `git reset --hard` with changes, `git clean -f` with files, `rm -r` of `.git`, and writes to the delegation file. It is a best-effort parser (blind to `$(...)`, `eval`, interpreter one-liners) and an agent that edits it can disable it; weakening it is a policy change (MAEP-017, 028).
-- Owner standing delegation (MAEP-1.1.0) is DESIGN: recorded policy that guides agents; runtime grants are not loaded from the trust root yet (RT-06 BLOCKED on the owner's choice of anchor).
+- Owner standing delegation (MAEP-1.1.0) is DESIGN: recorded policy that guides agents.
+- RT-06 trust anchor: `build_runtime(authority=CanonicalManifest.from_github())` makes every runtime decision also require a live grant in `maep/authority/owner-grants.json` on `main`, read at a resolved commit; without it the runtime refuses to start unless `allow_fixture_grants=True` (tests, self-check). Adapters act only with a gateway permit. ENFORCED on the HG runtime path, application level. The manifest does not exist yet (owner action), and agents share the owner's GitHub identity, so `main` does not yet distinguish owner from agent (finding T-1). See `maep/spec/RT06_VALIDATION_RECORD_V1.md`.
+- Agent guard also blocks writes to `maep/authority/owner-grants.json` (owner-only trust file).
 - Audit and capability matrix: `docs/architecture/MIID_AUDIT_AND_CAPABILITY_MATRIX_V1.md`.
 - Plan: `docs/architecture/RUNTIME_ENFORCEMENT_PLAN_V1.md`.
 
