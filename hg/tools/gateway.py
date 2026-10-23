@@ -264,6 +264,13 @@ class ActionGateway:
     def registry(self):
         return [a.describe() for a in self._adapters.values()]
 
+    def tool(self, name):
+        """The registered adapter (for planning checks); effects still need a gateway permit."""
+        return self._adapters.get(name)
+
+    def tool_names(self):
+        return sorted(self._adapters)
+
     def pending_actions(self, task_id=None):
         return [dict(p) for p in self._pending.values() if task_id is None or p["task_id"] == task_id]
 
