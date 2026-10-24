@@ -194,7 +194,9 @@ class HGHTTPServer(http.server.ThreadingHTTPServer):
     # Drain active request threads before closing the persistent idempotency database.
     daemon_threads = False
     block_on_close = True
-    allow_reuse_address = False
+    # Allow immediate same-port restart after the previous listener enters TIME_WAIT.
+    # SO_REUSEADDR does not permit a second active listener on the same address.
+    allow_reuse_address = True
 
     def __init__(self, *, runtime, token, host="127.0.0.1", port=8765, max_body_bytes=262144,
                  release_report=None, trust_report=None, idempotency_path=None):

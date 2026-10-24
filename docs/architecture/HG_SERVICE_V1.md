@@ -6,7 +6,7 @@ Status: implementation candidate; not production-certified until merge and on-de
 
 The service is added to the existing OAI-GIANG/HG application. The single runtime assembly remains hg/runtime.py; HTTP requests are dispatched through the real BrainOrchestrator, TaskStore, ActionGateway and evidence/acceptance path. Production startup does not use fixture grants or caller-supplied authority.
 
-The listener is IPv4 loopback only (127.0.0.1). A bearer token is required on every route. Request bodies, Authorization headers, prompt content and provider errors must not be logged.
+The listener is IPv4 loopback only (127.0.0.1). A bearer token is required on every route. Request bodies, Authorization headers, prompt content and provider errors must not be logged. The listener enables SO_REUSEADDR for safe immediate restart after a closed socket enters TIME_WAIT; this does not permit a second active listener on the same address.
 
 Security limitation: this is an application-level boundary. A process running under the same Android UID can generally read a mode-0600 token and access files owned by that UID. Loopback and a token do not establish OS isolation.
 
