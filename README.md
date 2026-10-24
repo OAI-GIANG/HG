@@ -27,3 +27,7 @@ python -m unittest discover -s hg/tests -t . -v
 ```
 
 Grants are anchored to the owner manifest on `main` (RT-06). The intelligence layer -- model router, planner, memory, context, research, options, code tools, learning loop, benchmark, health -- is in `hg/` (MIID Phase D); a live model is optional and not configured here. What is and is not built: `docs/architecture/MIID_AUDIT_AND_CAPABILITY_MATRIX_V1.md`, `docs/architecture/MIID_PHASE_D_RECORD_V1.md`.
+
+## Loopback service (candidate)
+
+The service/release design, commands, endpoint contract, configuration schema and Termux runbook are documented in `docs/architecture/HG_SERVICE_V1.md`. This capability is not production-certified until its PR is merged, its release is verified, and the on-device readiness, smoke, restart and rollback gates pass. The service binds only to `127.0.0.1`.

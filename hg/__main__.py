@@ -142,7 +142,14 @@ def main(argv=None):
     hl = sub.add_parser("health", help="health report from a runtime's ledgers")
     hl.add_argument("--workdir", required=True)
     hl.add_argument("--trust", action="store_true", help="also read the trust root on main (network)")
+    serve = sub.add_parser("serve", help="run authenticated loopback HTTP service")
+    serve.add_argument("--config", required=True)
+    serve.add_argument("--check", action="store_true", help="run read-only preflight without binding a port")
     args = parser.parse_args(argv)
+
+    if args.command == "serve":
+        from hg.service import run as run_service
+        return run_service(args.config, check=args.check)
 
     if args.command == "bench":
         from hg.verification.benchmark import run_benchmark, verdict
