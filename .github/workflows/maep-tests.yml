@@ -29,3 +29,29 @@ jobs:
         run: python -m hg bench
       - name: Agent guard hook tests
         run: python -m unittest discover -s .claude/hooks -p "test_*.py" -v
+      - name: Deterministic release build and verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmp="${RUNNER_TEMP}/hg-release"
+          mkdir -p "$tmp"
+          python -B -m hg.release build --repo . --commit "$GITHUB_SHA" --archive "$tmp/one.tar.gz" --manifest "$tmp/one.json"
+          python -B -m hg.release build --repo . --commit "$GITHUB_SHA" --archive "$tmp/two.tar.gz" --manifest "$tmp/two.json"
+          cmp "$tmp/one.tar.gz" "$tmp/two.tar.gz"
+          cmp "$tmp/one.json" "$tmp/two.json"
+          python -B -m hg.release verify --repo . --archive "$tmp/one.tar.gz" --manifest "$tmp/one.json"
+          python -B - <<'PY'
+          import json
+          import os
+          import tempfile
+          from pathlib import Path
+          from hg.release import extract_archive, verify_root
+          tmp = Path(os.environ["RUNNER_TEMP"]) / "hg-release"
+          manifest = json.loads((tmp / "one.json").read_text(encoding="utf-8"))
+          with tempfile.TemporaryDirectory(prefix="hg-release-root-") as td:
+              target = Path(td) / "release"
+              extract_archive(tmp / "one.tar.gz", target)
+              report = verify_root(target, tmp / "one.json", manifest["release_id"])
+              assert report["result"] == "VERIFIED", report
+              print(json.dumps(report, sort_keys=True))
+          PY
