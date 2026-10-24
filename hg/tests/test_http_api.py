@@ -80,6 +80,28 @@ class HTTPAPITests(TempDirMixin):
                          (200, "READY", "VERIFIED", "LOADED"))
         self.assertEqual(self.request("GET", "/v1/integrity")[1]["release_id"], "a" * 64)
 
+    def test_listener_can_rebind_same_loopback_port_after_restart(self):
+        self.assertIs(HGHTTPServer.allow_reuse_address, True)
+        status, body = self.request("GET", "/v1/health/live")
+        self.assertEqual((status, body["status"]), (200, "LIVE"))
+        port = self.port
+        self.server.shutdown()
+        self.thread.join(timeout=2)
+        self.assertFalse(self.thread.is_alive())
+        self.server.server_close()
+        self.server = HGHTTPServer(
+            runtime=self.runtime, token=TOKEN, host="127.0.0.1", port=port,
+            max_body_bytes=2048,
+            release_report=lambda: {"result": "VERIFIED", "release_id": "a" * 64},
+            trust_report=lambda: {"result": "LOADED", "provenance": {"commit": "b" * 40}},
+            idempotency_path=self.workdir / "http-idempotency-restart.sqlite3",
+        )
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        self.host, self.port = self.server.address
+        status, body = self.request("GET", "/v1/health/live")
+        self.assertEqual((status, body["status"]), (200, "LIVE"))
+
     def test_integrity_route_still_reports_release_when_trust_is_unavailable(self):
         self.server.trust_report = lambda: (_ for _ in ()).throw(RuntimeError("trust unavailable"))
         status, body = self.request("GET", "/v1/integrity")
