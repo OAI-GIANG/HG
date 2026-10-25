@@ -1,0 +1,37 @@
+{
+  "decision_id": "MAEP-022-HG-MEMORY-CANDIDATE-20261022",
+  "candidate_ref": "sha256:20334263d1aeef06d3c3609d319920803a7eeaecb39fbfb3c07dad88362f58fe",
+  "policy_version": "MAEP-1.2.0",
+  "scope": "OAI-GIANG/HG local Memory & Knowledge adapter, schemas, tests, package documentation and root README only",
+  "capability": "Durable MAEP-bound task continuity, candidate-bound evidence, knowledge versioning/retrieval, checkpoint and resume assessment",
+  "inventory_status": "COMPLETE",
+  "inventory_evidence_refs": [
+    "MK-INV-001"
+  ],
+  "overlap_detected": true,
+  "comparison_evidence_refs": [
+    "MK-CMP-001"
+  ],
+  "decision": "EXTEND_EXISTING",
+  "selected_implementation": "Extend the HG foundation through memory.MemoryStore using maep.core validators and one SQLite transaction-backed store; keep maep.ledger as its existing standalone primitive, do not mirror Memory events into it, and do not create a second coordinator or policy engine.",
+  "rationale": "Existing MAEP core and ledger partially overlap with authorization, validation and event history. The inspected HG source inventory had no executable Memory/Knowledge runtime, durable knowledge repository, checkpoint schema or mandatory resume implementation. A scoped adapter is therefore an evidenced extension rather than a duplicate policy engine. It adds transactional task projection, candidate-bound evidence, immutable knowledge versions, checkpoint/resume assessment and backup/restore while deferring BrainOrchestrator integration to a separately verified step.",
+  "impact_analysis_refs": [
+    "MK-IMPACT-001"
+  ],
+  "regression_test_refs": [
+    "MK-MEM-TESTS-001",
+    "MK-MAEP-TESTS-001"
+  ],
+  "gate_status": "PASS",
+  "selected_implementation_note": "No production deployment or canonical-state migration is authorized by this gate.",
+  "chronology_disposition": "RETROSPECTIVE_CANDIDATE_REVIEW_NOT_PREAUTHORIZATION",
+  "superiority_basis": {
+    "correctness": "Memory delegates task, evidence, authorization, transitions, candidate impact, claims, gates and closure to maep.core; tests include negative paths and reject mismatched candidate/evidence. See MK-CMP-001 and MK-MEM-TESTS-001.",
+    "security": "Writes require a trusted evaluator and authenticated principal, authority is rechecked before persistent mutations, READ_ONLY blocks writes, and tests prove policy revocation blocks an evidence insert. Production providers remain absent. See MK-MEM-TESTS-001 and MK-IMPACT-001.",
+    "reliability": "Task/evidence/knowledge/checkpoint updates share SQLite transactions with events; the event stream is sequenced and SHA-256 chained, and backup/restore tests use a selected backup in an isolated target. SQLite is single-writer and full-chain validation has O(n) read cost. See MK-MEM-TESTS-001.",
+    "functional_coverage": "maep.ledger supplies event append/read but the inspected source has no durable knowledge versioning/retrieval, checkpoint schema or mandatory resume adapter. Memory fills that gap without duplicating policy ownership. See MK-INV-001 and MK-CMP-001.",
+    "compatibility": "The implementation uses Python standard-library SQLite and JSON facilities and was exercised on the target Termux environment. No third-party runtime dependency or paid service was added. See MK-MEM-TESTS-001.",
+    "performance_resource_cost": "The local design avoids dual writes across separate task and event files, but serializes writers and validates the event chain in O(n) per store readiness check. No throughput superiority is claimed and performance benchmarking remains outside the tested scope. See MK-CMP-001.",
+    "maintainability_operational_burden": "The adapter reuses existing MAEP primitives, has an explicit API/integration contract and acceptance matrix, and does not create another orchestrator. The real BrainOrchestrator binding remains a named implementation blocker. See MK-IMPACT-001 and MK-MAEP-TESTS-001."
+  }
+}

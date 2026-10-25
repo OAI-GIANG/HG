@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hg:memory:knowledge-record-1.0.0.schema.json",
+  "title": "HG MAEP Provenance-Bound Knowledge Record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["record_id", "claim", "task_id", "candidate_ref", "policy_version", "version", "verification_status", "provenance", "supersedes_record_id", "created_at"],
+  "properties": {
+    "record_id": {"type": "string", "minLength": 1},
+    "claim": {
+      "type": "object",
+      "required": ["claim_id", "claim_type", "statement", "evidence_refs", "limitations"],
+      "properties": {
+        "claim_id": {"type": "string", "minLength": 1},
+        "claim_type": {"enum": ["FACT", "INFERENCE", "HYPOTHESIS", "PROPOSAL"]},
+        "statement": {"type": "string", "minLength": 1},
+        "evidence_refs": {"type": "array", "items": {"type": "string"}},
+        "limitations": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "task_id": {"type": "string", "minLength": 1},
+    "candidate_ref": {"type": "string", "minLength": 1},
+    "policy_version": {"type": "string", "minLength": 1},
+    "version": {"type": "integer", "minimum": 1},
+    "verification_status": {"enum": ["UNVERIFIED", "VERIFIED"]},
+    "provenance": {"type": "object", "required": ["source_ref", "collector", "method", "collected_at", "limitations"], "properties": {
+      "source_ref": {"type": "string", "minLength": 1},
+      "collector": {"type": "string", "minLength": 1},
+      "method": {"type": "string", "minLength": 1},
+      "collected_at": {"type": "string", "format": "date-time"},
+      "limitations": {"type": "array", "items": {"type": "string"}}
+    }},
+    "supersedes_record_id": {"type": ["string", "null"]},
+    "created_at": {"type": "string", "format": "date-time"},
+    "verification": {"type": "object"}
+  }
+}

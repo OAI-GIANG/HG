@@ -1,0 +1,85 @@
+{
+  "record_type": "MAEP-DELEGATED-AUTHORITY-RECONCILIATION",
+  "record_id": "MAEP-DELEGATED-AUTHORITY-20261023-001",
+  "observed_at": "2026-10-23",
+  "policy_version": "MAEP-1.2.0",
+  "repository": "OAI-GIANG/HG",
+  "branch": "stt/maep-v1-20261022",
+  "head_commit": "f7f00a75c6a1b1363993c2fb9bc023171f080038",
+  "standing_delegation": {
+    "source": "Owner instruction in the current conversation",
+    "agents": [
+      "STT",
+      "DEEP",
+      "HG",
+      "other owner-trusted AI agents"
+    ],
+    "actions": [
+      "write",
+      "commit",
+      "push",
+      "merge",
+      "deploy",
+      "delete"
+    ],
+    "condition": "Agent judges action appropriate and applicable MAEP conditions are satisfied",
+    "per_action_owner_confirmation_required": false,
+    "interpretation": "This is standing task authority, not evidence that the live runtime has imported a durable active grant."
+  },
+  "policy_interpretation": {
+    "action_resource_scope_policy_and_conditions_must_be_checked": true,
+    "signature_or_signature_verifier_as_acceptance_gate": false,
+    "independent_review_as_acceptance_gate": false,
+    "historical_evidence_must_be_preserved": true,
+    "destructive_effects_require_maep_recovery_or_authorized_irreversibility": true
+  },
+  "candidate_implementation": {
+    "trust_root_type": "maep.native_authority.TrustRootRecord",
+    "bootstrap_manager": "maep.native_authority.TrustRootManager",
+    "trusted_record_resolver_contract": "maep.trusted_providers.TrustedRecordResolver",
+    "provenance_verifier_contract": "maep.trusted_providers.ApprovedRecordProvenanceVerifier",
+    "runtime_composition": "runtime.composition.build_runtime",
+    "production_adapters_implemented_and_proven": false,
+    "conversation_delegation_mapped_to_active_production_policy": false
+  },
+  "observed_live_runtime": {
+    "pid": 15005,
+    "command": "python3 -u -m hg.server",
+    "source_directory": "/data/data/com.termux/files/home/hg2-releases/fcc561ae919b64572c5a9b549d5664b7fbfd4676",
+    "source_manifest_origin": "clean_room",
+    "source_manifest_sha256": "4fcc892b1f95c37143e5e75590afbdbc349c9128d647e831067b9dd6eacd751c",
+    "manifest_repository_in_provenance": "OAI-GIANG/HG2",
+    "target_candidate_repository": "OAI-GIANG/HG",
+    "bound_to_target_candidate": false
+  },
+  "prior_gate_reconciliation": {
+    "preserved_record": "memory/MAEP-022-RUNTIME-BINDING-RECONCILIATION.json",
+    "invalid_operational_blocker": "INDEPENDENT_PRODUCTION_SIGNATURE_VERIFIER_NOT_PROVISIONED",
+    "disposition": "This reason is not a valid current acceptance blocker under MAEP-029/030 and must not be used to block release. The historical record is preserved and not rewritten.",
+    "remaining_blockers": [
+      "APPROVED_PRODUCTION_TRUST_ROOT_NOT_PROVEN",
+      "TRUSTED_EVIDENCE_RESOLVER_NOT_PROVISIONED",
+      "LIVE_RUNTIME_NOT_BOUND_TO_CANDIDATE",
+      "LIVE_E2E_NOT_RUN"
+    ]
+  },
+  "verification": {
+    "isolated_deny_before_effect": "PASS — BrainTests.test_maep022_required_gate_denies_before_any_effect_and_records_deny_receipt; adapter calls 0",
+    "isolated_allow_after_current_candidate_fixture_pass": "PASS — BrainTests.test_maep022_current_pass_allows_once_with_bound_receipt_and_replay_blocked; one effect, replay blocked",
+    "native_authority_rechecks": "PASS — valid request allows; policy denial denies; expired authorization and candidate/policy changes block before effect",
+    "targeted_test_command": "python -m unittest brain.tests.test_orchestrator.BrainTests.test_maep022_required_gate_denies_before_any_effect_and_records_deny_receipt brain.tests.test_orchestrator.BrainTests.test_maep022_current_pass_allows_once_with_bound_receipt_and_replay_blocked maep.tests.test_native_authority.NativePolicyEngineTests.test_valid_low_risk_request_allows_and_records_evidence maep.tests.test_native_authority.NativePolicyEngineTests.test_policy_denial_is_deny maep.tests.test_native_authority.NativePolicyEngineTests.test_expired_authorization_cannot_cross_effect_boundary maep.tests.test_native_authority.NativePolicyEngineTests.test_pre_effect_recheck_detects_candidate_and_policy_changes -v",
+    "targeted_tests_passed": 6,
+    "full_local_suite": "PASS — 200 passed, 52 subtests passed, 1 warning",
+    "full_local_suite_command": "python -m pytest maep/tests memory/tests brain/tests runtime/tests creativity_research/tests tools_automation/tests -q --disable-warnings --maxfail=1",
+    "git_diff_check": "PASS",
+    "reconciliation_json_parse": "PASS",
+    "live_runtime_end_to_end": "NOT_RUN",
+    "production_status": "UNVERIFIED"
+  },
+  "worktree_preservation": {
+    "preexisting_changes_preserved": true,
+    "historical_records_overwritten": false,
+    "commit_push_merge_deploy_performed": false
+  },
+  "status": "RECONCILED_POLICY_INTERPRETATION_RUNTIME_BINDING_BLOCKED"
+}

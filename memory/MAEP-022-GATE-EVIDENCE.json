@@ -1,0 +1,75 @@
+{
+  "candidate_ref": "sha256:20334263d1aeef06d3c3609d319920803a7eeaecb39fbfb3c07dad88362f58fe",
+  "evidence_by_id": {
+    "MK-INV-001": {
+      "evidence_id": "MK-INV-001",
+      "evidence_type": "OBSERVATION",
+      "source_ref": "repo:OAI-GIANG/HG@f7f00a75c6a1b1363993c2fb9bc023171f080038+local-memory-candidate",
+      "candidate_ref": "sha256:20334263d1aeef06d3c3609d319920803a7eeaecb39fbfb3c07dad88362f58fe",
+      "collected_at": "2026-10-22T16:41:07+07:00",
+      "collector": "STT via Remote Desktop Commander on Termux",
+      "method": "Static inventory of MAEP core, JSONL ledger, schemas, architecture contracts, and local Memory package file/call surfaces",
+      "result": "PASS — inventory completed; maep.core and maep.ledger exist, but no executable Memory/Knowledge or BrainOrchestrator runtime was found in the inspected repository inventory.",
+      "limitations": [
+        "Static checkout inventory only; absence is not generalized to external deployments.",
+        "Memory implementation is an uncommitted local candidate."
+      ]
+    },
+    "MK-CMP-001": {
+      "evidence_id": "MK-CMP-001",
+      "evidence_type": "OBSERVATION",
+      "source_ref": "repo:OAI-GIANG/HG/memory/ADR-001-SQLITE.md+maep/core.py+maep/ledger.py",
+      "candidate_ref": "sha256:20334263d1aeef06d3c3609d319920803a7eeaecb39fbfb3c07dad88362f58fe",
+      "collected_at": "2026-10-22T16:41:07+07:00",
+      "collector": "STT via Remote Desktop Commander on Termux",
+      "method": "Internal comparative capability analysis of MAEP policy primitives and JSONL ledger versus Memory persistence requirements",
+      "result": "PASS — explicit overlap is recorded; the implementation reuses MAEP validators and does not mirror maep.ledger writes, while adding transactional task/evidence/knowledge/checkpoint persistence and resume assessment absent from the inspected runtime inventory.",
+      "limitations": [
+        "Internal critique/comparison only; not independent review.",
+        "No production runtime or performance benchmark was available."
+      ]
+    },
+    "MK-IMPACT-001": {
+      "evidence_id": "MK-IMPACT-001",
+      "evidence_type": "ARTIFACT",
+      "source_ref": "repo:OAI-GIANG/HG/memory/INTEGRATION_CONTRACT.md+memory/ACCEPTANCE_MATRIX.md",
+      "candidate_ref": "sha256:20334263d1aeef06d3c3609d319920803a7eeaecb39fbfb3c07dad88362f58fe",
+      "collected_at": "2026-10-22T16:41:07+07:00",
+      "collector": "STT via Remote Desktop Commander on Termux",
+      "method": "Static impact and trust-boundary assessment for data ownership, dual-write avoidance, authorization, state transitions, evidence invalidation, backup/restore, and missing runtime providers",
+      "result": "PASS — impact boundary and required integration gates are documented; no existing MAEP policy rule was modified by this candidate, and production adoption is explicitly NOT VERIFIED.",
+      "limitations": [
+        "Static impact analysis does not prove runtime-wide enforcement.",
+        "The initial local implementation draft preceded identification of the current MAEP-022 gate; chronology is recorded as a nonconformance and is not retroactively cleared."
+      ]
+    },
+    "MK-MEM-TESTS-001": {
+      "evidence_id": "MK-MEM-TESTS-001",
+      "evidence_type": "TEST_RESULT",
+      "source_ref": "command:python -m unittest discover -s memory/tests -p test_store.py -v",
+      "candidate_ref": "sha256:20334263d1aeef06d3c3609d319920803a7eeaecb39fbfb3c07dad88362f58fe",
+      "collected_at": "2026-10-22T16:41:07+07:00",
+      "collector": "STT via Remote Desktop Commander on Termux",
+      "method": "Executed local Memory adapter tests against temporary SQLite databases; no production database opened",
+      "result": "PASS — 31 Memory adapter tests passed on the current local candidate, including policy revocation before writes, stale policy metadata, explicit checkpoint verification labels, task/evidence/knowledge binding, checkpoint/resume checks, event tampering detection, and online backup plus isolated restore.",
+      "limitations": [
+        "Uses a fake test-only policy evaluator and acceptance provider.",
+        "Does not prove BrainOrchestrator runtime integration, Android process restart, or production identity/authorization."
+      ]
+    },
+    "MK-MAEP-TESTS-001": {
+      "evidence_id": "MK-MAEP-TESTS-001",
+      "evidence_type": "TEST_RESULT",
+      "source_ref": "command:python -m unittest discover -s maep/tests -v",
+      "candidate_ref": "sha256:20334263d1aeef06d3c3609d319920803a7eeaecb39fbfb3c07dad88362f58fe",
+      "collected_at": "2026-10-22T16:41:07+07:00",
+      "collector": "STT via Remote Desktop Commander on Termux",
+      "method": "Ran existing MAEP Foundation regression suite after Memory source, schemas, docs and MAEP gate test source were present",
+      "result": "PASS — all 91 MAEP Foundation tests passed.",
+      "limitations": [
+        "Foundation unit tests do not prove production runtime integration.",
+        "No commit, push, deployment, migration, or production-store operation occurred."
+      ]
+    }
+  }
+}

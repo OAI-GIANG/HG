@@ -1,0 +1,125 @@
+{
+  "record_type": "MAEP-022-CURRENT-CANDIDATE-GATE-RECONCILIATION",
+  "record_id": "MAEP-022-HG-RUNTIME-BINDING-20261022-001",
+  "policy_version": "MAEP-1.2.0",
+  "repository": "OAI-GIANG/HG",
+  "branch": "stt/maep-v1-20261022",
+  "head_commit": "f7f00a75c6a1b1363993c2fb9bc023171f080038",
+  "candidate_ref": "sha256:5cff729354ed61e62a89c06f293fb2dd9bc58b78d01b36af9cc45479faa89341",
+  "decision": "BLOCKED",
+  "gate_status": "BLOCKED",
+  "gate_reason_codes": [
+    "APPROVED_PRODUCTION_TRUST_ROOT_NOT_PROVEN",
+    "INDEPENDENT_PRODUCTION_SIGNATURE_VERIFIER_NOT_PROVISIONED",
+    "TRUSTED_EVIDENCE_RESOLVER_NOT_PROVISIONED",
+    "LIVE_RUNTIME_NOT_BOUND_TO_CANDIDATE",
+    "LIVE_E2E_NOT_RUN"
+  ],
+  "inventory_status": "PARTIAL_BLOCKED",
+  "inventory_evidence_refs": [
+    "E-RUNTIME-HEALTH-20261022",
+    "E-RELEASE-MANIFEST-20261022",
+    "E-HG2-PROVENANCE-GRAPH-20261019",
+    "E-CANDIDATE-SOURCE-TRACE-20261022"
+  ],
+  "comparison_evidence_refs": [
+    "E-LINEAGE-CROSSWALK-20261022"
+  ],
+  "impact_analysis_refs": [
+    "E-EFFECT-BOUNDARY-TRACE-20261022"
+  ],
+  "regression_test_refs": [
+    "E-CANDIDATE-UNIT-TESTS-157-20261022",
+    "E-LIVE-DENY-E2E-NOT-RUN",
+    "E-LIVE-ALLOW-E2E-NOT-RUN"
+  ],
+  "trusted_applicability": {
+    "contract": "NativePolicyEngine receives an explicit applicability_provider independent of caller declarations; result bound to candidate/action/resource; unknown blocks",
+    "production_provider_verified": false
+  },
+  "runtime_binding": {
+    "running_pid": 15005,
+    "build_commit_label": "fcc561ae919b64572c5a9b549d5664b7fbfd4676",
+    "runtime_source_manifest_sha256": "4fcc892b1f95c37143e5e75590afbdbc349c9128d647e831067b9dd6eacd751c",
+    "runtime_source_file_count": 37,
+    "source_manifest_origin": "clean_room",
+    "release_repository_in_release_evidence": "OAI-GIANG/HG2",
+    "candidate_repository": "OAI-GIANG/HG",
+    "binding_verified": false
+  },
+  "e2e_test_plan": {
+    "deny_before_effect": [
+      "Build runtime only with independently approved root, candidate/policy providers, and trusted applicability provider. Use isolated side-effect-counting adapter. Make classification REQUIRED but gate missing/BLOCKED/stale/unresolved. Dispatch must reject and adapter invocation count must remain zero; verify durable BLOCKED/deny receipt and no target mutation."
+    ],
+    "allow_after_current_pass": [
+      "Create fresh MAEP-022 inventory/comparison/impact/regression artifacts using current candidate_ref. Resolve every evidence reference and validate with canonical validator. Bind gate PASS to same candidate_ref and active policy version through independently sourced gate provider. Dispatch through actual approved composition root to isolated side-effect-counting adapter. Expect exactly one effect, durable idempotency/result receipt, candidate/policy linkage. Replay same idempotency key must not create second effect."
+    ],
+    "live_execution_status": "NOT_RUN",
+    "must_not_use_test_fixtures_as_production_trust": true,
+    "isolated_execution_status": "PASS",
+    "isolated_results": {
+      "deny_before_effect": {
+        "status": "PASS",
+        "adapter_calls": 0,
+        "blocked_receipt": true
+      },
+      "allow_after_current_candidate_fixture_pass": {
+        "status": "PASS",
+        "adapter_calls": 1,
+        "candidate_policy_bound_receipt": true,
+        "replay_effect_count": 1
+      }
+    }
+  },
+  "preservation": {
+    "working_tree_changes_preserved": true,
+    "commit": false,
+    "deploy": false,
+    "restart": false,
+    "reset_checkout_clean": false
+  },
+  "historical_gate_reuse": "PROHIBITED",
+  "closure_status": "CLOSED_VERIFIED_NOT_ALLOWED",
+  "candidate_ref_scope_note": "Stable candidate fingerprint after source, tests, policy and validation record freeze. The investigation report is excluded by filename from the fingerprint scope to avoid self-reference and is not an executable policy/source input.",
+  "provider_implementation": {
+    "applicability_provider": "maep.trusted_providers.TrustedApplicabilityProvider",
+    "gate_provider": "maep.trusted_providers.TrustedGateEvidenceProvider",
+    "contract_tests": "maep.tests.test_trusted_providers",
+    "isolated_e2e_tests": [
+      "brain.tests.test_orchestrator.BrainTests.test_maep022_required_gate_denies_before_any_effect_and_records_deny_receipt",
+      "brain.tests.test_orchestrator.BrainTests.test_maep022_current_pass_allows_once_with_bound_receipt_and_replay_blocked"
+    ],
+    "production_verifier_resolver_provisioned": false,
+    "production_composition_verified": false
+  },
+  "verification_results": {
+    "unit_tests": {
+      "status": "PASS",
+      "passed": 163,
+      "command": "python -m unittest discover -s . -q"
+    },
+    "compileall": {
+      "status": "PASS",
+      "command": "python -m compileall -q maep memory brain runtime tools_automation"
+    },
+    "git_diff_check": {
+      "status": "PASS"
+    },
+    "provider_contract_tests": {
+      "status": "PASS",
+      "count": 5,
+      "note": "test-only verifier fixtures"
+    },
+    "isolated_e2e": {
+      "status": "PASS",
+      "deny_adapter_calls": 0,
+      "allow_adapter_calls": 1,
+      "replay_adapter_calls_total": 1,
+      "receipt_bound_to_candidate_and_policy": true
+    },
+    "runtime_composition_guard": {
+      "status": "PASS",
+      "test": "runtime.test_composition.RuntimeCompositionTests.test_composition_rejects_untrusted_provider_implementations"
+    }
+  }
+}
