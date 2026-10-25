@@ -7,6 +7,7 @@ import unittest
 from maep.core import POLICY_VERSION
 from maep.memory_evidence_providers import (CanonicalMemoryTaskSelectors, MemoryLedgerProvenanceVerifier, MemoryMAEPRecordResolver)
 from maep.native_authority import AuthorityError, TrustRootRecord
+from memory import AuthorityEvidenceReader
 from memory.tests.test_store import MemoryStoreTests
 
 
@@ -36,9 +37,12 @@ class MemoryEvidenceProviderTests(unittest.TestCase):
     def setUp(self):
         self.fixture = MemoryStoreTests()
         self.fixture.setUp()
-        self.store = self.fixture.store
+        self.store = self.fixture.store          # authorized API: fixture writes only
         self.selectors = SelectorsFixture()
-        self.resolver = MemoryMAEPRecordResolver(memory_store=self.store, selectors=self.selectors)
+        # The resolver serves Native Authority, so it reads the same database through
+        # the authority read path rather than the authorizing data-plane API.
+        self.resolver = MemoryMAEPRecordResolver(
+            memory_store=AuthorityEvidenceReader(self.fixture.db), selectors=self.selectors)
 
     def tearDown(self):
         self.fixture.tearDown()

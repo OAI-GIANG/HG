@@ -1,7 +1,10 @@
 """Adapters from HG's existing Memory evidence ledger to MAEP-022 providers.
 
-The resolver reads only through MemoryStore's authorized API. It does not create a
-parallel governance ledger. Provenance validation requires an explicit approved-source
+These adapters feed NativePolicyEngine while it is deciding, so they read through
+``memory.AuthorityEvidenceReader`` (read-only, same integrity checks as the
+authorized API) and never through MemoryStore's authorizing API: that API asks the
+same engine for permission and re-enters authorize(). They do not create a parallel
+governance ledger. Provenance validation requires an explicit approved-source
 verifier; Memory persistence/integrity alone is not proof of external authority.
 """
 from __future__ import annotations
@@ -13,6 +16,15 @@ from typing import Any
 from maep.native_authority import AuthorityError, TrustRootRecord
 from maep.core import POLICY_VERSION
 from maep.trust_source_contracts import require_trust_source_contract
+from memory.store import MemoryStore
+
+
+def _reject_authorizing_memory_api(memory_store: Any) -> None:
+    # MemoryStore's public reads call its policy evaluator, which in the runtime graph
+    # is NativePolicyEngine itself. Used as the authority's record source it recurses.
+    if isinstance(memory_store, MemoryStore):
+        raise AuthorityError("authority evidence read path must be memory.AuthorityEvidenceReader; "
+                             "the authorizing MemoryStore API re-enters authority")
 
 
 def _canonical(value: Any) -> bytes:
@@ -33,6 +45,7 @@ class MemoryMAEPRecordResolver:
     cannot resolve a reference or if the persisted record is stale/misbound.
     """
     def __init__(self, *, memory_store: Any, selectors: Any):
+        _reject_authorizing_memory_api(memory_store)
         if memory_store is None or not callable(getattr(memory_store, "get_evidence", None)):
             raise AuthorityError("authorized Memory evidence lookup API is required")
         required = ("resolve_applicability_ref", "resolve_gate_ref", "resolve_evidence_task")
@@ -171,6 +184,7 @@ class CanonicalMemoryTaskSelectors:
     """
     def __init__(self, *, memory_store: Any, canonical_task_id_source: Any = None,
                  index_scope_task_id: str | None = None, page_size: int = 100):
+        _reject_authorizing_memory_api(memory_store)
         if memory_store is None or not callable(getattr(memory_store, "get_task", None)):
             raise AuthorityError("authorized canonical task lookup API is required")
         if canonical_task_id_source is not None and not callable(

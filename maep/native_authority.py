@@ -6,6 +6,7 @@ by an explicitly reviewed runtime root. Standard-library only.
 """
 from __future__ import annotations
 
+from contextvars import ContextVar
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from enum import Enum
@@ -15,6 +16,12 @@ import re
 from typing import Any, Protocol
 
 from maep.core import MAEPError, validate_capability_evolution_decision
+
+# True while NativePolicyEngine.authorize() is evaluating in the current execution
+# context (thread / asyncio task). A decision cannot depend on another decision of
+# the authority itself: providers must read verified records, never ask authorize()
+# again. Module-level by design (ContextVars must not be created per instance).
+_AUTHORIZATION_ACTIVE: ContextVar[bool] = ContextVar("hg_native_authorization_active", default=False)
 
 
 class AuthorityError(RuntimeError):
@@ -307,6 +314,21 @@ class NativePolicyEngine:
 
     def authorize(self, request: dict[str, Any], *, authenticated_context: Any,
                   candidate_target: Any, now: datetime | None = None) -> AuthorizationResult:
+        if _AUTHORIZATION_ACTIVE.get():
+            # A provider reached authorize() while a decision is being evaluated (for
+            # example by reading Memory through its authorizing API). Refuse before any
+            # provider runs; the enclosing evaluation then fails closed on its own.
+            return self._blocked("AUTHORITY_REENTRANT_EVALUATION",
+                                 request=request if isinstance(request, dict) else {})
+        token = _AUTHORIZATION_ACTIVE.set(True)
+        try:
+            return self._evaluate(request, authenticated_context=authenticated_context,
+                                  candidate_target=candidate_target, now=now)
+        finally:
+            _AUTHORIZATION_ACTIVE.reset(token)
+
+    def _evaluate(self, request: dict[str, Any], *, authenticated_context: Any,
+                  candidate_target: Any, now: datetime | None) -> AuthorizationResult:
         now = now or datetime.now(timezone.utc)
         now = now.astimezone(timezone.utc)
         if not isinstance(request, dict):
