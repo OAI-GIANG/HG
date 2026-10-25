@@ -1,5 +1,5 @@
-# MAEP Constitution V1
-Policy: MAEP-1.0.0. Status: normative V1 draft pending test evidence.
+# MAEP Constitution V1 — HISTORICAL / SUPERSEDED
+Policy: MAEP-1.0.0. Superseded for current and future HG work by `MAEP_CONSTITUTION_V1_2.md` (MAEP-1.2.0), via historical MAEP-1.1.0. Retained as historical policy.
 
 ## Priority
 1. Platform safety and law.

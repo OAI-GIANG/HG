@@ -5,7 +5,7 @@ principals. Callers must supply a trusted policy decision and authenticated iden
 """
 from datetime import datetime, timezone
 
-POLICY_VERSION = "MAEP-1.0.0"
+POLICY_VERSION = "MAEP-1.2.0"
 STATES = {
     "DRAFT", "READY", "ASSESSED", "PLANNED", "AUTHORIZED", "RUNNING",
     "VERIFYING", "ACCEPTED", "CLOSED_VERIFIED", "BLOCKED", "FAILED",
@@ -269,9 +269,11 @@ def validate_policy_change(current_version, proposed_version, *, authorized, sel
 
 
 def validate_review_label(review_type, independent_evidence=False):
-    if review_type == "INDEPENDENT" and independent_evidence is not True:
-        raise MAEPError("independent review label requires evidence of an independent reviewer")
-    if review_type not in {"INTERNAL_CRITIQUE", "PEER_REVIEW", "INDEPENDENT"}:
+    """Enforce MAEP-1.2.0: MAEP-029/030 prohibitions remain system-wide."""
+    del independent_evidence  # Evidence does not create an exception to MAEP-030.
+    if review_type == "INDEPENDENT":
+        raise MAEPError("independent-review workflows are prohibited by MAEP-030")
+    if review_type != "INTERNAL_CRITIQUE":
         raise MAEPError("unknown review type")
     return True
 
@@ -306,6 +308,140 @@ def architecture_proposal_allowed(existing_capability, security_or_isolation_nee
     if not isinstance(existing_capability, bool) or not isinstance(security_or_isolation_need, bool):
         raise MAEPError("architecture flags must be booleans")
     return not existing_capability or security_or_isolation_need
+
+
+CAPABILITY_EVOLUTION_DECISIONS = {
+    "EXISTING_REUSE", "EXTEND_EXISTING", "CONSOLIDATE_KEEP_SUPERIOR",
+    "DEPRECATE_OBSOLETE", "GENUINE_GAP", "UNKNOWN"
+}
+_CAPABILITY_GATE_REQUIRED_FIELDS = {
+    "decision_id", "candidate_ref", "policy_version", "scope", "capability",
+    "inventory_status", "inventory_evidence_refs", "overlap_detected",
+    "comparison_evidence_refs", "decision", "rationale", "impact_analysis_refs",
+    "regression_test_refs", "gate_status"
+}
+_CAPABILITY_SUPERIORITY_DIMENSIONS = {
+    "correctness", "security", "reliability", "functional_coverage",
+    "compatibility", "performance_resource_cost", "maintainability_operational_burden"
+}
+
+
+def validate_capability_evolution_decision(record, *, evidence_by_id=None, candidate_ref=None, policy_version=None):
+    """Fail-closed MAEP-022/031 gate for capability overlap, retirement and evolution."""
+    if not isinstance(record, dict):
+        raise MAEPError("capability gate record must be an object")
+    if not isinstance(evidence_by_id, dict):
+        raise MAEPError("capability gate requires resolved candidate-bound evidence")
+    missing = _CAPABILITY_GATE_REQUIRED_FIELDS - record.keys()
+    if missing:
+        raise MAEPError("capability gate missing fields: " + ", ".join(sorted(missing)))
+
+    for field in ("decision_id", "candidate_ref", "policy_version", "scope", "capability", "rationale"):
+        if not _nonempty_string(record[field]):
+            raise MAEPError(f"capability gate {field} must be a non-empty string")
+    if candidate_ref is not None and record["candidate_ref"] != candidate_ref:
+        raise MAEPError("capability gate candidate mismatch")
+    if policy_version is not None and record["policy_version"] != policy_version:
+        raise MAEPError("capability gate policy version mismatch")
+    if record["inventory_status"] != "COMPLETE":
+        raise MAEPError("capability inventory incomplete; MAEP-022 fails closed")
+    if not isinstance(record["overlap_detected"], bool):
+        raise MAEPError("overlap_detected must be a boolean")
+    for field in ("inventory_evidence_refs", "comparison_evidence_refs", "impact_analysis_refs", "regression_test_refs"):
+        refs = record[field]
+        if not isinstance(refs, list) or not all(_nonempty_string(ref) for ref in refs):
+            raise MAEPError(f"{field} must be a list of non-empty evidence/test references")
+    if not record["inventory_evidence_refs"]:
+        raise MAEPError("capability gate requires inventory evidence")
+    if not record["impact_analysis_refs"]:
+        raise MAEPError("capability gate requires impact/dependency evidence")
+    if not record["regression_test_refs"]:
+        raise MAEPError("capability gate requires regression/migration test references")
+
+    decision = record["decision"]
+    if not isinstance(decision, str) or decision not in CAPABILITY_EVOLUTION_DECISIONS:
+        raise MAEPError("unknown capability evolution decision")
+    if decision == "UNKNOWN":
+        raise MAEPError("UNKNOWN capability decision is blocked by MAEP-022")
+    if record["gate_status"] != "PASS":
+        raise MAEPError("capability gate status must be PASS before authorization")
+
+    if record["overlap_detected"]:
+        if decision == "GENUINE_GAP":
+            raise MAEPError("overlap evidence conflicts with GENUINE_GAP decision")
+        if not record["comparison_evidence_refs"]:
+            raise MAEPError("overlapping capabilities require comparison evidence")
+    elif decision == "CONSOLIDATE_KEEP_SUPERIOR":
+        raise MAEPError("consolidation requires evidenced capability overlap")
+
+    if decision == "EXISTING_REUSE" and not _nonempty_string(record.get("selected_implementation")):
+        raise MAEPError("EXISTING_REUSE requires selected_implementation")
+    if decision == "EXTEND_EXISTING" and not _nonempty_string(record.get("selected_implementation")):
+        raise MAEPError("EXTEND_EXISTING requires selected_implementation")
+    if decision == "GENUINE_GAP":
+        for field in ("proposed_owner", "capability_boundary"):
+            if not _nonempty_string(record.get(field)):
+                raise MAEPError(f"GENUINE_GAP requires {field}")
+        if not record["comparison_evidence_refs"]:
+            raise MAEPError(
+                "GENUINE_GAP requires comparison evidence showing no suitable existing capability"
+            )
+
+    if record["overlap_detected"]:
+        basis = record.get("superiority_basis")
+        if not isinstance(basis, dict) or not _CAPABILITY_SUPERIORITY_DIMENSIONS.issubset(basis):
+            raise MAEPError("superiority basis must cover all MAEP-022 quality dimensions")
+        if any(not _nonempty_string(basis[dimension]) for dimension in _CAPABILITY_SUPERIORITY_DIMENSIONS):
+            raise MAEPError("every superiority dimension requires an evidenced rationale")
+
+    if decision == "CONSOLIDATE_KEEP_SUPERIOR":
+        if not _nonempty_string(record.get("selected_implementation")):
+            raise MAEPError("consolidation requires selected_implementation")
+        if not record["comparison_evidence_refs"]:
+            raise MAEPError("consolidation requires comparison evidence")
+
+    if decision == "DEPRECATE_OBSOLETE":
+        if not _nonempty_string(record.get("obsolescence_basis")):
+            raise MAEPError("DEPRECATE_OBSOLETE requires an evidence-linked obsolescence_basis")
+        obsolescence_refs = record.get("obsolescence_evidence_refs")
+        if (
+            not isinstance(obsolescence_refs, list)
+            or not obsolescence_refs
+            or not all(_nonempty_string(item) for item in obsolescence_refs)
+        ):
+            raise MAEPError("DEPRECATE_OBSOLETE requires resolved obsolescence_evidence_refs")
+
+    if decision in {"CONSOLIDATE_KEEP_SUPERIOR", "DEPRECATE_OBSOLETE"}:
+        retired = record.get("retire_candidates")
+        if not isinstance(retired, list) or not retired or not all(_nonempty_string(item) for item in retired):
+            raise MAEPError("retirement requires explicit retire_candidates")
+        if record.get("retirement_authorized") is not True or not _nonempty_string(record.get("retirement_authorization_ref")):
+            raise MAEPError("retirement/removal requires explicit scoped authorization reference")
+        if not _nonempty_string(record.get("recovery_plan_ref")):
+            raise MAEPError("retirement/removal requires a recovery plan reference")
+
+    # References are not evidence by themselves: resolve each one and bind it to this candidate.
+    required_evidence_refs = set(
+        record["inventory_evidence_refs"] + record["comparison_evidence_refs"] +
+        record["impact_analysis_refs"] + record["regression_test_refs"]
+    )
+    if decision in {"CONSOLIDATE_KEEP_SUPERIOR", "DEPRECATE_OBSOLETE"}:
+        required_evidence_refs.update({record["retirement_authorization_ref"], record["recovery_plan_ref"]})
+    if decision == "DEPRECATE_OBSOLETE":
+        required_evidence_refs.update(record["obsolescence_evidence_refs"])
+    for evidence_ref in required_evidence_refs:
+        evidence = evidence_by_id.get(evidence_ref)
+        if not isinstance(evidence, dict) or evidence.get("evidence_id") != evidence_ref:
+            raise MAEPError(f"capability gate evidence reference unresolved: {evidence_ref}")
+        validate_evidence(evidence, record["candidate_ref"])
+        # Results may carry explanatory prose (for example, "NOT_RUN — ...").
+        # Only an explicit PASS status is admissible; exact-string deny lists fail open.
+        result_text = evidence["result"].strip()
+        result_status = result_text.split(maxsplit=1)[0].rstrip(":—-").upper()
+        if result_status != "PASS":
+            raise MAEPError(f"capability gate evidence is not passing: {evidence_ref}")
+
+    return True
 
 
 def make_evidence_amendment(original_evidence_id, amendment_id, reason, corrected_fields):
@@ -355,20 +491,76 @@ def untrusted_content_can_authorize(source_trusted, contains_instruction):
 
 
 def validate_research_record(record):
+    """Validate source-linked research without granting authority or asserting truth.
+
+    The MAEP validator is the canonical structural policy helper. Creativity & Research
+    builds a workflow contract on top; this function intentionally performs no network
+    access, source retrieval, persistence, orchestration, or external action.
+    """
     if not isinstance(record, dict):
         raise MAEPError("research record must be an object")
+    # The base MAEP helper also serves legacy records. The dedicated
+    # Creativity & Research V1 contract requires research_id/question.
+    if "research_id" in record and not _nonempty_string(record.get("research_id")):
+        raise MAEPError("research_id must be a non-empty string when provided")
+    if "question" in record and not _nonempty_string(record.get("question")):
+        raise MAEPError("research question must be a non-empty string when provided")
     if not isinstance(record.get("sources"), list) or not record["sources"]:
         raise MAEPError("research requires at least one source")
     if not isinstance(record.get("claims"), list) or not record["claims"]:
         raise MAEPError("research requires claims linked to sources")
     if not isinstance(record.get("limitations"), list):
         raise MAEPError("research limitations must be a list")
-    source_ids = {s.get("source_id") for s in record["sources"] if isinstance(s, dict)}
+    source_ids = set()
+    for source in record["sources"]:
+        if not isinstance(source, dict):
+            raise MAEPError("each research source must be an object")
+        source_id = source.get("source_id")
+        if not _nonempty_string(source_id) or source_id in source_ids:
+            raise MAEPError("research source IDs must be non-empty and unique")
+        if not _nonempty_string(source.get("ref")):
+            raise MAEPError("each research source requires a reference")
+        if "source_type" in source and not _nonempty_string(source.get("source_type")):
+            raise MAEPError("each research source source_type must be non-empty when provided")
+        if "collection_method" in source and not _nonempty_string(source.get("collection_method")):
+            raise MAEPError("each research source collection_method must be non-empty when provided")
+        if "limitations" in source and not isinstance(source.get("limitations"), list):
+            raise MAEPError("each research source limitations must be a list when provided")
+        source_ids.add(source_id)
+    claim_ids = set()
     for claim in record["claims"]:
-        if not isinstance(claim, dict) or not claim.get("source_refs"):
+        if not isinstance(claim, dict) or not claim.get("claim_id"):
+            raise MAEPError("each research claim requires a claim_id")
+        if claim["claim_id"] in claim_ids:
+            raise MAEPError("research claim IDs must be unique")
+        claim_ids.add(claim["claim_id"])
+        if "statement" in claim and not _nonempty_string(claim.get("statement")):
+            raise MAEPError("research claim statement must be non-empty when provided")
+        if "claim_type" in claim and claim.get("claim_type") not in {"FACT", "INFERENCE", "HYPOTHESIS", "PROPOSAL"}:
+            raise MAEPError("research claim has unknown claim_type")
+        refs = claim.get("source_refs")
+        if not isinstance(refs, list) or not refs or any(not _nonempty_string(ref) for ref in refs):
             raise MAEPError("each research claim requires source references")
-        if not set(claim["source_refs"]).issubset(source_ids):
-            raise MAEPError("research claim references unknown source")
+        if len(set(refs)) != len(refs) or not set(refs).issubset(source_ids):
+            raise MAEPError("research claim references unknown or duplicate sources")
+        limitations = claim.get("limitations", [])
+        if not isinstance(limitations, list):
+            raise MAEPError("research claim limitations must be a list when provided")
+        if claim.get("claim_type") == "FACT" and not claim.get("evidence_refs"):
+            raise MAEPError("FACT research claims require evidence_refs")
+        if claim.get("claim_type") in {"INFERENCE", "HYPOTHESIS", "PROPOSAL"} and not limitations:
+            raise MAEPError("inference, hypothesis and proposal must disclose limitations")
+        if "evidence_refs" in claim and (
+            not isinstance(claim["evidence_refs"], list)
+            or any(not _nonempty_string(ref) for ref in claim["evidence_refs"])
+        ):
+            raise MAEPError("claim evidence_refs must be a list of non-empty references")
+    if "disagreements" in record and not isinstance(record["disagreements"], list):
+        raise MAEPError("research disagreements must be a list")
+    if "research_scope" in record and not _nonempty_string(record["research_scope"]):
+        raise MAEPError("research_scope must be a non-empty string when provided")
+    if "policy_version" in record and not _nonempty_string(record["policy_version"]):
+        raise MAEPError("policy_version must be a non-empty string when provided")
     return True
 
 
