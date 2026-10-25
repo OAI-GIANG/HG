@@ -22,22 +22,21 @@ The factory module is executable Python code. Only configure a reviewed, owner-a
 
 ## Launch
 
-After a production factory has been implemented, reviewed and configured explicitly:
+`runtime.production_config:create_service` is the single production factory (ADR-012). It reads an owner-controlled JSON file named by `HG_RUNTIME_CONFIG` (absolute path, regular non-symlink file owned by the current user, no group/other access, strict JSON, schema `hg-runtime-factory-config-v1` with exactly the keys `schema`, `host` = `127.0.0.1`, `port` (1024-65535), `checkout`, `authority_dir`, `policy_path`, `evidence_dir`, `memory_db`, `idempotency_db`, `receipts_dir`, all paths absolute).
 
 ```sh
 export HG_RUNTIME_FACTORY='runtime.production_config:create_service'
+export HG_RUNTIME_CONFIG="$HOME/.config/hg/runtime-factory.json"
 cd "$HOME/HG"
 PYTHONPATH=. python3 -u -m runtime.service
 ```
 
-`runtime.production_config:create_service` above is an example contract name, **not a currently available module**. Do not set this value until that module exists and its trust/provider bindings have been verified. Without a configured factory, the expected result is `HG_BLOCKED` and exit code `78`.
+The factory verifies the configuration and the provisioned trust root, then blocks with `HG_BLOCKED` and exit code `78`, naming every production binding that has no owner-approved implementation yet (`REQUIRED_BINDINGS` in `runtime/production_config.py`). Approved implementations are registered in that module by pull request; configuration cannot select a verifier.
 
 ## Current deployment state
 
-- Entry point and fail-closed tests: implemented locally.
-- Production factory module: not present/verified.
-- `HG_RUNTIME_FACTORY`: absent at the time of implementation.
-- Owner/session verification, policy provenance verification, and all live provider bindings: not demonstrated as a complete production composition.
-- Service startup, process supervision, network E2E, and production deployment: not performed.
+- Entry point, production factory and fail-closed tests: implemented.
+- Missing production bindings: policy-source verifier (D2), session resolver, request authenticator and runtime-bound authenticated context (D3), approved Memory record verifier and a non-recursive MAEP-022 record read path (D4), tool adapters, live-state provider, acceptance provider.
+- Service startup to READY, process supervision, network E2E and production deployment: not performed.
 
 The runtime must remain stopped until the production factory and its trust inputs are explicitly provisioned and verified. Do not bypass the startup guard to make the service appear healthy.
