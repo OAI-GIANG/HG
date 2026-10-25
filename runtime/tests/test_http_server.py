@@ -285,6 +285,52 @@ class HTTPServerTests(unittest.TestCase):
         self.assertEqual(body["error"], "request_body_size_invalid")
         self.assertEqual(self.fixture.adapter.calls, 0)
 
+    def _stalled_connection_closes(self, payload):
+        import socket
+        import time
+        server = HGHTTPServer(runtime=self.runtime, authenticate_request=self.authenticate,
+                              host="127.0.0.1", port=0, max_body_bytes=4096,
+                              request_timeout_seconds=0.3)
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            client = socket.create_connection(server.address[:2], timeout=5)
+            try:
+                client.sendall(payload)
+                started = time.monotonic()
+                data = b""
+                while True:            # server must answer/close on its own, not wait forever
+                    chunk = client.recv(4096)
+                    if not chunk:
+                        break
+                    data += chunk
+                return data, time.monotonic() - started
+            finally:
+                client.close()
+        finally:
+            server.shutdown()
+            thread.join(timeout=2)
+
+    def test_stalled_request_line_is_closed_by_server_timeout(self):
+        data, elapsed = self._stalled_connection_closes(b"GET /api/tasks/T-1 HTTP/1.1\r\nHost: x")
+        self.assertLess(elapsed, 4)
+        self.assertEqual(self.fixture.adapter.calls, 0)
+
+    def test_stalled_request_body_times_out_with_408(self):
+        head = (b"POST /api/dispatch HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer test-only\r\n"
+                b"Content-Type: application/json\r\nContent-Length: 100\r\n\r\n{\"request\"")
+        data, elapsed = self._stalled_connection_closes(head)
+        self.assertLess(elapsed, 4)
+        self.assertIn(b" 408 ", data.split(b"\r\n", 1)[0])
+        self.assertIn(b"request_body_timeout", data)
+        self.assertEqual(self.fixture.adapter.calls, 0)
+
+    def test_request_timeout_must_be_bounded(self):
+        for value in (0, -1, 61, True, "5"):
+            with self.assertRaisesRegex(HTTPBoundaryError, "invalid_request_timeout"):
+                HGHTTPServer(runtime=self.runtime, authenticate_request=self.authenticate,
+                             host="127.0.0.1", port=0, request_timeout_seconds=value)
+
     def test_non_loopback_bind_is_rejected(self):
         with self.assertRaisesRegex(HTTPBoundaryError, "only_loopback_bind_is_supported"):
             HGHTTPServer(runtime=self.runtime, authenticate_request=self.authenticate, host="0.0.0.0", port=0)
