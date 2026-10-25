@@ -14,6 +14,10 @@ from maep.core import MAEPError
 from maep.native_authority import AuthorityError
 
 MAX_BODY_BYTES = 1_048_576
+# Per-connection socket timeout. Without it a client that stalls mid-request holds a
+# handler thread forever (one thread per connection). Same value as hg serve.
+REQUEST_TIMEOUT_SECONDS = 5.0
+MAX_REQUEST_TIMEOUT_SECONDS = 60.0
 _TASK_PATH = re.compile(r"^/api/tasks/([^/]+)$")
 _TRANSITION_PATH = re.compile(r"^/api/tasks/([^/]+)/transition$")
 _REVIEW_PATH = re.compile(r"^/api/tasks/([^/]+)/review-and-simulate$")
@@ -46,7 +50,7 @@ class HGHTTPServer:
     """
 
     def __init__(self, *, runtime, authenticate_request, host="127.0.0.1", port=0,
-                 max_body_bytes=MAX_BODY_BYTES):
+                 max_body_bytes=MAX_BODY_BYTES, request_timeout_seconds=REQUEST_TIMEOUT_SECONDS):
         if runtime is None or not callable(authenticate_request):
             raise HTTPBoundaryError(503, "runtime_and_authenticator_required")
         if host != "127.0.0.1":
@@ -64,6 +68,10 @@ class HGHTTPServer:
             raise HTTPBoundaryError(503, "canonical_memory_task_api_unavailable")
         if not isinstance(max_body_bytes, int) or isinstance(max_body_bytes, bool) or not 1 <= max_body_bytes <= MAX_BODY_BYTES:
             raise HTTPBoundaryError(400, "invalid_request_size_limit")
+        if (not isinstance(request_timeout_seconds, (int, float)) or isinstance(request_timeout_seconds, bool)
+                or not 0 < request_timeout_seconds <= MAX_REQUEST_TIMEOUT_SECONDS):
+            raise HTTPBoundaryError(400, "invalid_request_timeout")
+        self.request_timeout_seconds = float(request_timeout_seconds)
         self.runtime = runtime
         self.authenticate_request = authenticate_request
         self.max_body_bytes = max_body_bytes
@@ -110,6 +118,9 @@ class HGHTTPServer:
         class Handler(BaseHTTPRequestHandler):
             server_version = "HG-HTTP"
             sys_version = ""
+            # StreamRequestHandler.setup() applies this to the connection socket; a stalled
+            # request line/headers raises TimeoutError, which closes the connection.
+            timeout = service.request_timeout_seconds
 
             def log_message(self, fmt, *args):
                 # Avoid leaking request bodies, bearer material or provider details.
@@ -136,7 +147,11 @@ class HGHTTPServer:
                     raise HTTPBoundaryError(411, "content_length_required") from exc
                 if size < 1 or size > service.max_body_bytes:
                     raise HTTPBoundaryError(413, "request_body_size_invalid")
-                raw = self.rfile.read(size)
+                try:
+                    raw = self.rfile.read(size)
+                except TimeoutError as exc:
+                    self.close_connection = True
+                    raise HTTPBoundaryError(408, "request_body_timeout") from exc
                 if len(raw) != size:
                     raise HTTPBoundaryError(400, "incomplete_request_body")
                 try:
