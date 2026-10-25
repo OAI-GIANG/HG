@@ -97,6 +97,84 @@ class LocalAuthorityStoreTests(unittest.TestCase):
             with self.assertRaises(AuthorityError):
                 sink.verify_integrity()
 
+    def test_concurrent_evidence_appends_keep_ledger_sequential_and_intact(self):
+        # runtime.http_server uses ThreadingHTTPServer and NativePolicyEngine appends
+        # evidence on every decision, so concurrent appends must not corrupt the ledger.
+        import threading
+        with tempfile.TemporaryDirectory(prefix="hg-evidence-concurrency-") as temp:
+            workers, per_worker = 12, 15
+            barrier = threading.Barrier(workers)
+            refs: list[str] = []
+            errors: list[BaseException] = []
+            guard = threading.Lock()
+
+            def worker(index: int) -> None:
+                sink = LocalEvidenceSink(temp)  # separate instance per caller
+                try:
+                    barrier.wait()
+                    for step in range(per_worker):
+                        ref = sink.append({"event_type": "concurrency.test",
+                                           "payload": {"worker": index, "step": step}})
+                        with guard:
+                            refs.append(ref)
+                except BaseException as exc:  # recorded and asserted below
+                    with guard:
+                        errors.append(exc)
+
+            threads = [threading.Thread(target=worker, args=(i,)) for i in range(workers)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=60)
+            self.assertFalse(any(thread.is_alive() for thread in threads))
+            self.assertEqual(errors, [])
+            total = workers * per_worker
+            self.assertEqual(len(refs), total)
+            self.assertEqual(len(set(refs)), total)
+            reopened = LocalEvidenceSink(temp)
+            self.assertTrue(reopened.verify_integrity())
+            events = reopened._read_events()
+            self.assertEqual([event["sequence"] for event in events], list(range(1, total + 1)))
+            # The ledger stays usable after the concurrent burst.
+            reopened.append({"event_type": "concurrency.after", "payload": {}})
+            self.assertTrue(LocalEvidenceSink(temp).verify_integrity())
+
+    def test_concurrent_evidence_appends_from_separate_processes_stay_intact(self):
+        import subprocess
+        import sys
+        with tempfile.TemporaryDirectory(prefix="hg-evidence-processes-") as temp:
+            repo_root = str(Path(__file__).resolve().parents[2])
+            script = (
+                "import sys\n"
+                "from maep.local_authority_store import LocalEvidenceSink\n"
+                "sink = LocalEvidenceSink(sys.argv[1])\n"
+                "for step in range(25):\n"
+                "    sink.append({'event_type': 'process.test', 'payload': {'step': step}})\n"
+            )
+            env = dict(os.environ, PYTHONPATH=repo_root, PYTHONDONTWRITEBYTECODE="1")
+            procs = [subprocess.Popen([sys.executable, "-c", script, temp], env=env,
+                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                     for _ in range(4)]
+            results = [proc.communicate(timeout=120) for proc in procs]
+            for proc, (_, stderr) in zip(procs, results):
+                self.assertEqual(proc.returncode, 0, stderr.decode("utf-8", "replace")[-400:])
+            sink = LocalEvidenceSink(temp)
+            self.assertTrue(sink.verify_integrity())
+            self.assertEqual([event["sequence"] for event in sink._read_events()],
+                             list(range(1, 101)))
+
+    def test_symlinked_evidence_ledger_is_refused_without_writing_target(self):
+        with tempfile.TemporaryDirectory(prefix="hg-evidence-symlink-") as temp:
+            target = Path(temp) / "elsewhere.jsonl"
+            target.write_text("", encoding="utf-8")
+            directory = Path(temp) / "evidence"
+            directory.mkdir()
+            (directory / "evidence.jsonl").symlink_to(target)
+            with self.assertRaises(AuthorityError):
+                LocalEvidenceSink(directory).append({"event_type": "test", "payload": {}})
+            self.assertEqual(target.read_text(encoding="utf-8"), "")
+            self.assertFalse((directory / "evidence-head.json").exists())
+
     def test_root_store_refuses_overwrite(self):
         with tempfile.TemporaryDirectory(prefix="hg-root-no-overwrite-") as temp:
             from maep.native_authority import TrustRootRecord

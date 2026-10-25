@@ -151,6 +151,88 @@ class LocalRuntimeCompositionTests(unittest.TestCase):
             # build_runtime composes dependencies but does not initialize Memory or start services.
             self.assertFalse(memory_path.exists())
 
+    def test_concurrent_authority_decisions_keep_durable_evidence_intact(self):
+        # The threaded HTTP boundary lets authority decisions run concurrently; each
+        # BLOCKED decision appends evidence and append failures are swallowed by the
+        # engine, so ledger integrity is the observable that must hold.
+        import threading
+        with tempfile.TemporaryDirectory(prefix="hg-runtime-concurrency-") as temp:
+            evidence_dir = Path(temp) / "evidence"
+            memory_path = Path(temp) / "memory" / "hg-test.sqlite"
+            memory_path.parent.mkdir()
+            evidence_sink = LocalEvidenceSink(evidence_dir)
+            root = TrustRootRecord.create(
+                root_id="hg-test-root", generation=1, created_at="2026-10-23T00:00:00Z",
+                bootstrap_authorization_ref="fixture:owner-approval",
+                verification_method="fixture-only",
+                verification_material_ref="fixture://material",
+                policy_change_rule_ref="fixture://policy-rule",
+                evidence_ref=evidence_sink.append({"event_type": "fixture.root.provisioned",
+                                                   "payload": {"scope": "isolated-test"}}),
+            )
+            root_store = LocalRootStore(Path(temp) / "root")
+            root_store.store_active(root)
+            policy, resolver, verifier = PolicyFixture(), ResolverFixture(), ProvenanceFixture()
+
+            class CandidateFixture:
+                def inspect(self, target):
+                    return {"verified": True, "repository": "OAI-GIANG/HG",
+                            "candidate_ref": "candidate:fixture"}
+
+            class PrincipalFixture:
+                def resolve(self, context):
+                    return None
+
+            runtime = build_runtime(
+                root_store=root_store, principal_provider=PrincipalFixture(),
+                candidate_provider=CandidateFixture(), policy_provider=policy,
+                applicability_provider=TrustedApplicabilityProvider(
+                    root_store=root_store, policy_provider=policy, resolver=resolver, verifier=verifier),
+                gate_provider=TrustedGateEvidenceProvider(
+                    root_store=root_store, policy_provider=policy, resolver=resolver, verifier=verifier),
+                evidence_sink=evidence_sink,
+                authenticated_context_provider=lambda: None,
+                candidate_target_provider=lambda: "fixture-target",
+                memory_principal_provider=lambda: None,
+                memory_candidate_ref_provider=lambda task_id: "candidate:fixture",
+                memory_db_path=memory_path,
+                live_state_provider=lambda task_id: None,
+                acceptance_provider=lambda task_id, target: None,
+                adapter_registry={"fixture": type("AdapterFixture", (), {
+                    "execute": lambda self, **kwargs: {"outcome": "SUCCEEDED"}})()},
+                idempotency_ledger=LedgerFixture(), receipt_sink=ReceiptFixture(),
+            )
+            workers, per_worker = 8, 12
+            barrier = threading.Barrier(workers)
+            decisions, guard = [], threading.Lock()
+
+            def worker(index):
+                barrier.wait()
+                for step in range(per_worker):
+                    result = runtime.authority.authorize(
+                        {"action": "memory.read", "resource": f"task:{index}:{step}",
+                         "task_ref": f"task:{index}"},
+                        authenticated_context=None, candidate_target="fixture-target")
+                    with guard:
+                        decisions.append(result)
+
+            threads = [threading.Thread(target=worker, args=(i,)) for i in range(workers)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=60)
+            self.assertFalse(any(thread.is_alive() for thread in threads))
+            self.assertEqual(len(decisions), workers * per_worker)
+            self.assertTrue(all(result.decision.value == "BLOCKED" for result in decisions))
+            self.assertTrue(all(result.reason_codes == ("IDENTITY_UNVERIFIED",) for result in decisions))
+            reopened = LocalEvidenceSink(evidence_dir)
+            self.assertTrue(reopened.verify_integrity())
+            events = reopened._read_events()
+            self.assertEqual(len(events), 1 + workers * per_worker)
+            self.assertEqual(sum(1 for e in events if e["event_type"] == "authorization.blocked"),
+                             workers * per_worker)
+            self.assertFalse(memory_path.exists())
+
     def test_missing_active_root_is_absent_without_creating_state(self):
         with tempfile.TemporaryDirectory(prefix="hg-runtime-no-root-") as temp:
             root_store = LocalRootStore(Path(temp) / "root")

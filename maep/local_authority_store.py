@@ -6,6 +6,7 @@ It uses the existing native-authority record contract and Python stdlib only.
 from __future__ import annotations
 
 from dataclasses import asdict
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -143,53 +144,63 @@ class LocalEvidenceSink:
         if not isinstance(event, dict) or not event:
             raise AuthorityError("evidence event must be a non-empty object")
         self.directory.mkdir(parents=True, exist_ok=True)
-        events = self._read_events()
-        # A head file is supplemental read-back evidence; the ledger sequence remains canonical.
-        head = {"last_sequence": len(events), "last_event_digest":
-                events[-1]["event_digest"] if events else None}
-        if self.head_path.exists() or self.head_path.is_symlink():
-            stored_head = load_json_strict(self.head_path)
-            if stored_head != head:
-                raise AuthorityError("evidence head does not match ledger; refusing append")
-        elif events:
-            raise AuthorityError("evidence head missing for non-empty ledger")
-        from hashlib import sha256
-        body = dict(event)
-        body["sequence"] = len(events) + 1
-        body["event_digest"] = ""
-        body["event_digest"] = "sha256:" + sha256(_canonical({
-            key: value for key, value in body.items() if key != "event_digest"
-        })).hexdigest()
-        line = _canonical(body) + b"\n"
         # Use O_APPEND, one write, and fsync; never truncate or rewrite previous lines.
         flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
         if hasattr(os, "O_NOFOLLOW"):
             flags |= os.O_NOFOLLOW
-        fd = os.open(str(self.ledger_path), flags, 0o600)
+        try:
+            fd = os.open(str(self.ledger_path), flags, 0o600)
+        except OSError as exc:
+            raise AuthorityError("evidence ledger must be a regular non-symlink file") from exc
         try:
             if not stat.S_ISREG(os.fstat(fd).st_mode):
                 raise AuthorityError("evidence target is not a regular file")
-            written = os.write(fd, line)
-            if written != len(line):
-                raise AuthorityError("short evidence append")
-            os.fsync(fd)
+            # Serialize read-validate-append-head across threads and processes
+            # (runtime.http_server is threaded and every decision appends evidence).
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            try:
+                events = self._read_events()
+                # A head file is supplemental read-back evidence; the ledger sequence remains canonical.
+                head = {"last_sequence": len(events), "last_event_digest":
+                        events[-1]["event_digest"] if events else None}
+                if self.head_path.exists() or self.head_path.is_symlink():
+                    stored_head = load_json_strict(self.head_path)
+                    if stored_head != head:
+                        raise AuthorityError("evidence head does not match ledger; refusing append")
+                elif events:
+                    raise AuthorityError("evidence head missing for non-empty ledger")
+                from hashlib import sha256
+                body = dict(event)
+                body["sequence"] = len(events) + 1
+                body["event_digest"] = ""
+                body["event_digest"] = "sha256:" + sha256(_canonical({
+                    key: value for key, value in body.items() if key != "event_digest"
+                })).hexdigest()
+                line = _canonical(body) + b"\n"
+                written = os.write(fd, line)
+                if written != len(line):
+                    raise AuthorityError("short evidence append")
+                os.fsync(fd)
+                new_head = {"last_sequence": body["sequence"],
+                            "last_event_digest": body["event_digest"]}
+                # Head replacement is atomic but the evidence ledger itself is append-only.
+                temp_fd, temp_name = tempfile.mkstemp(prefix=".hg-head-", dir=str(self.directory))
+                try:
+                    os.fchmod(temp_fd, 0o600)
+                    with os.fdopen(temp_fd, "wb") as handle:
+                        handle.write(_canonical(new_head))
+                        handle.flush()
+                        os.fsync(handle.fileno())
+                    os.replace(temp_name, self.head_path)
+                finally:
+                    try:
+                        os.unlink(temp_name)
+                    except FileNotFoundError:
+                        pass
+            finally:
+                fcntl.flock(fd, fcntl.LOCK_UN)
         finally:
             os.close(fd)
-        new_head = {"last_sequence": body["sequence"], "last_event_digest": body["event_digest"]}
-        # Head replacement is atomic but the evidence ledger itself is append-only.
-        temp_fd, temp_name = tempfile.mkstemp(prefix=".hg-head-", dir=str(self.directory))
-        try:
-            os.fchmod(temp_fd, 0o600)
-            with os.fdopen(temp_fd, "wb") as handle:
-                handle.write(_canonical(new_head))
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temp_name, self.head_path)
-        finally:
-            try:
-                os.unlink(temp_name)
-            except FileNotFoundError:
-                pass
         return "hg-local-evidence:" + str(body["sequence"]) + ":" + body["event_digest"]
 
     def verify_integrity(self) -> bool:
