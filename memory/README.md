@@ -29,6 +29,9 @@ Core methods:
 - save_checkpoint(...) and assess_resume(...) — checkpoint and assess continuity, digest, evidence, policy, task version and live resource versions. Resume assessment never performs the next action.
 - check_integrity(...), backup_to(...) and restore_to(...) — inspect local integrity or backup/restore to a new isolated path. Existing targets are never overwritten.
 
+Authority read path:
+- AuthorityEvidenceReader(db_path) — read-only (`mode=ro`, `query_only`) access to get_task, get_evidence, get_events, check_integrity and list_tasks, using the same read bodies and integrity checks as the methods above but without calling the policy evaluator. It exists because NativePolicyEngine reads its MAEP-022 records from Memory while deciding; reading them through MemoryStore's authorizing API re-entered authorize() (one call produced 109 nested evaluations and 109 BLOCKED evidence events before RecursionError). Compose it only into the authority's record resolver (`MemoryMAEPRecordResolver`, `CanonicalMemoryTaskSelectors`, which now reject a MemoryStore). It is not a data-plane API: HTTP, Brain and adapters use MemoryStore, and records it returns still need the approved-source provenance verifier.
+
 ## Persistence and security contract
 
 - Python standard library only; SQLite database schema version 1.

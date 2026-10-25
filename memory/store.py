@@ -92,6 +92,26 @@ def _require_nonempty(value, label):
         raise MAEPError(f"{label} must be a non-empty string")
 
 
+def _validate_task_index_args(index_scope_task_id, limit, offset):
+    if not _nonempty(index_scope_task_id):
+        raise MAEPError("index authorization task context is required")
+    if (not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 500
+            or not isinstance(offset, int) or isinstance(offset, bool) or offset < 0):
+        raise MAEPError("task index pagination is invalid")
+
+
+def _validate_evidence_lookup_args(task_id, evidence_id):
+    if not isinstance(task_id, str) or not task_id.strip():
+        raise MAEPError("task_id must be a non-empty string")
+    if not isinstance(evidence_id, str) or not evidence_id.strip():
+        raise MAEPError("evidence_id must be a non-empty string")
+
+
+def _validate_event_limit(limit):
+    if not isinstance(limit, int) or limit < 1 or limit > 1000:
+        raise MAEPError("limit must be an integer from 1 to 1000")
+
+
 def _reject_secret_fields(value, path="record"):
     """Reject obvious secret-value fields; this is not a content DLP scanner."""
     if isinstance(value, dict):
@@ -820,15 +840,16 @@ class MemoryStore:
         must explicitly allow memory:tasks:index:read. The method reads no tables
         outside this MemoryStore and fails closed on schema/event/index mismatch.
         """
-        if not _nonempty(index_scope_task_id):
-            raise MAEPError("index authorization task context is required")
-        if (not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 500
-                or not isinstance(offset, int) or isinstance(offset, bool) or offset < 0):
-            raise MAEPError("task index pagination is invalid")
+        _validate_task_index_args(index_scope_task_id, limit, offset)
         self._authorize(
             "READ", "memory:tasks/index",
             ["memory:tasks:index:read"], index_scope_task_id
         )
+        return self._read_task_index(index_scope_task_id, limit=limit, offset=offset)
+
+    def _read_task_index(self, index_scope_task_id, *, limit, offset):
+        """Read-only index body shared by list_tasks and AuthorityEvidenceReader."""
+        _validate_task_index_args(index_scope_task_id, limit, offset)
         connection = self._connect(readonly=True)
         try:
             self._ensure_ready(connection)
@@ -907,6 +928,10 @@ class MemoryStore:
         self._authorize(
             "READ", f"memory:task/{task_id}", [f"memory:task:{task_id}:read"], task_id
         )
+        return self._read_task(task_id)
+
+    def _read_task(self, task_id):
+        """Read-only task snapshot shared by get_task and AuthorityEvidenceReader."""
         connection = self._connect(readonly=True)
         try:
             self._ensure_ready(connection)
@@ -1144,14 +1169,16 @@ class MemoryStore:
         The returned binding includes the database-owned task, candidate and policy
         metadata. A record's own JSON fields are not accepted as proof of these bindings.
         """
-        if not isinstance(task_id, str) or not task_id.strip():
-            raise MAEPError("task_id must be a non-empty string")
-        if not isinstance(evidence_id, str) or not evidence_id.strip():
-            raise MAEPError("evidence_id must be a non-empty string")
+        _validate_evidence_lookup_args(task_id, evidence_id)
         self._authorize(
             "READ", f"memory:evidence/{evidence_id}",
             [f"memory:task:{task_id}:evidence:read"], task_id
         )
+        return self._read_evidence(task_id, evidence_id)
+
+    def _read_evidence(self, task_id, evidence_id):
+        """Read-only evidence body shared by get_evidence and AuthorityEvidenceReader."""
+        _validate_evidence_lookup_args(task_id, evidence_id)
         connection = self._connect(readonly=True)
         try:
             self._ensure_ready(connection)
@@ -1901,12 +1928,16 @@ class MemoryStore:
         return result
 
     def get_events(self, task_id, *, limit=100):
-        if not isinstance(limit, int) or limit < 1 or limit > 1000:
-            raise MAEPError("limit must be an integer from 1 to 1000")
+        _validate_event_limit(limit)
         self._authorize(
             "READ", f"memory:events/{task_id}",
             [f"memory:task:{task_id}:events:read"], task_id
         )
+        return self._read_events(task_id, limit=limit)
+
+    def _read_events(self, task_id, *, limit):
+        """Read-only event body shared by get_events and AuthorityEvidenceReader."""
+        _validate_event_limit(limit)
         connection = self._connect(readonly=True)
         try:
             self._ensure_ready(connection)
@@ -1934,6 +1965,10 @@ class MemoryStore:
             "READ", "memory:database/integrity",
             ["memory:integrity:read"], task_id
         )
+        return self._inspect_integrity()
+
+    def _inspect_integrity(self):
+        """Read-only integrity inspection shared by check_integrity and AuthorityEvidenceReader."""
         connection = self._connect(readonly=True)
         try:
             self._ensure_ready(connection)
@@ -2111,3 +2146,52 @@ class MemoryStore:
             if destination_connection is not None:
                 destination_connection.close()
             source.close()
+
+
+class AuthorityEvidenceReader:
+    """Read-only Memory record source for the Native Authority decision path only.
+
+    NativePolicyEngine resolves its MAEP-022 applicability/gate/evidence records from
+    Memory while it is deciding. Reading them through MemoryStore's public API asks
+    the same engine for permission, which re-enters authorize() without end. This
+    reader breaks that cycle: the authority (the decision point) reads the records
+    it decides on, without asking itself.
+
+    It is deliberately narrow:
+      * read-only: SQLite ``mode=ro`` plus ``PRAGMA query_only=ON`` (via the shared
+        MemoryStore read helpers); it has no write methods;
+      * same data and integrity checks as the authorized API: each method calls the
+        identical MemoryStore read body (schema, policy metadata, full event-chain
+        digest validation, row/payload binding), so no logic is duplicated;
+      * not a data-plane API: compose it only into the authority's record resolver
+        (MemoryMAEPRecordResolver / CanonicalMemoryTaskSelectors). HTTP, Brain and
+        adapters keep using MemoryStore, whose access still requires authority;
+      * not proof of authority: records it returns must still pass the approved-source
+        provenance verifier (D4) before NativePolicyEngine relies on them.
+    """
+
+    def __init__(self, db_path, *, timeout_seconds=5.0):
+        # Private store with no principal/policy providers in READ_ONLY mode: any
+        # attempt to reach a public (authorizing) method on it fails closed.
+        self._store = MemoryStore(db_path, execution_mode="READ_ONLY",
+                                  timeout_seconds=timeout_seconds)
+
+    @property
+    def path(self):
+        return self._store.path
+
+    def get_task(self, task_id):
+        return self._store._read_task(task_id)
+
+    def get_evidence(self, task_id, evidence_id):
+        return self._store._read_evidence(task_id, evidence_id)
+
+    def get_events(self, task_id, *, limit=100):
+        return self._store._read_events(task_id, limit=limit)
+
+    def check_integrity(self, *, task_id):
+        _require_nonempty(task_id, "task_id")
+        return self._store._inspect_integrity()
+
+    def list_tasks(self, *, index_scope_task_id, limit=100, offset=0):
+        return self._store._read_task_index(index_scope_task_id, limit=limit, offset=offset)
