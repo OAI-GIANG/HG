@@ -36,7 +36,8 @@ The factory verifies the configuration and the provisioned trust root, then bloc
 ## Current deployment state
 
 - Entry point, production factory and fail-closed tests: implemented.
-- Missing production bindings: policy-source verifier (D2), session resolver, request authenticator and runtime-bound authenticated context (D3), approved Memory record verifier and a non-recursive MAEP-022 record read path (D4), tool adapters, live-state provider, acceptance provider.
+- Registered production binding: `maep022-record-reader` = `memory.AuthorityEvidenceReader` (non-recursive, read-only authority record path; PR #18).
+- Missing production bindings: policy-source verifier (D2), session resolver, request authenticator and runtime-bound authenticated context (D3), approved Memory record verifier (D4), tool adapters, live-state provider, acceptance provider.
 - Service startup to READY, process supervision, network E2E and production deployment: not performed.
 
 The runtime must remain stopped until the production factory and its trust inputs are explicitly provisioned and verified. Do not bypass the startup guard to make the service appear healthy.

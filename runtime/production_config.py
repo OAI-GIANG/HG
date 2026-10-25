@@ -20,6 +20,7 @@ from typing import Any
 
 from maep.local_authority_store import LocalRootStore
 from maep.native_authority import AuthorityError
+from memory import AuthorityEvidenceReader
 from runtime.errors import RuntimeStartupError
 
 CONFIG_ENV = "HG_RUNTIME_CONFIG"
@@ -42,7 +43,11 @@ REQUIRED_BINDINGS = (
     ("live-state-provider", "no production implementation"),
     ("acceptance-provider", "no production implementation"),
 )
-APPROVED_BINDINGS: dict[str, Any] = {}
+APPROVED_BINDINGS: dict[str, Any] = {
+    # Read-only authority record source (PR #18): breaks the authorize() -> Memory
+    # -> authorize() cycle. Constructed per Memory database at composition time.
+    "maep022-record-reader": AuthorityEvidenceReader,
+}
 
 
 def _unique_object(pairs):

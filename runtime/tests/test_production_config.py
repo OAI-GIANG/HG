@@ -113,7 +113,10 @@ class ProductionConfigTests(unittest.TestCase):
                 pc.create_service()
         message = str(ctx.exception)
         for name, _reason in pc.REQUIRED_BINDINGS:
-            self.assertIn(name, message)
+            if name in pc.APPROVED_BINDINGS:
+                self.assertNotIn(name, message)
+            else:
+                self.assertIn(name, message)
         # No Memory database, ledger, evidence or receipt state is created.
         self.assertEqual(self.snapshot(), before)
 
@@ -126,9 +129,17 @@ class ProductionConfigTests(unittest.TestCase):
             with self.assertRaisesRegex(service.RuntimeStartupError, "composition is not implemented"):
                 pc.create_service()
 
-    def test_no_binding_is_registered_in_production_code(self):
-        self.assertEqual(pc.APPROVED_BINDINGS, {})
-        self.assertEqual(len(pc.missing_bindings()), len(pc.REQUIRED_BINDINGS))
+    def test_only_reviewed_bindings_are_registered_in_production_code(self):
+        # Exactly the reviewed set; anything else registered here is a defect.
+        from memory import AuthorityEvidenceReader
+        self.assertEqual(pc.APPROVED_BINDINGS, {"maep022-record-reader": AuthorityEvidenceReader})
+        missing = pc.missing_bindings()
+        self.assertEqual(len(missing), len(pc.REQUIRED_BINDINGS) - 1)
+        self.assertFalse(any(item.startswith("maep022-record-reader") for item in missing))
+        for owner_seam in ("approved-policy-source-verifier", "authenticated-session-resolver",
+                           "request-authenticator", "authenticated-context-provider",
+                           "approved-memory-record-verifier"):
+            self.assertTrue(any(item.startswith(owner_seam) for item in missing), owner_seam)
 
     def test_service_entrypoint_reports_blocker_and_exits_78(self):
         self.provision_test_root()
