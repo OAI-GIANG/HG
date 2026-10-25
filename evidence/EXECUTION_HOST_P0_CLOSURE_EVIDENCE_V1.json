@@ -1,0 +1,207 @@
+{
+  "evidence_id": "HG-EH-P0-20261024-001",
+  "captured_at": "2026-10-24",
+  "repository": "OAI-GIANG/HG",
+  "branch": "stt/execution-host-audit-only-20261024",
+  "pull_request": {
+    "number": 11,
+    "state": "OPEN",
+    "draft": true,
+    "merged": false
+  },
+  "tested_code_commit": "cdb604af3dc731fef9508f3b914b6221049b4861",
+  "main_observed": "37e30b106cb9e0fafb289066befbce2c2b700a4a",
+  "original_checkout": {
+    "path": "/data/data/com.termux/files/home/HG",
+    "head": "f7f00a75c6a1b1363993c2fb9bc023171f080038",
+    "branch": "stt/maep-v1-20261022",
+    "preexisting_status_entries": 90,
+    "modified_by_assessment": false
+  },
+  "production": {
+    "hg_server_pid": 15005,
+    "observed_command": "python3 -u -m hg.server",
+    "changed": false
+  },
+  "host": {
+    "platform": "Android 16 / Termux",
+    "kernel": "Linux localhost 6.6.118-android15-8-gebdfad32d749-ab15099304-4k aarch64",
+    "python": "3.14.6",
+    "rdc_version": "0.3.0",
+    "rdc_allowedDirectories": [],
+    "rdc_defaultShell": "/data/data/com.termux/files/usr/bin/bash",
+    "hg_server_pid_15005": {
+      "uid": 10460,
+      "gid": 10460,
+      "selinux": "u:r:untrusted_app_27:s0:c204,c257,c512,c768",
+      "cap_eff": "0",
+      "seccomp": 2,
+      "no_new_privs": 0
+    },
+    "rdc_pid_15212": {
+      "uid": 10460,
+      "gid": 10460,
+      "selinux": "u:r:untrusted_app_27:s0:c204,c257,c512,c768",
+      "cap_eff": "0",
+      "seccomp": 2,
+      "no_new_privs": 0
+    },
+    "proc_self_user_namespace_visible": false,
+    "namespace_probes": {
+      "unshare -Ur true": {
+        "exit_code": 1,
+        "result": "Invalid argument"
+      },
+      "unshare -m true": {
+        "exit_code": 1,
+        "result": "Operation not permitted"
+      },
+      "unshare -n true": {
+        "exit_code": 1,
+        "result": "Operation not permitted"
+      },
+      "unshare -pf true": {
+        "exit_code": 1,
+        "result": "Operation not permitted"
+      }
+    },
+    "available_tools": {
+      "proot": true,
+      "unshare": true,
+      "docker": false,
+      "podman": false,
+      "nerdctl": false,
+      "lxc": false,
+      "lxd": false,
+      "qemu_system_aarch64": false,
+      "qemu_aarch64": false,
+      "systemd_nspawn": false,
+      "firejail": false,
+      "bwrap": false,
+      "dev_kvm": false
+    }
+  },
+  "tests": [
+    {
+      "id": "EH-LOCAL-TARGETED",
+      "command": "PYTHONDONTWRITEBYTECODE=1 python -m unittest hg.tests.test_execution_host maep.tests.test_policy_controls hg.tests.test_gateway maep.tests.test_hg_audit_minimum_grant_proposal",
+      "exit_code": 0,
+      "tests": 61,
+      "result": "PASS"
+    },
+    {
+      "id": "EH-LOCAL-FULL",
+      "command": "PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -q",
+      "exit_code": 0,
+      "tests": 456,
+      "result": "PASS",
+      "warnings": [
+        "ResourceWarning: closed socket warning surfaced",
+        "ResourceWarning: implicit cleanup of HTTPError 404"
+      ]
+    },
+    {
+      "id": "EH-DIFF-CHECK",
+      "command": "git diff --check",
+      "exit_code": 0,
+      "result": "PASS"
+    },
+    {
+      "id": "EH-OS-UNSHARE-USER",
+      "command": "unshare -Ur true",
+      "exit_code": 1,
+      "result": "FAIL_CLOSED_CAPABILITY_UNAVAILABLE",
+      "observed": "Invalid argument"
+    },
+    {
+      "id": "EH-OS-UNSHARE-MOUNT",
+      "command": "unshare -m true",
+      "exit_code": 1,
+      "result": "FAIL_CLOSED_CAPABILITY_UNAVAILABLE",
+      "observed": "Operation not permitted"
+    },
+    {
+      "id": "EH-OS-UNSHARE-NET",
+      "command": "unshare -n true",
+      "exit_code": 1,
+      "result": "FAIL_CLOSED_CAPABILITY_UNAVAILABLE",
+      "observed": "Operation not permitted"
+    },
+    {
+      "id": "EH-OS-UNSHARE-PID",
+      "command": "unshare -pf true",
+      "exit_code": 1,
+      "result": "FAIL_CLOSED_CAPABILITY_UNAVAILABLE",
+      "observed": "Operation not permitted"
+    }
+  ],
+  "gate_status": {
+    "EH-01": "PARTIAL",
+    "EH-02": "BLOCKED",
+    "EH-03": "BLOCKED",
+    "EH-04": "UNVERIFIED",
+    "EH-05": "PASS_APPLICATION_TESTS_ONLY",
+    "EH-06": "PARTIAL",
+    "EH-07": "UNVERIFIED",
+    "OS_ISOLATION_UNVERIFIED": "OPEN",
+    "COMPLETE_MEDIATION_UNVERIFIED": "OPEN",
+    "EVIDENCE_SINK_SEPARATION": "UNVERIFIED",
+    "overall": "BLOCKED_P0"
+  },
+  "files_hashed": {
+    "maep/core.py": {
+      "sha256": "c359723a8de01cf9f4d1df6181140043521c5a01d2fca71e4e3080591c1c0740",
+      "bytes": 22862
+    },
+    "hg/runtime.py": {
+      "sha256": "cc492733e3d19a37510c0b5880a6140977ddaccd2fa82370ba3f13f830bda207",
+      "bytes": 5830
+    },
+    "hg/tools/gateway.py": {
+      "sha256": "86ec727ba92a9264edaaad65538b8d03bbc72e7eaaaaa4b6123f5b817b9e6b45",
+      "bytes": 18885
+    },
+    "maep/tests/test_policy_controls.py": {
+      "sha256": "097a04f47bacb6d7fa5608085966e51309b07477b9fd037bc68e89023a9ba52d",
+      "bytes": 4049
+    },
+    "hg/tests/test_execution_host.py": {
+      "sha256": "9d8b2757f3fb6bfe05ab28f5df20224eb52ae74b320c83018299bc5b06d16f1d",
+      "bytes": 6538
+    },
+    "docs/architecture/EXECUTION_HOST_P0_CLOSURE_ASSESSMENT_V1.md": {
+      "sha256": "399255f9eb14b1da2768d10bd1b01d427ccc72700be9d3f53ea3e6d2828e73aa",
+      "bytes": 11308
+    },
+    "maep/tests/test_hg_audit_minimum_grant_proposal.py": {
+      "sha256": "b8101b26af8353df75c9167ca96fcb6eb94051c3c1f6d79a2c1d62aed7619f59",
+      "bytes": 3016
+    },
+    "docs/architecture/EXECUTION_HOST_AUDIT_ONLY_V1.md": {
+      "sha256": "02f6b2b7ecc99fd7037bd6751d6a24d4253f8427a16af6095090265406019ac5",
+      "bytes": 4643
+    }
+  },
+  "limitations": [
+    "This evidence manifest is stored in the feature branch and is not itself an append-only or independently tamper-resistant evidence sink.",
+    "The test suite proves application-level behavior only; it does not prove OS isolation or complete mediation.",
+    "The RDC tool inventory is the complete set visible in the connected session, not a complete inventory of all underlying Android/kernel entry points.",
+    "No Linux VM or host was available through the inspected local device; no cloud VM was provisioned.",
+    "The canonical main owner-grants manifest has no HG_AUDIT grant. No trust-root file was changed.",
+    "No production files, configuration, permissions, principal, PID, service, or main branch were changed."
+  ],
+  "grant_proposal_test": {
+    "result": "PASS_FIXTURE_ONLY",
+    "tests": 5,
+    "canonical_manifest_modified": false
+  },
+  "candidate_commit": "068e7b2d106adb5dd40dcfec8f7d9098da3bf854",
+  "tested_candidate_commit": "068e7b2d106adb5dd40dcfec8f7d9098da3bf854",
+  "assessment_commit": "068e7b2d106adb5dd40dcfec8f7d9098da3bf854",
+  "base_candidate_commit": "cdb604af3dc731fef9508f3b914b6221049b4861",
+  "manifest_integrity_note": "This JSON intentionally excludes its own hash to avoid self-reference; the file is not an append-only or tamper-resistant evidence sink.",
+  "file_hash_verification": {
+    "result": "PASS",
+    "files_checked": 8
+  }
+}

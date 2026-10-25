@@ -26,6 +26,12 @@ from hg.brain.plan import step_request
 OUTCOMES = {"SUCCEEDED", "SUCCEEDED_UNVERIFIED", "FAILED", "UNKNOWN", "DENIED", "BLOCKED",
             "TOOL_UNAVAILABLE", "INVALID_INPUT"}
 SETTLED = {"SUCCEEDED", "SUCCEEDED_UNVERIFIED", "FAILED"}
+AUDIT_ONLY_SAFE_ADAPTER_TYPES = {
+    ("hg.tools.gateway", "LocalFileReadAdapter"),
+    ("hg.tools.code", "CodeSearchAdapter"),
+    ("hg.tools.code", "SymbolIndexAdapter"),
+    ("hg.tools.code", "CodeDiffAdapter"),
+}
 
 
 class AdapterInputError(ValueError):
@@ -241,6 +247,17 @@ class ActionGateway:
         enforce_execution_mode(mode, "READ")       # rejects an unknown mode up front
         if not isinstance(principal, str) or not principal.strip():
             raise MAEPError("gateway principal must be non-empty")
+        if mode == "AUDIT_ONLY":
+            if principal != "HG_AUDIT":
+                raise MAEPError("AUDIT_ONLY requires the fixed HG_AUDIT principal")
+            unsafe = sorted(
+                getattr(adapter, "name", type(adapter).__name__)
+                for adapter in adapters
+                if (type(adapter).__module__, type(adapter).__name__) not in AUDIT_ONLY_SAFE_ADAPTER_TYPES
+                or getattr(adapter, "action", None) not in {"READ", "LIST", "INSPECT"}
+            )
+            if unsafe:
+                raise MAEPError("AUDIT_ONLY registry contains non-allowlisted capabilities: " + ", ".join(unsafe))
         self._principal = principal
         self._snapshot = store.snapshot            # read access only; the gateway never mutates tasks
         self._evaluator = evaluator

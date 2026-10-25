@@ -181,6 +181,31 @@ class OwnerGrantsFileTests(unittest.TestCase):
             self.assertFalse(allowed, tool)
             self.assertIn(GRANTS, reason)
 
+    def test_symlink_alias_to_grants_file_blocked(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            target = root / GRANTS
+            target.parent.mkdir(parents=True)
+            target.write_text("{}", encoding="utf-8")
+            alias = root / "alias-grants.json"
+            alias.symlink_to(target)
+            payload = {"tool_name": "Write", "tool_input": {"file_path": str(alias)}, "cwd": str(root)}
+            allowed, reason = evaluate(payload, probe=FakeProbe())
+            self.assertFalse(allowed, "symlink alias must not bypass trust-file protection")
+            self.assertIn(GRANTS, reason)
+
+    def test_path_traversal_alias_to_guard_settings_blocked(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            target = root / ".claude" / "settings.json"
+            target.parent.mkdir(parents=True)
+            target.write_text("{}", encoding="utf-8")
+            alias = root / "nested" / ".." / ".claude" / "settings.json"
+            payload = {"tool_name": "Edit", "tool_input": {"file_path": str(alias)}, "cwd": str(root)}
+            allowed, reason = evaluate(payload, probe=FakeProbe())
+            self.assertFalse(allowed, "path traversal must not bypass guard protection")
+            self.assertIn(".claude/settings.json", reason)
+
     def test_reading_grants_file_and_editing_neighbours_allowed(self):
         for payload in (
             bash(f"cat {GRANTS}"),
@@ -190,6 +215,98 @@ class OwnerGrantsFileTests(unittest.TestCase):
         ):
             allowed, reason = evaluate(payload, probe=FakeProbe())
             self.assertTrue(allowed, f"{payload} ({reason})")
+
+    def test_agent_cannot_disable_or_rewrite_guard_controls(self):
+        for command in (
+            "echo x > .claude/settings.json",
+            "sed -i 's/a/b/' .claude/settings.json",
+            "rm .claude/settings.json",
+            "echo x > .claude/hooks/maep_guard.py",
+            "sed -i 's/a/b/' .claude/hooks/maep_guard.py",
+            "git checkout other-branch -- .claude/settings.json",
+        ):
+            allowed, reason = evaluate(bash(command), probe=FakeProbe())
+            self.assertFalse(allowed, command)
+            self.assertIn("only the owner changes", reason)
+        for tool in ("Edit", "Write", "MultiEdit", "NotebookEdit"):
+            for path in ("/repo/.claude/settings.json", "/repo/.claude/hooks/maep_guard.py"):
+                payload = {"tool_name": tool, "tool_input": {"file_path": path}}
+                allowed, reason = evaluate(payload, probe=FakeProbe())
+                self.assertFalse(allowed, f"{tool} {path}")
+                self.assertIn("only the owner changes", reason)
+
+
+class InlineInterpreterTests(unittest.TestCase):
+    """Inline interpreter payloads are opaque to the shell parser and must fail closed."""
+
+    def test_inline_interpreter_execution_blocked(self):
+        for command in (
+            "python3 -c 'open(\"maep/authority/owner-grants.json\", \"w\").write(\"{}\")'",
+            "python -c 'import subprocess; subprocess.run([\"git\", \"push\", \"origin\", \"main\"])'",
+            "node -e 'require(\"child_process\").execSync(\"git push origin main\")'",
+            "perl -e 'system(\"git push origin main\")'",
+            "ruby -e 'system(\"git push origin main\")'",
+            "php -r 'file_put_contents(\"maep/authority/owner-grants.json\", \"{}\");'",
+            "env python3 -c 'print(1)'",
+            "bash -c \"python3 -c 'print(1)'\"",
+        ):
+            allowed, reason = evaluate(bash(command), probe=FakeProbe())
+            self.assertFalse(allowed, command)
+            self.assertIn("inline code execution", reason)
+
+    def test_module_based_test_runner_remains_allowed(self):
+        allowed, reason = evaluate(bash("python3 -m unittest discover -s maep/tests -v"), probe=FakeProbe())
+        self.assertTrue(allowed, reason)
+
+    def test_script_file_execution_blocked(self):
+        for command in (
+            "python3 tools/modify_policy.py",
+            "python ./scripts/update.py",
+            "env python3 tools/modify_policy.py",
+            "bash ./scripts/change-trust.sh",
+            "sh ./scripts/change-trust.sh",
+            "node ./scripts/change-policy.js",
+            "ruby ./scripts/change-policy.rb",
+            "perl ./scripts/change-policy.pl",
+            "php ./scripts/change-policy.php",
+            "bash -c 'python3 tools/modify_policy.py'",
+            "env -S 'python3 tools/modify_policy.py'",
+            "HG_MODE=1 env -S 'python3 tools/modify_policy.py'",
+            "command env -S 'python3 tools/modify_policy.py'",
+            "python3 -m unittest tools.malicious_test",
+            "python3 -m unittest discover -s ../outside-tests",
+            "python3 -m pytest",
+            "git -c alias.pwn='!sh -c whoami' pwn",
+            "git --config-env=alias.pwn=HG_ALIAS pwn",
+        ):
+            allowed, reason = evaluate(bash(command), probe=FakeProbe())
+            self.assertFalse(allowed, command)
+            self.assertTrue(reason)
+
+    def test_opaque_shell_indirection_blocked(self):
+        for command in (
+            "echo $(git push origin main)",
+            "echo `git push origin main`",
+            "python3 -m unittest $(echo something)",
+            "eval 'git push origin main'",
+            "printf 'git push origin main' | xargs -I{} sh -c '{}'",
+            "find . -type f -exec sh -c 'git push origin main' \\;",
+            "cat <(git status)",
+            "cat >(tee /tmp/maep-probe)",
+        ):
+            allowed, reason = evaluate(bash(command), probe=FakeProbe())
+            self.assertFalse(allowed, command)
+            self.assertTrue(reason)
+
+    def test_allowlisted_modules_and_version_queries_remain_allowed(self):
+        for command in (
+            "python3 -m unittest discover -s maep/tests",
+            "python3 -m unittest discover -s hg/tests -p test_*.py",
+            "python3 --version",
+            "node --version",
+        ):
+            allowed, reason = evaluate(bash(command), probe=FakeProbe())
+            self.assertTrue(allowed, f"{command}: {reason}")
 
 
 class MalformedInputTests(unittest.TestCase):
