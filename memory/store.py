@@ -979,6 +979,15 @@ class MemoryStore:
             guards = {}
             gate_ids = []
             acceptance_payload = None
+            if target == "VERIFYING":
+                result_row = connection.execute(
+                    """SELECT evidence_id FROM evidence
+                       WHERE task_id=? AND candidate_ref=? AND policy_version=?
+                       ORDER BY created_at DESC LIMIT 1""",
+                    (task_id, row["candidate_ref"], POLICY_VERSION),
+                ).fetchone()
+                guards["result_recorded"] = result_row is not None
+                guards["candidate_ref"] = row["candidate_ref"]
             if target == "READY":
                 guards["task_valid"] = validate_task(task)
             if target in {"AUTHORIZED", "RUNNING"}:

@@ -167,8 +167,9 @@ class TransitionTests(unittest.TestCase):
         with self.assertRaises(MAEPError):
             transition("FAILED", "DRAFT")
 
-    def test_new_linked_task_can_start(self):
-        self.assertEqual(transition("FAILED", "DRAFT", new_task=True), "DRAFT")
+    def test_terminal_continuation_requires_a_separate_linked_task(self):
+        with self.assertRaises(TypeError):
+            transition("FAILED", "DRAFT", new_task=True)
 
     def test_acceptance_requires_gates(self):
         with self.assertRaises(MAEPError):
