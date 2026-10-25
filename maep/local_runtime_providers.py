@@ -56,9 +56,23 @@ def _write_new_json(path: Path, body: dict[str, Any], mode: int = 0o600) -> None
             handle.write(_canonical(body) + b"\n")
             handle.flush()
             os.fsync(handle.fileno())
-        # Hard link publishes the completed inode without replacing an existing file.
-        os.link(tmp, path, follow_symlinks=False)
-        os.unlink(tmp)
+        link = getattr(os, "link", None)
+        if callable(link):
+            # Hard link publishes the completed inode without replacing an existing file.
+            link(tmp, path, follow_symlinks=False)
+            os.unlink(tmp)
+        else:
+            # Android/Termux Python has no os.link. Reserve the name exclusively (fails if
+            # anything, including a symlink, exists), then atomically replace only that
+            # reservation with the completed file. A reader racing the replace sees an
+            # empty file, which strict JSON loading rejects (fail closed).
+            try:
+                reserved = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                                   | getattr(os, "O_NOFOLLOW", 0), mode)
+            except FileExistsError:
+                raise AuthorityError("refusing to overwrite existing local provider record") from None
+            os.close(reserved)
+            os.replace(tmp, path)
         dfd = os.open(str(path.parent), os.O_RDONLY)
         try:
             os.fsync(dfd)
