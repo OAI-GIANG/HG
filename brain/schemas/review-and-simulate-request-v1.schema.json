@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hg:runtime:review-and-simulate-request-v1.schema.json",
+  "title": "HG Review and Simulate HTTP Request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["plan"],
+  "properties": {
+    "plan": {"$ref": "task-plan-v1.schema.json"},
+    "claims": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["claim_id", "statement"],
+        "properties": {
+          "claim_id": {"type": "string", "minLength": 1, "maxLength": 256},
+          "statement": {"type": "string", "minLength": 1, "maxLength": 2000},
+          "claim_type": {"type": "string", "minLength": 1, "maxLength": 64},
+          "source_refs": {"type": "array", "maxItems": 64, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 256}},
+          "evidence_refs": {"type": "array", "maxItems": 64, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 256}},
+          "limitations": {"type": "array", "maxItems": 16, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 1000}}
+        }
+      }
+    },
+    "evidence_refs": {"type": "array", "maxItems": 128, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 256}},
+    "assumptions": {"type": "array", "maxItems": 64, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 1000}},
+    "constraints": {"type": "array", "maxItems": 64, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 1000}},
+    "scenario_request": {"oneOf": [{"type": "null"}, {"$ref": "scenario-request-v1.schema.json"}]}
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hg:brain:task-plan-v1.schema.json",
+  "title": "HG Candidate-Bound Task Plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "status", "task_id", "candidate_ref", "policy_version", "objective_summary", "assumptions", "steps", "execution_order", "acceptance_coverage", "evidence_coverage", "context_record_refs", "authority_effect", "side_effects_performed", "ready_to_execute", "limitations", "plan_digest"],
+  "properties": {
+    "contract_version": {"const": "hg.plan.v1"},
+    "status": {"const": "VALIDATED_PLAN_NOT_AUTHORIZED"},
+    "task_id": {"type": "string", "minLength": 1},
+    "candidate_ref": {"type": "string", "minLength": 1},
+    "policy_version": {"type": "string", "minLength": 1},
+    "objective_summary": {"type": "string", "minLength": 1, "maxLength": 2000},
+    "assumptions": {"type": "array", "maxItems": 20, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 500}},
+    "steps": {"type": "array", "minItems": 1, "maxItems": 16, "items": {"$ref": "#/$defs/step"}},
+    "execution_order": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "acceptance_coverage": {"type": "object", "additionalProperties": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}},
+    "evidence_coverage": {"type": "object", "additionalProperties": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}},
+    "context_record_refs": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "authority_effect": {"const": "NONE"},
+    "side_effects_performed": {"const": false},
+    "ready_to_execute": {"const": false},
+    "limitations": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+    "plan_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+  },
+  "$defs": {
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["step_id", "objective", "effect_class", "depends_on", "resource_ref", "input_refs", "expected_output", "acceptance_criteria_indices", "evidence_requirement_indices", "verification_method", "risk_level", "authorization_required", "preconditions", "recovery_action", "stop_condition"],
+      "properties": {
+        "step_id": {"type": "string", "minLength": 1, "maxLength": 64},
+        "objective": {"type": "string", "minLength": 1, "maxLength": 1500},
+        "effect_class": {"enum": ["READ_ONLY", "REASONING", "PROPOSAL", "SIDE_EFFECT"]},
+        "depends_on": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 64}},
+        "resource_ref": {"type": "string", "minLength": 1, "maxLength": 1500},
+        "input_refs": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 256}},
+        "expected_output": {"type": "string", "minLength": 1, "maxLength": 1500},
+        "acceptance_criteria_indices": {"type": "array", "uniqueItems": true, "items": {"type": "integer", "minimum": 0}},
+        "evidence_requirement_indices": {"type": "array", "uniqueItems": true, "items": {"type": "integer", "minimum": 0}},
+        "verification_method": {"type": "string", "minLength": 1, "maxLength": 1500},
+        "risk_level": {"enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"]},
+        "authorization_required": {"type": "boolean"},
+        "preconditions": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 500}},
+        "recovery_action": {"type": "string", "minLength": 1, "maxLength": 1500},
+        "stop_condition": {"type": "string", "minLength": 1, "maxLength": 1500}
+      }
+    }
+  }
+}

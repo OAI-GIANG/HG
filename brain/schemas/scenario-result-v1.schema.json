@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hg:brain:scenario-result-v1.schema.json",
+  "title": "HG Scenario Simulation Result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version","scenario_id","task_ref","candidate_ref","policy_version","input_digest","status","epistemic_label","authority_effect","side_effects_performed","horizon_steps_requested","scenario_count_requested","scenario_count_completed_or_stopped","results","sensitivity","limitations","resource_usage"],
+  "properties": {
+    "contract_version": {"const":"hg.scenario.v1"},
+    "scenario_id": {"type":"string","minLength":1},
+    "task_ref": {"type":"string","minLength":1},
+    "candidate_ref": {"type":"string","minLength":1},
+    "policy_version": {"type":"string","minLength":1},
+    "input_digest": {"type":"string","pattern":"^sha256:[0-9a-f]{64}$"},
+    "status": {"enum":["SIMULATED","BUDGET_EXCEEDED"]},
+    "epistemic_label": {"const":"SIMULATED"},
+    "authority_effect": {"const":"NONE"},
+    "side_effects_performed": {"const":false},
+    "horizon_steps_requested": {"type":"integer","minimum":1,"maximum":20},
+    "scenario_count_requested": {"type":"integer","minimum":1,"maximum":20},
+    "scenario_count_completed_or_stopped": {"type":"integer","minimum":0,"maximum":20},
+    "results": {"type":"array","maxItems":20,"items":{"type":"object","additionalProperties":false,"required":["scenario_id","assumptions","initial_state","final_state","trace","violations","status","epistemic_label"],"properties":{"scenario_id":{"type":"string","minLength":1},"assumptions":{"type":"array","items":{"type":"string"}},"initial_state":{"type":"object","additionalProperties":{"type":"number"}},"final_state":{"type":"object","additionalProperties":{"type":"number"}},"trace":{"type":"array","maxItems":20,"items":{"type":"object","additionalProperties":false,"required":["step","changed","state"],"properties":{"step":{"type":"integer","minimum":1,"maximum":20},"changed":{"type":"object","additionalProperties":{"type":"number"}},"state":{"type":"object","additionalProperties":{"type":"number"}}}}},"violations":{"type":"array"},"status":{"enum":["COMPLETED","STOPPED_RANGE_VIOLATION","STOPPED_NONFINITE","BUDGET_EXCEEDED"]},"epistemic_label":{"const":"SIMULATED"}}}},
+    "sensitivity": {"type":"object","additionalProperties":{"type":"object","additionalProperties":false,"required":["min_final","max_final","scenario_count","unit"],"properties":{"min_final":{"type":"number"},"max_final":{"type":"number"},"scenario_count":{"type":"integer","minimum":1},"unit":{"type":"string","minLength":1}}}},
+    "limitations": {"type":"array","items":{"type":"string"}},
+    "resource_usage": {"type":"object","additionalProperties":false,"required":["elapsed_ms","scenario_count","transition_count","output_bytes"],"properties":{"elapsed_ms":{"type":"number","minimum":0},"scenario_count":{"type":"integer","minimum":0},"transition_count":{"type":"integer","minimum":0},"output_bytes":{"type":"integer","minimum":1}}}
+  }
+}
