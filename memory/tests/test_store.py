@@ -430,6 +430,69 @@ class MemoryStoreTests(unittest.TestCase):
         self.assertEqual(found[0]["record_id"], second["record_id"])
         self.assertEqual(found[0]["verification_status"], "VERIFIED")
 
+    def test_get_knowledge_returns_latest_authorized_version_by_claim_id(self):
+        self.record_evidence()
+        claim = {
+            "claim_id": "CL-GET", "claim_type": "FACT",
+            "statement": "Direct claim lookup stays task scoped",
+            "evidence_refs": ["EV-1"], "limitations": [],
+        }
+        first = self.store.put_knowledge(
+            "T-MK-1", claim, candidate_ref="candidate-1", source_ref="fixture://lookup",
+            collector="test", method="controlled observation", provenance_limitations=["fixture only"],
+        )
+        second = self.store.verify_knowledge(
+            "T-MK-1", "CL-GET", candidate_ref="candidate-1", evidence_refs=["EV-1"],
+            verification_id="VER-GET", limitations=["test verifier"],
+        )
+        found = self.store.get_knowledge("T-MK-1", "CL-GET")
+        self.assertEqual(found["record_id"], second["record_id"])
+        self.assertEqual(found["version"], 2)
+        self.assertEqual(found["verification_status"], "VERIFIED")
+        self.assertNotEqual(found["record_id"], first["record_id"])
+
+    def test_get_knowledge_survives_store_reopen_with_same_canonical_binding(self):
+        self.record_evidence()
+        claim = {
+            "claim_id": "CL-RESTART", "claim_type": "FACT",
+            "statement": "Knowledge remains versioned after reopen",
+            "evidence_refs": ["EV-1"], "limitations": [],
+        }
+        self.store.put_knowledge(
+            "T-MK-1", claim, candidate_ref="candidate-1", source_ref="fixture://restart",
+            collector="test", method="controlled observation", provenance_limitations=["fixture only"],
+        )
+        self.store.verify_knowledge(
+            "T-MK-1", "CL-RESTART", candidate_ref="candidate-1", evidence_refs=["EV-1"],
+            verification_id="VER-RESTART", limitations=["test verifier"],
+        )
+        reopened = MemoryStore(
+            self.db, principal_provider=lambda: "test-runtime-principal",
+            policy_evaluator=policy_decision, live_state_provider=self.live_state,
+            applicability_provider=applicability_provider_for_test,
+        )
+        found = reopened.get_knowledge("T-MK-1", "CL-RESTART")
+        self.assertEqual(found["version"], 2)
+        self.assertEqual(found["verification_status"], "VERIFIED")
+        self.assertEqual(found["candidate_ref"], "candidate-1")
+
+    def test_get_knowledge_returns_none_for_stale_claim_by_default(self):
+        self.record_evidence()
+        claim = {
+            "claim_id": "CL-GET-STALE", "claim_type": "FACT",
+            "statement": "Candidate scoped knowledge", "evidence_refs": ["EV-1"], "limitations": [],
+        }
+        self.store.put_knowledge(
+            "T-MK-1", claim, candidate_ref="candidate-1", source_ref="fixture://stale",
+            collector="test", method="observation", provenance_limitations=["candidate scoped"],
+        )
+        self.store.update_candidate(
+            "T-MK-1", expected_version=1, old_candidate_ref="candidate-1", new_candidate_ref="candidate-2"
+        )
+        self.assertIsNone(self.store.get_knowledge("T-MK-1", "CL-GET-STALE"))
+        stale = self.store.get_knowledge("T-MK-1", "CL-GET-STALE", include_stale=True)
+        self.assertEqual(stale["record_status"], "STALE")
+
     def test_candidate_change_invalidates_old_knowledge_for_default_retrieval(self):
         self.record_evidence()
         claim = {

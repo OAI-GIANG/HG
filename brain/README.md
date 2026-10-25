@@ -77,13 +77,33 @@ planner = PlanningEngine(provider=provider)
 
 - `BrainOrchestrator.critique_plan(...)` rereads the canonical task, active trust root, active policy and candidate before invoking critique.
 - `BrainOrchestrator.simulate_scenarios(...)` validates the task/candidate/policy binding before simulation.
-- `BrainOrchestrator.review_and_simulate(...)` performs one critique pass; it runs one bounded scenario set only if the verdict is ACCEPT; it then critiques that simulated output once. It stops on any other verdict or on budget exhaustion.
-- It does not automatically rewrite a plan. If the critique requests revision, the caller must explicitly request a new plan and review it separately; there is no recursive retry loop.
+- `BrainOrchestrator.review_and_simulate(...)` performs one critique pass; it runs one bounded scenario set only if the verdict is ACCEPT; it then critiques that simulated output once.
+- `BrainOrchestrator.plan_and_review(...)` is the combined planning entrypoint: it creates a validated plan, critiques it, performs at most one review-driven revision when the verdict is REVISE, and re-critiques the revised plan. Optional scenario simulation occurs only after ACCEPT and is followed by one additional critique. REJECT/INSUFFICIENT_EVIDENCE never trigger an automatic rewrite.
+- Revision feedback is bounded and explicitly treated as untrusted input. The planner re-runs all deterministic task/scope/evidence checks. No recursive retries or action execution occur.
 - The runtime composition root exposes the deterministic ScenarioEngine by default but enables CritiqueEngine only when `critique_provider` is explicitly injected.
+
+### Multi-model critique council
+
+- Implementation: `brain/council.py`; contract: `hg.council.v1`.
+- `CritiqueCouncil` accepts 2–5 explicitly supplied providers and runs them sequentially through the existing validated `CritiqueEngine` contract. Role prompts can focus on architecture, adversarial cases, evidence, operations or cost.
+- The default total provider-timeout budget is bounded at 90 seconds. Providers must individually declare/enforce a timeout of at most 30 seconds. This is a contract, not proof that a custom adapter honors its timeout.
+- Verdict aggregation is conservative: any valid REJECT remains REJECT; otherwise a failed/unresolved member makes the council verdict INSUFFICIENT_EVIDENCE; otherwise the most conservative member verdict wins. ACCEPT is possible only when every configured member completes and accepts.
+- Member disagreements, completion counts and critique digests are retained in the returned result. Provider exception text is not copied into the result.
+- Runtime composition supports explicit `critique_providers=[{"name": ..., "role": ..., "provider": ...}, ...]`. This is mutually exclusive with the single `critique_provider` option. There are no default members, automatic model downloads, implicit credentials, remote endpoint discovery or background calls.
+- The council is opt-in. It does not rewrite plans, write Memory, prove factual truth, grant authority or execute actions. Model agreement is not a substitute for deterministic gates or evidence.
+- Current provider factory support remains limited to the explicit local OpenAI-compatible adapter. Multi-provider composition does not itself add Gemini, Claude or other vendor adapters.
+
+### Reuse of past work and cost boundary
+
+- `memory/store.py` provides task-scoped knowledge search and candidate/policy stale filtering. This is not, by itself, a cross-task equivalence or applicability resolver.
+- OD-3 is set to reuse the existing Memory/MAEP authority only after its actual source and binding are verified. OD-6 is set to event-driven invalidation plus TTL by data type, with revocation and candidate/policy binding checked before use. Exact TTL durations still require an evidence-backed policy; no TTL values are inferred here.
+- `brain/cost_router.py` adds a deterministic, side-effect-free route decision contract. It can select deterministic processing, reuse of current verified experience, one reasoning call, a bounded critique council, or BLOCKED. All budgets and council thresholds are explicit policy inputs; there are no hidden price assumptions, provider calls, authority effects or automatic fallback.
+- `BrainOrchestrator` now supports opt-in routing through explicit `cost_router`, `routing_context_provider`, and `routing_budget_ledger` dependencies. When enabled, each planning/review provider call is routed first and must reserve budget; planning-provider internal retries are disabled to prevent unmetered calls. The ledger must provide atomic `reserve` and task-scoped `get_usage`; the repository does not yet supply a production-grade durable routing-budget ledger, so the feature remains disabled unless the caller explicitly supplies one. This is integration at the orchestration code boundary, not proof of a production factory or live service binding.
+- Never bypass `MemoryStore` authorization with an ad-hoc cache. Similarity alone cannot establish equivalence; reuse requires independently verified source/evidence, matching candidate/policy and scope, current applicability, and a freshness decision. Unknown, stale or conflicting knowledge cannot satisfy acceptance.
 
 ### Verification boundary
 
-The tests in `brain/tests/test_critique.py`, `test_simulation.py`, `test_critique_simulation_integration.py`, `test_critique_simulation_schemas.py`, and `runtime/tests/test_http_server.py` cover contract validation, invalid evidence references, verdict consistency, numeric bounds, unit mismatch, deterministic results, identity drift, bounded orchestration and HTTP boundary behavior.
+The tests in `brain/tests/test_critique.py`, `test_council.py`, `test_simulation.py`, `test_critique_simulation_integration.py`, `test_critique_simulation_schemas.py`, and `runtime/tests/test_http_server.py` cover contract validation, council aggregation, invalid evidence references, verdict consistency, numeric bounds, unit mismatch, deterministic results, identity drift, bounded orchestration and HTTP boundary behavior.
 
 ### HTTP exposure (candidate runtime only)
 

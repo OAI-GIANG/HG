@@ -98,10 +98,16 @@ class LocalPolicyProvider:
             raise AuthorityError("policy source provenance validation failed") from exc
         if provenance_ok is not True:
             raise AuthorityError("policy source provenance is not verified")
-        if (policy.get("status") != "ACTIVE" or policy.get("root_generation") != root.generation
-                or not isinstance(policy.get("version"), str) or not policy.get("version")
-                or not isinstance(policy.get("approval_evidence_refs"), list)
-                or not policy["approval_evidence_refs"]):
+        version = policy.get("version")
+        generation = policy.get("root_generation")
+        approval_refs = policy.get("approval_evidence_refs")
+        if (policy.get("status") != "ACTIVE"
+                or not isinstance(generation, int) or isinstance(generation, bool)
+                or generation != root.generation
+                or not isinstance(version, str) or not version.strip()
+                or not isinstance(approval_refs, list) or not approval_refs
+                or any(not isinstance(ref, str) or not ref.strip() for ref in approval_refs)
+                or len(approval_refs) != len(set(approval_refs))):
             raise AuthorityError("local policy is not active or does not bind current root")
         resolved = dict(policy)
         resolved["policy_digest"] = claimed
@@ -124,11 +130,19 @@ class LocalPrincipalProvider:
             raise AuthorityError("authenticated session could not be verified") from exc
         if (not isinstance(result, dict) or result.get("status") != "ACTIVE"
                 or result.get("verified") is not True or result.get("revoked") is not False
-                or not isinstance(result.get("principal_id"), str) or not result["principal_id"]
-                or not isinstance(result.get("session_id"), str) or not result["session_id"]
+                or not isinstance(result.get("principal_id"), str) or not result["principal_id"].strip()
+                or not isinstance(result.get("session_id"), str) or not result["session_id"].strip()
                 or not isinstance(result.get("identity_evidence_ref"), str)
-                or not result["identity_evidence_ref"]):
+                or not result["identity_evidence_ref"].strip()):
             return None
+        # Reject incomplete authorization scope at the session boundary rather than
+        # passing malformed identity data deeper into the native policy engine.
+        for field in ("capabilities", "resource_scopes", "allowed_scopes"):
+            values = result.get(field)
+            if (not isinstance(values, list) or not values
+                    or any(not isinstance(value, str) or not value.strip() for value in values)
+                    or len(values) != len(set(values))):
+                return None
         try:
             issued_at = datetime.fromisoformat(result["issued_at"].replace("Z", "+00:00"))
             expires_at = datetime.fromisoformat(result["expires_at"].replace("Z", "+00:00"))

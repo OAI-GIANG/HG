@@ -1371,6 +1371,59 @@ class MemoryStore:
             )
         return new_record
 
+    def get_knowledge(self, task_id, claim_id, *, include_stale=False):
+        """Read the latest version of one claim through the scoped Memory API.
+
+        Authorization is task-scoped. Cross-task retrieval is intentionally not
+        inferred or exposed by this API. Database-owned task/candidate/policy and
+        latest-version bindings are returned separately from record_json.
+        """
+        if not isinstance(task_id, str) or not task_id.strip():
+            raise MAEPError("task_id must be a non-empty string")
+        if not isinstance(claim_id, str) or not claim_id.strip():
+            raise MAEPError("claim_id must be a non-empty string")
+        if not isinstance(include_stale, bool):
+            raise MAEPError("include_stale must be boolean")
+        self._authorize(
+            "READ", f"memory:knowledge/{claim_id}",
+            [f"memory:task:{task_id}:knowledge:read"], task_id
+        )
+        connection = self._connect(readonly=True)
+        try:
+            self._ensure_ready(connection)
+            task_row, _ = self._task_row(connection, task_id)
+            row = connection.execute(
+                """SELECT * FROM knowledge_records
+                   WHERE task_id=? AND claim_id=? ORDER BY version DESC LIMIT 1""",
+                (task_id, claim_id),
+            ).fetchone()
+            if row is None:
+                return None
+            record = _loads_object(row["record_json"], "knowledge record")
+            if (record.get("record_id") != row["record_id"]
+                    or record.get("claim", {}).get("claim_id") != row["claim_id"]
+                    or record.get("version") != row["version"]
+                    or record.get("task_id") != row["task_id"]
+                    or record.get("candidate_ref") != row["candidate_ref"]
+                    or record.get("policy_version") != row["policy_version"]
+                    or record.get("verification_status") != row["verification_status"]):
+                raise MAEPError("knowledge record content differs from canonical database bindings")
+            validate_claim(record.get("claim"))
+            status = "CURRENT"
+            if (row["policy_version"] != POLICY_VERSION
+                    or row["policy_version"] != task_row["policy_version"]
+                    or row["candidate_ref"] != task_row["candidate_ref"]):
+                status = "STALE"
+            if status == "STALE" and not include_stale:
+                return None
+            record["record_status"] = status
+            record["verification_status"] = row["verification_status"]
+            return record
+        except sqlite3.Error as exc:
+            raise MAEPError("knowledge retrieval failed; no result may be treated as verified") from exc
+        finally:
+            connection.close()
+
     def search_knowledge(self, task_id, query, *, limit=20, include_stale=False):
         _require_nonempty(query, "query")
         if not isinstance(limit, int) or limit < 1 or limit > 100:

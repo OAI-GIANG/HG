@@ -5,6 +5,7 @@ import unittest
 from maep.core import POLICY_VERSION
 from maep.native_authority import TrustRootRecord
 from brain import BrainOrchestrator, OrchestrationError
+from brain.cost_router import CostRouter, CostRouterPolicy
 from brain.planning import (
     LocalOpenAICompatibleProvider,
     PLAN_CONTRACT_VERSION,
@@ -402,6 +403,119 @@ class PlanningTests(unittest.TestCase):
 
 
 class BrainPlanningIntegrationTests(unittest.TestCase):
+    class BudgetLedger:
+        def __init__(self):
+            self.usage = {}
+        def get_usage(self, task_ref):
+            return dict(self.usage.get(task_ref, {}))
+        def reserve_bound(self, *, task_ref, candidate_ref, policy_version, route,
+                          category, call_id, limit):
+            if not all(isinstance(value, str) and value.strip() for value in
+                       (candidate_ref, policy_version, route, call_id)):
+                return False
+            current = self.usage.setdefault(task_ref, {}).get(category, 0)
+            if current >= limit:
+                return False
+            self.usage[task_ref][category] = current + 1
+            return True
+
+    def _router_brain(self, provider, *, memory_state="NOT_NEEDED", risk_level="LOW",
+                      max_reasoning_calls=1):
+        class Store:
+            def get_task(self, task_id):
+                snapshot = make_snapshot()
+                snapshot["task"]["task_id"] = task_id
+                return snapshot
+        class Adapter:
+            def execute(self, **kwargs): raise AssertionError("planning must not execute adapters")
+        ledger = self.BudgetLedger()
+        router = CostRouter(policy=CostRouterPolicy(
+            max_reasoning_calls=max_reasoning_calls, max_revision_calls=0,
+            max_council_calls=0, council_min_risk="HIGH",
+            council_on_ambiguity=False, council_on_conflict=False,
+        ))
+        def context_provider(*, task_snapshot, phase):
+            return {
+                "candidate_ref": task_snapshot["candidate_ref"],
+                "policy_version": task_snapshot["task"]["policy_version"],
+                "risk_level": risk_level, "memory_state": memory_state,
+                "deterministic_sufficient": False, "reasoning_needed": True,
+                "ambiguity_detected": False, "conflict_detected": False,
+            }
+        brain = BrainOrchestrator(
+            authority=PlanningAuthority(), adapter_registry={"fake": Adapter()},
+            idempotency_ledger=object(), receipt_sink=object(), task_store=Store(),
+            planning_engine=PlanningEngine(provider=provider, max_revisions=0),
+            cost_router=router, routing_context_provider=context_provider,
+            routing_budget_ledger=ledger,
+        )
+        return brain, ledger
+
+    def test_cost_router_runs_before_model_and_reserves_budget(self):
+        provider = FakeProvider()
+        brain, ledger = self._router_brain(provider)
+        plan = brain.plan_task(task_ref="task:plan-1", candidate_target="candidate-target")
+        self.assertEqual(plan["task_id"], "task:plan-1")
+        self.assertEqual(provider.calls, 1)
+        self.assertEqual(ledger.get_usage("task:plan-1")["reasoning"], 1)
+
+    def test_cost_router_budget_exhaustion_blocks_before_provider(self):
+        provider = FakeProvider()
+        brain, ledger = self._router_brain(provider)
+        ledger.usage["task:plan-1"] = {"reasoning": 1}
+        with self.assertRaisesRegex(OrchestrationError, "REASONING_BUDGET_EXHAUSTED"):
+            brain.plan_task(task_ref="task:plan-1", candidate_target="candidate-target")
+        self.assertEqual(provider.calls, 0)
+
+    def test_router_enabled_engine_provider_direct_call_fails_closed(self):
+        provider = FakeProvider()
+        brain, _ = self._router_brain(provider)
+        with self.assertRaisesRegex(Exception, "no active HG router authorization"):
+            brain.planning_engine.provider.generate_json(system_prompt="system", user_prompt="user")
+        self.assertEqual(provider.calls, 0)
+
+    def test_cost_router_unknown_memory_blocks_when_no_reasoning_route_is_declared(self):
+        provider = FakeProvider()
+        brain, ledger = self._router_brain(provider, memory_state="UNKNOWN")
+        brain.routing_context_provider = lambda **kwargs: {
+            "candidate_ref": kwargs["task_snapshot"]["candidate_ref"],
+            "policy_version": kwargs["task_snapshot"]["task"]["policy_version"],
+            "risk_level": "LOW", "memory_state": "UNKNOWN",
+            "deterministic_sufficient": False, "reasoning_needed": False,
+            "ambiguity_detected": False, "conflict_detected": False,
+        }
+        with self.assertRaisesRegex(OrchestrationError, "MEMORY_APPLICABILITY_NOT_ESTABLISHED"):
+            brain.plan_task(task_ref="task:plan-1", candidate_target="candidate-target")
+        self.assertEqual(provider.calls, 0)
+
+    def test_cost_router_unavailable_provider_blocks_before_model(self):
+        provider = FakeProvider()
+        brain, ledger = self._router_brain(provider)
+        brain.planning_engine = None
+        with self.assertRaisesRegex(OrchestrationError, "REASONING_PROVIDER_UNAVAILABLE"):
+            brain.plan_task(task_ref="task:plan-1", candidate_target="candidate-target")
+        self.assertEqual(provider.calls, 0)
+
+    def test_cost_router_rejects_routing_context_candidate_mismatch(self):
+        provider = FakeProvider()
+        brain, ledger = self._router_brain(provider)
+        original = brain.routing_context_provider
+        def mismatched(**kwargs):
+            result = original(**kwargs)
+            result["candidate_ref"] = "candidate:other"
+            return result
+        brain.routing_context_provider = mismatched
+        with self.assertRaisesRegex(OrchestrationError, "routing context or budget could not be verified"):
+            brain.plan_task(task_ref="task:plan-1", candidate_target="candidate-target")
+        self.assertEqual(provider.calls, 0)
+
+    def test_high_risk_route_blocks_before_planning_without_council(self):
+        provider = FakeProvider()
+        brain, ledger = self._router_brain(provider, risk_level="HIGH")
+        with self.assertRaisesRegex(OrchestrationError, "COUNCIL_REQUIRED_PROVIDER_UNAVAILABLE"):
+            brain.plan_task(task_ref="task:plan-1", candidate_target="candidate-target")
+        self.assertEqual(provider.calls, 0)
+
     def test_brain_uses_canonical_task_and_returns_non_authorizing_plan(self):
         class Store:
             def get_task(self, task_id):

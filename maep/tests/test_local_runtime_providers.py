@@ -68,6 +68,28 @@ class LocalRuntimeProviderTests(unittest.TestCase):
             with self.assertRaisesRegex(AuthorityError, "approved trust source unavailable"):
                 LocalPolicyProvider(path, object())
 
+    def test_policy_provider_rejects_malformed_approval_references_and_root_generation(self):
+        from maep.local_runtime_providers import _digest
+        invalid_updates = (
+            {"approval_evidence_refs": [""]},
+            {"approval_evidence_refs": ["approval:a", "approval:a"]},
+            {"approval_evidence_refs": "approval:a"},
+            {"root_generation": True},
+            {"version": "   "},
+        )
+        for update in invalid_updates:
+            with self.subTest(update=update), tempfile.TemporaryDirectory(prefix="hg-policy-invalid-") as temp:
+                path = Path(temp) / "policy.json"
+                policy = {"status": "ACTIVE", "version": "test-v1", "root_generation": 1,
+                          "approval_evidence_refs": ["fixture:approval"]}
+                policy.update(update)
+                record = {"policy": policy, "policy_digest": _digest(policy),
+                          "test_source_marker": "isolated-test"}
+                path.write_text(json.dumps(record), encoding="utf-8")
+                path.chmod(0o600)
+                with self.assertRaisesRegex(AuthorityError, "local policy is not active"):
+                    LocalPolicyProvider(path, PolicyVerifierFixture()).load_active(self._root())
+
     def test_trust_source_contracts_reject_missing_and_truthy_non_boolean_verification(self):
         from maep.trust_source_contracts import require_trust_source_contract, require_verified_source_result
         with self.assertRaisesRegex(AuthorityError, "approved trust source unavailable"):
@@ -99,6 +121,21 @@ class LocalRuntimeProviderTests(unittest.TestCase):
                 return result
 
         self.assertIsNone(LocalPrincipalProvider(RevokedSession()).resolve("trusted-session-handle"))
+
+    def test_principal_provider_rejects_missing_empty_or_duplicate_authorization_scopes(self):
+        for field, value in (
+            ("capabilities", []),
+            ("resource_scopes", ["fixture://resource", ""]),
+            ("allowed_scopes", ["fixture", "fixture"]),
+            ("allowed_scopes", "fixture"),
+        ):
+            class MalformedSession:
+                def resolve_authenticated_session(self, context):
+                    result = dict(SessionVerifierFixture().resolve_authenticated_session("trusted-session-handle"))
+                    result[field] = value
+                    return result
+            with self.subTest(field=field, value=value):
+                self.assertIsNone(LocalPrincipalProvider(MalformedSession()).resolve("trusted-session-handle"))
 
     def test_candidate_provider_observes_current_checkout_and_manifest(self):
         repo = Path(__file__).resolve().parents[2]

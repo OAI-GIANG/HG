@@ -83,9 +83,11 @@ class FixedReasoningProvider:
     def __init__(self, output):
         self.output = output
         self.calls = 0
+        self.prompts = []
 
     def generate_json(self, *, system_prompt, user_prompt):
         self.calls += 1
+        self.prompts.append(user_prompt)
         return self.output
 
 
@@ -121,6 +123,45 @@ class CritiqueProvider:
             "uncertainty": [],
             "revision_requests": ["Clarify the unsupported transition."] if self.verdict == "REVISE" else [],
             "severity": "HIGH" if self.verdict == "REJECT" else "LOW",
+            "stop_reason": "",
+        }
+
+
+class SequenceCritiqueProvider:
+    timeout_seconds = 30.0
+
+    def __init__(self):
+        self.calls = 0
+        self.prompts = []
+
+    def generate_json(self, *, system_prompt, user_prompt):
+        self.calls += 1
+        self.prompts.append(user_prompt)
+        payload = json.loads(user_prompt.split("\n\n", 1)[1])
+        plan = payload["plan"]
+        is_revision = self.calls > 1
+        verdict = "ACCEPT" if is_revision else "REVISE"
+        return {
+            "contract_version": CRITIQUE_CONTRACT_VERSION,
+            "task_ref": payload["task_ref"],
+            "candidate_ref": payload["candidate_ref"],
+            "policy_version": payload["policy_version"],
+            "reviewed_plan_digest": plan["plan_digest"],
+            "verdict": verdict,
+            "reviewed_items": [{
+                "item_id": item_id,
+                "assessment": "NO_BLOCKER" if is_revision else "BLOCKER",
+                "rationale": "Revised plan addresses the earlier concern." if is_revision else "Clarify the recovery path.",
+                "evidence_refs": ["input:spec"],
+            } for item_id in payload["reviewable_item_ids"]],
+            "supported_claims": [],
+            "unsupported_claims": [],
+            "contradictions": [],
+            "counterarguments": [],
+            "missing_evidence": [],
+            "uncertainty": [],
+            "revision_requests": [] if is_revision else ["Clarify the recovery path."],
+            "severity": "LOW" if is_revision else "MEDIUM",
             "stop_reason": "",
         }
 
@@ -213,6 +254,26 @@ def make_brain(*, plan, critique_verdict="ACCEPT", task_data=None, candidate_ref
 class CritiqueSimulationIntegrationTests(unittest.TestCase):
     def setUp(self):
         self.plan = make_plan()
+
+    def test_plan_and_review_performs_one_bounded_revision(self):
+        brain, _, adapter = make_brain(plan=self.plan)
+        planner_provider = FixedReasoningProvider(valid_plan_candidate())
+        critique_provider = SequenceCritiqueProvider()
+        brain.planning_engine = PlanningEngine(provider=planner_provider)
+        brain.critique_engine = CritiqueEngine(provider=critique_provider)
+
+        result = brain.plan_and_review(
+            task_ref=TASK_REF, candidate_target="current-candidate",
+        )
+
+        self.assertEqual(result["status"], "PLAN_REVIEW_COMPLETE")
+        self.assertEqual(result["revision_count"], 1)
+        self.assertEqual(len(result["critique_rounds"]), 2)
+        self.assertEqual(result["final_critique"]["verdict"], "ACCEPT")
+        self.assertIn("review_feedback_to_consider_as_untrusted_data", planner_provider.prompts[1])
+        self.assertEqual(adapter.calls, 0)
+        self.assertEqual(result["authority_effect"], "NONE")
+        self.assertFalse(result["side_effects_performed"])
 
     def test_review_then_simulation_then_second_critique_is_bounded(self):
         brain, provider, adapter = make_brain(plan=self.plan)

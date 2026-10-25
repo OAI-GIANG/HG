@@ -11,7 +11,9 @@ from typing import Any
 
 from brain import BrainOrchestrator
 from brain.critique import CritiqueEngine, CritiqueError
+from brain.council import CritiqueCouncil, CouncilMember, CouncilError
 from brain.simulation import ScenarioEngine
+from brain.cost_router import CostRouter
 from maep.native_authority import AuthorityError, NativePolicyEngine, TrustRootRecord
 from memory import MemoryStore
 from memory.authority_adapter import MemoryNativeAuthorityAdapter
@@ -29,8 +31,9 @@ class HGRuntime:
     candidate_target_provider: Any
     runtime_profile: str = "production"
     planner: PlanningEngine | None = None
-    critique_engine: CritiqueEngine | None = None
+    critique_engine: Any | None = None
     scenario_engine: ScenarioEngine | None = None
+    cost_router: CostRouter | None = None
 
 
 def build_runtime(*, root_store, principal_provider, candidate_provider, policy_provider,
@@ -40,7 +43,8 @@ def build_runtime(*, root_store, principal_provider, candidate_provider, policy_
                   memory_db_path, live_state_provider, acceptance_provider,
                   adapter_registry, idempotency_ledger, receipt_sink,
                   reasoning_provider=None, context_resolver=None,
-                  critique_provider=None, scenario_engine=None):
+                  critique_provider=None, critique_providers=None, scenario_engine=None,
+                  cost_router=None, routing_context_provider=None, routing_budget_ledger=None):
     """Construct HG's authority/Brain/Memory graph; never bootstrap or initialize data.
 
     All dependencies are explicit. This factory intentionally cannot invent a principal,
@@ -99,16 +103,48 @@ def build_runtime(*, root_store, principal_provider, candidate_provider, policy_
         raise AuthorityError("runtime startup blocked: Memory database parent does not exist")
     if context_resolver is not None and not callable(getattr(context_resolver, "resolve", None)):
         raise AuthorityError("runtime composition blocked: context resolver contract invalid")
+    if cost_router is not None:
+        if not isinstance(cost_router, CostRouter):
+            raise AuthorityError("runtime composition blocked: cost router contract invalid")
+        if not callable(routing_context_provider):
+            raise AuthorityError("runtime composition blocked: explicit routing context provider required")
+        if (not callable(getattr(routing_budget_ledger, "get_usage", None))
+                or not callable(getattr(routing_budget_ledger, "reserve_bound", None))):
+            raise AuthorityError("runtime composition blocked: identity-bound atomic routing budget ledger required")
+    elif routing_context_provider is not None or routing_budget_ledger is not None:
+        raise AuthorityError("runtime composition blocked: routing dependencies require a cost router")
     if reasoning_provider is None and context_resolver is not None:
         raise AuthorityError("runtime composition blocked: context resolver requires reasoning provider")
     planner = None
     if reasoning_provider is not None:
         try:
-            planner = PlanningEngine(provider=reasoning_provider, context_resolver=context_resolver)
+            planner = PlanningEngine(
+                provider=reasoning_provider, context_resolver=context_resolver,
+                max_revisions=0 if cost_router is not None else 1,
+            )
         except PlanningError as exc:
             raise AuthorityError("runtime composition blocked: planning provider contract invalid") from exc
     critique_engine = None
-    if critique_provider is not None:
+    if critique_provider is not None and critique_providers is not None:
+        raise AuthorityError("runtime composition blocked: configure one critique provider mode only")
+    if critique_providers is not None:
+        if not isinstance(critique_providers, list):
+            raise AuthorityError("runtime composition blocked: critique_providers must be an explicit list")
+        members = []
+        for item in critique_providers:
+            if not isinstance(item, dict) or set(item) != {"name", "role", "provider"}:
+                raise AuthorityError("runtime composition blocked: each council member requires name, role and provider")
+            try:
+                members.append(CouncilMember(
+                    name=item["name"], role=item["role"], provider=item["provider"],
+                ))
+            except TypeError as exc:
+                raise AuthorityError("runtime composition blocked: council member configuration invalid") from exc
+        try:
+            critique_engine = CritiqueCouncil(members=members)
+        except CouncilError as exc:
+            raise AuthorityError("runtime composition blocked: critique council contract invalid") from exc
+    elif critique_provider is not None:
         try:
             critique_engine = CritiqueEngine(provider=critique_provider)
         except CritiqueError as exc:
@@ -145,6 +181,8 @@ def build_runtime(*, root_store, principal_provider, candidate_provider, policy_
         idempotency_ledger=idempotency_ledger, receipt_sink=receipt_sink,
         task_store=memory, planning_engine=planner,
         critique_engine=critique_engine, scenario_engine=scenario_engine,
+        cost_router=cost_router, routing_context_provider=routing_context_provider,
+        routing_budget_ledger=routing_budget_ledger,
     )
     return HGRuntime(
         authority=authority, brain=brain, memory=memory,
@@ -152,4 +190,5 @@ def build_runtime(*, root_store, principal_provider, candidate_provider, policy_
         authenticated_context_provider=authenticated_context_provider,
         candidate_target_provider=candidate_target_provider,
         planner=planner, critique_engine=critique_engine, scenario_engine=scenario_engine,
+        cost_router=cost_router,
     )

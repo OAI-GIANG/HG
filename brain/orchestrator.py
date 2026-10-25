@@ -20,6 +20,9 @@ from tools_automation import AdapterError, validate_adapter_request, validate_ad
 from .planning import PlanningEngine, PlanningError, _trusted_context, verify_plan_digest
 from .critique import CritiqueEngine, CritiqueError
 from .simulation import ScenarioEngine, SimulationError
+from .cost_router import CostRouter, CostRouterError, RouteRequest
+from .council import CritiqueCouncil
+from .provider_guard import authorize_provider_calls, guard_provider
 
 
 class OrchestrationError(RuntimeError):
@@ -39,7 +42,10 @@ class BrainOrchestrator:
                  idempotency_ledger: Any, receipt_sink: Any, task_store: Any,
                  planning_engine: PlanningEngine | None = None,
                  critique_engine: CritiqueEngine | None = None,
-                 scenario_engine: ScenarioEngine | None = None):
+                 scenario_engine: ScenarioEngine | None = None,
+                 cost_router: CostRouter | None = None,
+                 routing_context_provider: Any | None = None,
+                 routing_budget_ledger: Any | None = None):
         if authority is None or not isinstance(adapter_registry, dict) or not adapter_registry:
             raise OrchestrationError("authority and explicit adapter registry are required")
         if idempotency_ledger is None or receipt_sink is None:
@@ -60,16 +66,117 @@ class BrainOrchestrator:
             raise OrchestrationError("scenario engine contract is invalid")
         self.critique_engine = critique_engine
         self.scenario_engine = scenario_engine
+        if cost_router is not None:
+            if not isinstance(cost_router, CostRouter):
+                raise OrchestrationError("cost router contract is invalid")
+            if not callable(routing_context_provider):
+                raise OrchestrationError("BLOCKED: cost router requires an explicit routing context provider")
+            if not callable(getattr(routing_budget_ledger, "get_usage", None)) or not callable(
+                    getattr(routing_budget_ledger, "reserve_bound", None)):
+                raise OrchestrationError("BLOCKED: cost router requires identity-bound atomic budget reservations")
+            if planning_engine is not None and getattr(planning_engine, "max_revisions", 0) != 0:
+                raise OrchestrationError("BLOCKED: router-enabled planner must disable internal unmetered retries")
+        elif routing_context_provider is not None or routing_budget_ledger is not None:
+            raise OrchestrationError("routing context and budget ledger require an explicit cost router")
+        self.cost_router = cost_router
+        self.routing_context_provider = routing_context_provider
+        self.routing_budget_ledger = routing_budget_ledger
+        if cost_router is not None:
+            # Router-enabled runtime engine entrypoints must not retain an unguarded
+            # provider path. Standalone engines without a router remain compatible.
+            if self.planning_engine is not None:
+                self.planning_engine.provider = guard_provider(self.planning_engine.provider)
+            if isinstance(self.critique_engine, CritiqueCouncil):
+                for _, member_engine in self.critique_engine.members:
+                    member_engine.provider = guard_provider(member_engine.provider)
+            elif self.critique_engine is not None and hasattr(self.critique_engine, "provider"):
+                self.critique_engine.provider = guard_provider(self.critique_engine.provider)
+
+    def _route_cost(self, *, task_ref: str, snapshot: dict[str, Any], phase: str,
+                    allow_council_prerequisite: bool = False) -> str | None:
+        """Choose a permitted route; the guarded provider reserves before each actual call."""
+        if self.cost_router is None:
+            return None
+        task = snapshot.get("task") if isinstance(snapshot, dict) else None
+        if not isinstance(task, dict):
+            raise OrchestrationError("BLOCKED: canonical task unavailable for cost routing")
+        try:
+            context = self.routing_context_provider(task_snapshot=snapshot, phase=phase)
+            if not isinstance(context, dict):
+                raise CostRouterError("routing context must be an object")
+            if (context.get("candidate_ref") != snapshot.get("candidate_ref")
+                    or context.get("policy_version") != task.get("policy_version")):
+                raise CostRouterError("routing context candidate/policy binding mismatch")
+            usage = self.routing_budget_ledger.get_usage(task_ref)
+            if not isinstance(usage, dict):
+                raise CostRouterError("routing budget ledger returned invalid usage")
+            council_available = isinstance(self.critique_engine, CritiqueCouncil)
+            if phase == "planning":
+                reasoning_available = self.planning_engine is not None
+            else:
+                reasoning_available = self.critique_engine is not None
+            request = RouteRequest(
+                risk_level=context["risk_level"], memory_state=context["memory_state"],
+                deterministic_sufficient=context.get("deterministic_sufficient", False),
+                reasoning_needed=context.get("reasoning_needed", True),
+                ambiguity_detected=context.get("ambiguity_detected", False),
+                conflict_detected=context.get("conflict_detected", False),
+                reasoning_calls_used=usage.get("reasoning", 0),
+                revision_calls_used=usage.get("revision", 0),
+                council_calls_used=usage.get("council", 0),
+                reasoning_provider_available=reasoning_available,
+                council_provider_available=council_available,
+            )
+            decision = self.cost_router.route(request)
+            if decision.decision == "BLOCKED":
+                raise OrchestrationError("BLOCKED by Cost Router: " + decision.reason_code)
+            if decision.decision == "DETERMINISTIC_ONLY":
+                return decision.decision
+            if decision.decision == "REUSE_VERIFIED_EXPERIENCE":
+                return decision.decision
+            if decision.decision == "CRITIQUE_COUNCIL":
+                if phase == "planning" and allow_council_prerequisite:
+                    # A plan must exist before it can be critiqued. Council is still
+                    # mandatory at the review phase; direct plan_task cannot bypass it.
+                    category = "reasoning"
+                elif phase == "critique" and council_available:
+                    category = "council"
+                else:
+                    raise OrchestrationError("BLOCKED by Cost Router: council route requires plan_and_review and an explicit council")
+            elif decision.decision == "SINGLE_MODEL":
+                if phase == "critique" and isinstance(self.critique_engine, CritiqueCouncil):
+                    raise OrchestrationError("BLOCKED by Cost Router: policy selected single reviewer but only council is configured")
+                category = "reasoning"
+            else:
+                raise OrchestrationError("BLOCKED by Cost Router: unsupported route decision")
+            # Actual reservations occur immediately inside GuardedJSONProvider,
+            # once per provider invocation, after canonical bindings are established.
+            return decision.decision
+        except OrchestrationError:
+            raise
+        except Exception as exc:
+            raise OrchestrationError("BLOCKED: routing context or budget could not be verified") from exc
 
     def plan_task(self, *, task_ref: str, candidate_target: Any,
                   context_refs: list[str] | None = None) -> dict[str, Any]:
+        """Public planning entrypoint; council-required routes need plan_and_review."""
+        return self._plan_task(
+            task_ref=task_ref, candidate_target=candidate_target,
+            context_refs=context_refs, revision_feedback=None,
+            allow_council_prerequisite=False,
+        )
+
+    def _plan_task(self, *, task_ref: str, candidate_target: Any,
+                   context_refs: list[str] | None = None,
+                   revision_feedback: list[str] | None = None,
+                   allow_council_prerequisite: bool = False) -> dict[str, Any]:
         """Create a candidate-bound plan from the canonical ASSESSED task.
 
         The active trust root, policy and candidate are re-read before prompting.
         This method does not transition task state, authorize, persist a plan,
         invoke tool adapters, or execute any side effect.
         """
-        if self.planning_engine is None:
+        if self.planning_engine is None and self.cost_router is None:
             raise OrchestrationError("BLOCKED: reasoning provider is not configured")
         if not isinstance(task_ref, str) or not task_ref.strip():
             raise OrchestrationError("BLOCKED: canonical task reference is required")
@@ -101,11 +208,130 @@ class BrainOrchestrator:
                 raise PlanningError("current HG candidate is missing or unverified")
             if snapshot.get("candidate_ref") != candidate.get("candidate_ref"):
                 raise PlanningError("canonical task candidate does not match the live candidate")
-            return self.planning_engine.create_plan(snapshot, context_refs=context_refs)
+            if self.cost_router is not None:
+                route = self._route_cost(
+                    task_ref=task_ref, snapshot=snapshot, phase="planning",
+                    allow_council_prerequisite=allow_council_prerequisite,
+                )
+                if route in {"DETERMINISTIC_ONLY", "REUSE_VERIFIED_EXPERIENCE"}:
+                    raise OrchestrationError(
+                        "BLOCKED: this planning entrypoint requires a validated plan; "
+                        "deterministic/reuse route needs a dedicated verified plan adapter"
+                    )
+            if self.planning_engine is None:
+                raise OrchestrationError("BLOCKED: reasoning provider is not configured")
+            if self.cost_router is None:
+                return self.planning_engine.create_plan(
+                    snapshot, context_refs=context_refs, revision_feedback=revision_feedback,
+                )
+            category = "revision" if revision_feedback else "reasoning"
+            limit = (self.cost_router.policy.max_revision_calls if category == "revision"
+                     else self.cost_router.policy.max_reasoning_calls)
+            with authorize_provider_calls(
+                ledger=self.routing_budget_ledger, task_ref=task_ref,
+                candidate_ref=candidate["candidate_ref"], policy_version=task["policy_version"],
+                route=(route + "_REVISION" if category == "revision" else route),
+                category=category, limit=limit,
+            ):
+                return self.planning_engine.create_plan(
+                    snapshot, context_refs=context_refs, revision_feedback=revision_feedback,
+                )
+        except OrchestrationError:
+            raise
         except PlanningError as exc:
             raise OrchestrationError("BLOCKED: plan validation failed: " + str(exc)) from exc
         except Exception as exc:
             raise OrchestrationError("BLOCKED: canonical task/policy/candidate lookup failed") from exc
+
+    def plan_and_review(self, *, task_ref: str, candidate_target: Any,
+                        context_refs: list[str] | None = None,
+                        scenario_request: dict[str, Any] | None = None,
+                        claims: list[dict[str, Any]] | None = None,
+                        evidence_refs: list[str] | None = None,
+                        assumptions: list[str] | None = None,
+                        constraints: list[str] | None = None) -> dict[str, Any]:
+        """Create and critique a plan, with at most one review-driven revision.
+
+        A revised plan is always revalidated by PlanningEngine and re-reviewed.
+        Scenario simulation is performed only after an ACCEPT verdict. This method
+        never persists Memory, changes task state, authorizes, or executes a plan.
+        """
+        if self.critique_engine is None:
+            raise OrchestrationError("BLOCKED: critique provider is not configured")
+        plan = self._plan_task(
+            task_ref=task_ref, candidate_target=candidate_target,
+            context_refs=context_refs, revision_feedback=None,
+            allow_council_prerequisite=self.cost_router is not None,
+        )
+        critiques: list[dict[str, Any]] = []
+        first = self.critique_plan(
+            task_ref=task_ref, candidate_target=candidate_target, plan=plan,
+            claims=claims, evidence_refs=evidence_refs,
+            assumptions=assumptions, constraints=constraints,
+        )
+        critiques.append(first)
+        revision_count = 0
+        if first.get("verdict") == "REVISE":
+            feedback = list(first.get("revision_requests", []))
+            for item in first.get("reviewed_items", []):
+                if isinstance(item, dict) and item.get("assessment") in {"BLOCKER", "UNRESOLVED"}:
+                    rationale = item.get("rationale")
+                    if isinstance(rationale, str) and rationale.strip():
+                        feedback.append("Review finding for " + str(item.get("item_id", "item")) + ": " + rationale)
+            # Keep the feedback bounded; it remains untrusted input to the planner.
+            feedback = feedback[:16]
+            plan = self._plan_task(
+                task_ref=task_ref, candidate_target=candidate_target,
+                context_refs=context_refs, revision_feedback=feedback,
+                allow_council_prerequisite=self.cost_router is not None,
+            )
+            revision_count = 1
+            second = self.critique_plan(
+                task_ref=task_ref, candidate_target=candidate_target, plan=plan,
+                claims=claims, evidence_refs=evidence_refs,
+                assumptions=assumptions, constraints=constraints,
+            )
+            critiques.append(second)
+
+        final_critique = critiques[-1]
+        simulation = None
+        if final_critique.get("verdict") == "ACCEPT" and scenario_request is not None:
+            simulation = self.simulate_scenarios(
+                task_ref=task_ref, candidate_target=candidate_target,
+                request=scenario_request,
+            )
+            if simulation.get("status") == "SIMULATED":
+                final_critique = self.critique_plan(
+                    task_ref=task_ref, candidate_target=candidate_target, plan=plan,
+                    claims=claims, evidence_refs=evidence_refs,
+                    assumptions=assumptions, constraints=constraints,
+                    scenario_result=simulation,
+                )
+                critiques.append(final_critique)
+
+        verdict = final_critique.get("verdict")
+        if simulation is not None and simulation.get("status") != "SIMULATED":
+            status = "STOPPED_SIMULATION_BUDGET"
+        elif verdict == "ACCEPT":
+            status = "PLAN_REVIEW_COMPLETE"
+        elif verdict == "REVISE":
+            status = "PLAN_REVIEW_NEEDS_REVISION"
+        elif verdict == "REJECT":
+            status = "PLAN_REVIEW_REJECTED"
+        else:
+            status = "PLAN_REVIEW_INSUFFICIENT_EVIDENCE"
+        return {
+            "status": status,
+            "task_ref": task_ref,
+            "candidate_ref": plan.get("candidate_ref"),
+            "plan": plan,
+            "critique_rounds": critiques,
+            "final_critique": final_critique,
+            "revision_count": revision_count,
+            "simulation": simulation,
+            "authority_effect": "NONE",
+            "side_effects_performed": False,
+        }
 
     def _load_current_planning_binding(self, *, task_ref: str, candidate_target: Any):
         """Return current canonical task/candidate only after live policy rechecks."""
@@ -176,14 +402,33 @@ class BrainOrchestrator:
             )
         except PlanningError as exc:
             raise OrchestrationError("BLOCKED: plan context could not be reverified") from exc
+        route = None
+        if self.cost_router is not None:
+            route = self._route_cost(task_ref=task_ref, snapshot=snapshot, phase="critique")
+            if route not in {"SINGLE_MODEL", "CRITIQUE_COUNCIL"}:
+                raise OrchestrationError("BLOCKED by Cost Router: critique requires an explicitly permitted provider route")
         try:
-            return self.critique_engine.critique(
+            kwargs = dict(
                 task_ref=task_ref, candidate_ref=candidate_ref,
                 policy_version=task["policy_version"], plan=plan, claims=claims,
                 evidence_refs=evidence_refs, assumptions=assumptions,
                 constraints=constraints, scenario_result=scenario_result, task=task,
                 verified_context=verified_context,
             )
+            if self.cost_router is None:
+                return self.critique_engine.critique(**kwargs)
+            category = "council" if route == "CRITIQUE_COUNCIL" else "reasoning"
+            limit = (self.cost_router.policy.max_council_calls if category == "council"
+                     else self.cost_router.policy.max_reasoning_calls)
+            if category == "council" and isinstance(self.critique_engine, CritiqueCouncil):
+                if self.routing_budget_ledger.get_usage(task_ref).get("council", 0) + len(self.critique_engine.members) > limit:
+                    raise OrchestrationError("BLOCKED by Cost Router: council per-provider-call budget insufficient")
+            with authorize_provider_calls(
+                ledger=self.routing_budget_ledger, task_ref=task_ref,
+                candidate_ref=candidate_ref, policy_version=task["policy_version"],
+                route=route, category=category, limit=limit,
+            ):
+                return self.critique_engine.critique(**kwargs)
         except CritiqueError as exc:
             raise OrchestrationError("BLOCKED: critique output failed validation") from exc
 
