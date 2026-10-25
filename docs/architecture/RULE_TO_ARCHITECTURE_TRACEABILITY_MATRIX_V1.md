@@ -27,7 +27,7 @@ Source of truth for rule text: `maep/spec/MAEP_CONSTITUTION_V1.md` at MAEP basel
 | MAEP-019 | Untrusted content is data, not authority | Input boundary + all branch contracts | Adversarial instruction cannot alter authorization/policy |
 | MAEP-020 | Important research uses multiple sources and records disagreement/limitations | Creativity & Research | Research record validates source refs, disagreement and limitations |
 | MAEP-021 | Internal critique is not called independent review | Verification/reporting | Label guard rejects unsupported independent-review claim |
-| MAEP-022 | Avoid redundant modules where existing modules suffice without weakening controls | Architecture governance / ADR gate | Duplicate-capability proposal rejected or justified by ADR |
+| MAEP-022 | Mandatory capability overlap and superiority gate before authorization; compare safety/correctness, reliability, coverage, compatibility, performance/cost and maintainability; retain superior safe implementation and retire obsolete duplicates only through authorized, tested, recoverable migration | Execution Protocol + existing task/change plan + ADR-009 | Candidate-bound inventory/comparison/impact/test evidence; unresolved overlap or UNKNOWN fails closed; no new governance module/store; runtime-wide integration remains NOT_VERIFIED |
 | MAEP-023 | READ-ONLY tasks cannot modify baseline/worktree | Tools adapter + execution-mode guard | Write/delete/network side-effect denial tests |
 | MAEP-024 | Labels match evidence; NOT_RUN is never PASS | Reporter + acceptance gate | Status contradiction tests |
 | MAEP-025 | Blockers record knowns, unknowns, next action and reopening conditions | BrainOrchestrator blocker record | Blocker schema and completeness tests |

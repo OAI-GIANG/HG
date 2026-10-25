@@ -15,3 +15,5 @@
 | R-12 | Policy relaxed to pass candidate | High | separately authorized version change | negative test |
 | R-13 | Unknown action outcome replayed | High | reconcile before retry | recovery test |
 | R-14 | Rule/code drift | Medium | traceability audit | coverage report |
+
+| R-15 | Lost or reconstructed task context across sessions/restarts | High | versioned continuity record, durable checkpoint, mandatory live-state reconciliation, fail-closed resume | AF-001–AF-016 plus restart and HG end-to-end evidence; currently NOT_VERIFIED |

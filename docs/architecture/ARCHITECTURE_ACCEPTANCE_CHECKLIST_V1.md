@@ -23,6 +23,8 @@ Use three values for each item: PASS (with evidence ref), FAIL (with evidence re
 
 ## B. Dependency and architecture economy
 - [ ] Repository inventory confirms no existing runtime or module was overlooked.
+- [ ] The MAEP-022 Capability Overlap & Superiority Gate is recorded in the existing task/change plan and passes before authorization; UNKNOWN/incomplete inventory/unresolved evidence blocks the change.
+- [ ] Overlapping capabilities are compared on evidence across correctness, security, reliability, functional coverage, compatibility/interoperability, performance/resource cost, and maintainability; the superior safe implementation is retained and obsolete duplicates are retired only with explicit authorization, tests, migration and recovery evidence.
 - [ ] Capability ownership has no unexplained duplication.
 - [ ] Import/dependency graph is acyclic.
 - [ ] No branch privately imports another branch's implementation.

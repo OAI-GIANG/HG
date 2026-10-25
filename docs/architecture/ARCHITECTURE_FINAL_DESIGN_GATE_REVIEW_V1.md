@@ -11,9 +11,7 @@
 
 The review began with a clean worktree and 17 tracked architecture Markdown files: seven primary documents and ADR-001 through ADR-010. The MAEP baseline was an ancestor of the design commit. Local and remote `main` both resolved to `d71b771987bbdfba41edb68d27ef0ba722bafabc`; the design branch local and remote both resolved to `6a40d81e5809fb7bfc920e867f6b26b3550b8fcd` at the start of review.
 
-During review, an additional file appeared in the same directory:
-`docs/architecture/BRAIN_ORCHESTRATOR_MASTER_PLAN_V1.md`.
-It is untracked and was not present in the initial 17-file inventory. It was not created, edited, staged or included in this review changeset. Its header labels it a design proposal requiring owner review. Because it is a potentially relevant architecture artifact, its intended scope and status must be reconciled before the architecture as a whole can be declared accepted. The file is preserved untouched.
+During the original review, an additional untracked file appeared in the same directory: `docs/architecture/BRAIN_ORCHESTRATOR_MASTER_PLAN_V1.md`. It was outside the initial 17-file inventory. On 2026-10-22, the owner explicitly directed deletion of files requiring independent-review workflows or signature features. That plan contained a directive to require independent review where policy required it and was deleted under that instruction. This historical report records the earlier finding; it does not assert that the deleted file still exists. The architecture-wide acceptance status must be reassessed against the remaining artifacts and current MAEP-1.1.0.
 
 ## 2. Checks performed
 
@@ -60,14 +58,14 @@ These are documentation-only corrections. They do not change MAEP source code, s
 
 ## 5. Decision
 
-**Do not report `ARCHITECTURE_DESIGN_ACCEPTED` yet.** The 17 baseline documents are substantially traceable, the identified state-contract mismatch was corrected in the working tree, and final static/diff checks pass. The remaining blocker is scope reconciliation for the newly present untracked master-plan proposal: either include it in a separate review and reconcile it with the tracked architecture, or explicitly confirm that it remains outside the acceptance scope. The proposal has not been staged or modified.
+**Do not report `ARCHITECTURE_DESIGN_ACCEPTED` yet.** The 17 baseline documents are substantially traceable, the identified state-contract mismatch was corrected in the working tree, and final static/diff checks pass. The earlier scope blocker referred to an untracked master-plan proposal that was subsequently deleted under explicit owner direction because it required independent review. This historical gate report has not yet been fully re-run against the post-deletion worktree, so it must not be treated as a current acceptance result.
 
 No implementation, merge or deployment is authorized by this report.
 
 ## 6. Reopening conditions
 
-1. Confirm whether `BRAIN_ORCHESTRATOR_MASTER_PLAN_V1.md` is intended to be part of the architecture acceptance scope; preserve its contents.
-2. If it is in scope, review the entire proposal and reconcile its module, state, and test contracts with the 17 baseline documents. If it is out of scope, record that decision explicitly.
-3. Record the exact resulting commit and remote branch SHA if the documentation-only review changes are committed and pushed.
-4. Accept the design only after the scope decision and all mandatory design criteria have evidence.
-5. Treat runtime module inventory, import graph, end-to-end authorization and recovery tests as implementation gates, not as already passed.
+1. Re-run the architecture scope and consistency audit against the current worktree and MAEP-1.1.0.
+2. Verify remaining documents do not require signature functionality or independent-review workflows.
+3. Accept the design only after applicable design criteria have evidence.
+4. Treat runtime module inventory, import graph, end-to-end authorization and recovery tests as implementation gates, not as already passed.
+5. Do not commit or push without explicit authorization.
