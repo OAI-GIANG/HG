@@ -17,6 +17,7 @@ from urllib.parse import quote
 from maep.core import (
     MAEPError,
     POLICY_VERSION,
+    TERMINAL_STATES,
     assess_candidate_change,
     authorize_action,
     enforce_execution_mode,
@@ -1787,7 +1788,7 @@ class MemoryStore:
                     "SELECT * FROM checkpoints WHERE task_id=? ORDER BY checkpoint_sequence DESC LIMIT 1",
                     (task_id,),
                 ).fetchone()
-                if task_row["state"] in {"FAILED", "CANCELLED", "CLOSED_VERIFIED"}:
+                if task_row["state"] in TERMINAL_STATES:
                     result.update(
                         status="BLOCKED",
                         differences=["terminal task cannot resume; continue through a linked task/amendment"],
