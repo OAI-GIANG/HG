@@ -37,6 +37,7 @@ The factory verifies the configuration and the provisioned trust root, then bloc
 
 - Entry point, production factory and fail-closed tests: implemented.
 - Registered production binding: `maep022-record-reader` = `memory.AuthorityEvidenceReader` (non-recursive, read-only authority record path; PR #18).
+- Candidate (not registered, owner decision D3): `runtime/session_auth.py` `TokenSessionSource` — owner-issued session record (mode 600) with the SHA-256 of a dedicated bearer token, validity window, explicit capabilities/scopes and a revocation file; supplies request-authenticator, authenticated-context-provider and authenticated-session-resolver. Owner tooling: `python -m runtime.session_auth issue|revoke`. Registering it in `APPROVED_BINDINGS` requires the owner's D3 approval.
 - Missing production bindings: policy-source verifier (D2), session resolver, request authenticator and runtime-bound authenticated context (D3), approved Memory record verifier (D4), tool adapters, live-state provider, acceptance provider.
 - Service startup to READY, process supervision, network E2E and production deployment: not performed.
 
