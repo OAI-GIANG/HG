@@ -26,6 +26,8 @@ TRANSITIONS = {
     "CANCELLED": set(),
     "CLOSED_VERIFIED": set(),
 }
+# Same name and value as main's maep/core.py, which maep/task_store.py imports.
+TERMINAL_STATES = {"FAILED", "CANCELLED", "CLOSED_VERIFIED"}
 REQUIRED_TASK_FIELDS = {
     "task_id", "objective", "scope", "inputs", "outputs",
     "acceptance_criteria", "evidence_requirements", "risks",
@@ -152,7 +154,7 @@ def transition(current, target, *, guards=None, blocker_resolved=False):
     """Return target only if transition is allowed and its required evidence is present."""
     if not isinstance(current, str) or not isinstance(target, str) or current not in STATES or target not in STATES:
         raise MAEPError("unknown state")
-    if current in {"FAILED", "CANCELLED", "CLOSED_VERIFIED"}:
+    if current in TERMINAL_STATES:
         raise MAEPError("terminal task cannot be reopened")
     if target not in TRANSITIONS.get(current, set()):
         raise MAEPError(f"forbidden transition: {current} -> {target}")
@@ -191,7 +193,7 @@ def validate_linked_task(predecessor, successor):
     successor_id = successor.get("task_id")
     if not _nonempty_string(predecessor_id) or not _nonempty_string(successor_id):
         raise MAEPError("task identifiers must be non-empty strings")
-    if predecessor.get("state") not in {"FAILED", "CANCELLED", "CLOSED_VERIFIED"}:
+    if predecessor.get("state") not in TERMINAL_STATES:
         raise MAEPError("predecessor must be terminal")
     if successor.get("state") != "DRAFT":
         raise MAEPError("successor must start in DRAFT")
