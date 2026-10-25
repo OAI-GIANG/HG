@@ -155,3 +155,52 @@ class RequestDeadlineTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ConnectionCapTests(unittest.TestCase):
+    """The deadline bounds how long one connection lasts; the cap bounds how many."""
+
+    def setUp(self):
+        self.base = HTTP_SERVER_TESTS.HTTPServerTests("test_non_loopback_bind_is_rejected")
+        self.base.setUp()
+        self.addCleanup(self.base.tearDown)
+        self.server = HGHTTPServer(
+            runtime=self.base.runtime, authenticate_request=self.base.authenticate,
+            host="127.0.0.1", port=0, request_timeout_seconds=1.0,
+            request_deadline_seconds=1.5, max_connections=2)
+        self.thread = Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        self.addCleanup(lambda: (self.server.shutdown(), self.thread.join(timeout=2)))
+        self.address = self.server.address[:2]
+
+    def _open(self):
+        client = socket.create_connection(self.address, timeout=5)
+        self.addCleanup(client.close)
+        return client
+
+    def test_connections_beyond_the_cap_get_503_and_slots_are_released(self):
+        held = [self._open(), self._open()]
+        for client in held:
+            client.sendall(b"GET /api/tasks/T-1 HTTP/1.1\r\n")    # incomplete: occupies a slot
+        time.sleep(0.2)
+        refused = self._open()
+        refused.sendall(b"GET /api/tasks/T-1 HTTP/1.1\r\nHost: x\r\n\r\n")
+        response = RequestDeadlineTests._drain(refused)
+        self.assertIn(b" 503 ", response.split(b"\r\n", 1)[0])
+        self.assertIn(b"server_busy", response)
+        for client in held:                                   # held slots end at the deadline
+            RequestDeadlineTests._drain(client)
+        time.sleep(0.2)
+        body = json.dumps({"x": "y"}).encode()
+        later = self._open()
+        later.sendall(b"POST /api/no-such-route HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer test-only\r\n"
+                      b"Content-Type: application/json\r\nContent-Length: " + str(len(body)).encode()
+                      + b"\r\n\r\n" + body)
+        self.assertIn(b" 404 ", RequestDeadlineTests._drain(later).split(b"\r\n", 1)[0])
+        self.assertEqual(self.base.memory.calls, [])
+
+    def test_connection_cap_must_be_bounded(self):
+        for value in (0, -1, 257, True, "8"):
+            with self.assertRaisesRegex(HTTPBoundaryError, "invalid_connection_limit"):
+                HGHTTPServer(runtime=self.base.runtime, authenticate_request=self.base.authenticate,
+                             host="127.0.0.1", port=0, max_connections=value)

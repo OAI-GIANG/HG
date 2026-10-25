@@ -8,6 +8,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import io
 import json
 import re
+import threading
 import time
 from urllib.parse import parse_qs, unquote, urlsplit
 
@@ -26,6 +27,14 @@ REQUEST_TIMEOUT_SECONDS = 5.0
 MAX_REQUEST_TIMEOUT_SECONDS = 60.0
 REQUEST_DEADLINE_SECONDS = 15.0
 MAX_REQUEST_DEADLINE_SECONDS = 120.0
+# Concurrent connections (one handler thread each). The deadline bounds how long a
+# connection lasts; this bounds how many exist. Beyond it the server answers 503.
+MAX_CONNECTIONS = 32
+MAX_CONNECTIONS_LIMIT = 256
+_BUSY_BODY = b'{"error":"server_busy","status":"BLOCKED"}'
+_BUSY_RESPONSE = (b"HTTP/1.0 503 Service Unavailable\r\nContent-Type: application/json; charset=utf-8\r\n"
+                  b"Content-Length: " + str(len(_BUSY_BODY)).encode() + b"\r\nCache-Control: no-store\r\n"
+                  b"Connection: close\r\n\r\n" + _BUSY_BODY)
 _TASK_PATH = re.compile(r"^/api/tasks/([^/]+)$")
 _TRANSITION_PATH = re.compile(r"^/api/tasks/([^/]+)/transition$")
 _REVIEW_PATH = re.compile(r"^/api/tasks/([^/]+)/review-and-simulate$")
@@ -59,6 +68,36 @@ class _DeadlineSocketReader(io.RawIOBase):
             raise
 
 
+class _BoundedThreadingHTTPServer(ThreadingHTTPServer):
+    """ThreadingHTTPServer with a fixed number of concurrent handler threads."""
+    daemon_threads = True
+
+    def __init__(self, address, handler, *, max_connections):
+        self._slots = threading.BoundedSemaphore(max_connections)
+        super().__init__(address, handler)
+
+    def process_request(self, request, client_address):
+        if not self._slots.acquire(blocking=False):
+            try:
+                request.settimeout(1.0)
+                request.sendall(_BUSY_RESPONSE)
+            except OSError:
+                pass
+            self.shutdown_request(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except BaseException:
+            self._slots.release()
+            raise
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._slots.release()
+
+
 class HTTPBoundaryError(RuntimeError):
     def __init__(self, status, code):
         super().__init__(code)
@@ -86,7 +125,7 @@ class HGHTTPServer:
 
     def __init__(self, *, runtime, authenticate_request, host="127.0.0.1", port=0,
                  max_body_bytes=MAX_BODY_BYTES, request_timeout_seconds=REQUEST_TIMEOUT_SECONDS,
-                 request_deadline_seconds=REQUEST_DEADLINE_SECONDS):
+                 request_deadline_seconds=REQUEST_DEADLINE_SECONDS, max_connections=MAX_CONNECTIONS):
         if runtime is None or not callable(authenticate_request):
             raise HTTPBoundaryError(503, "runtime_and_authenticator_required")
         if host != "127.0.0.1":
@@ -112,11 +151,15 @@ class HGHTTPServer:
                 or not self.request_timeout_seconds <= request_deadline_seconds <= MAX_REQUEST_DEADLINE_SECONDS):
             raise HTTPBoundaryError(400, "invalid_request_deadline")
         self.request_deadline_seconds = float(request_deadline_seconds)
+        if (not isinstance(max_connections, int) or isinstance(max_connections, bool)
+                or not 1 <= max_connections <= MAX_CONNECTIONS_LIMIT):
+            raise HTTPBoundaryError(400, "invalid_connection_limit")
+        self.max_connections = max_connections
         self.runtime = runtime
         self.authenticate_request = authenticate_request
         self.max_body_bytes = max_body_bytes
-        self.httpd = ThreadingHTTPServer((host, port), self._handler_type())
-        self.httpd.daemon_threads = True
+        self.httpd = _BoundedThreadingHTTPServer((host, port), self._handler_type(),
+                                                 max_connections=max_connections)
 
     @property
     def address(self):
