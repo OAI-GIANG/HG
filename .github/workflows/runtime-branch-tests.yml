@@ -1,0 +1,39 @@
+name: runtime-branch-tests
+
+# Regression gate for the runtime.service line (ADR-012 gate: CI on 3.13/3.14).
+# Runs every unittest directory of this branch. No secrets, no network effects,
+# no deployment: contents read-only.
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  unittest:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: MAEP tests
+        run: python -B -m unittest discover -s maep/tests -t . -v
+      - name: Memory tests
+        run: python -B -m unittest discover -s memory/tests -t . -v
+      - name: Brain tests
+        run: python -B -m unittest discover -s brain/tests -v
+      - name: Runtime tests
+        run: python -B -m unittest discover -s runtime/tests -v
+      - name: Runtime composition smoke test
+        run: python -B -m unittest runtime.test_composition -v
+      - name: Creativity & research tests
+        run: python -B -m unittest discover -s creativity_research/tests -v
+      - name: Tools & automation tests
+        run: python -B -m unittest discover -s tools_automation/tests -v

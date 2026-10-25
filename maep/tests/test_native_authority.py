@@ -367,6 +367,103 @@ class NativePolicyEngineTests(unittest.TestCase):
                 now=datetime(2026, 10, 22, 10, 0, 10, tzinfo=timezone.utc))
 
 
+class AuthorizeReentrancyTests(unittest.TestCase):
+    """authorize() must not evaluate a decision from inside another decision."""
+
+    def setUp(self):
+        self.root_store = MemoryRootStore()
+        self.root_store.root = active_root()
+        self.sink = Sink()
+        self.request = {"action": "WRITE", "resource": "hg://repo/file",
+                        "task_ref": "task:1", "scope": ["file"]}
+        self.now = datetime(2026, 10, 22, 10, tzinfo=timezone.utc)
+
+    def engine(self, applicability):
+        return NativePolicyEngine(
+            root_store=self.root_store, principal_provider=Principal(),
+            candidate_provider=Candidate(), policy_provider=Policy(),
+            applicability_provider=applicability, gate_provider=Gate(),
+            evidence_sink=self.sink,
+        )
+
+    def call(self, engine):
+        return engine.authorize(self.request, authenticated_context="authenticated-session",
+                                candidate_target="known-candidate", now=self.now)
+
+    def test_nested_authorize_from_a_provider_is_blocked_and_outer_fails_closed(self):
+        test = self
+        nested = []
+
+        class ReentrantApplicability(ApplicabilityProvider):
+            def classify(inner_self, request, candidate):
+                nested.append(test.call(engine))      # provider asks authority again
+                return super().classify(request, candidate)
+
+        engine = self.engine(ReentrantApplicability())
+        outer = self.call(engine)
+        self.assertEqual([r.reason_codes for r in nested], [("AUTHORITY_REENTRANT_EVALUATION",)])
+        self.assertEqual(nested[0].decision, Decision.BLOCKED)
+        # This provider ignores the nested result; the outer decision is evaluated on
+        # its own verified inputs. A provider that depends on the nested result fails
+        # closed (see runtime/tests/test_authority_memory_read_path.py).
+        self.assertEqual(outer.decision, Decision.ALLOW)
+        self.assertEqual([e["event_type"] for e in self.sink.events],
+                         ["authorization.blocked", "authorization.decision"])
+
+    def test_sequential_valid_requests_are_unaffected(self):
+        engine = self.engine(ApplicabilityProvider())
+        results = [self.call(engine) for _ in range(3)]
+        self.assertEqual([r.decision for r in results], [Decision.ALLOW] * 3)
+        self.assertTrue(all(r.reason_codes == ("AUTHORIZED",) for r in results))
+
+    def test_guard_is_released_after_provider_exception(self):
+        class FailingApplicability(ApplicabilityProvider):
+            def classify(inner_self, request, candidate):
+                raise RuntimeError("provider failure")
+
+        failing = self.call(self.engine(FailingApplicability()))
+        self.assertEqual(failing.reason_codes, ("AUTHORITY_PROVIDER_OR_EVIDENCE_FAILURE",))
+        self.assertEqual(self.call(self.engine(ApplicabilityProvider())).decision, Decision.ALLOW)
+
+    def test_concurrent_threads_do_not_block_each_other(self):
+        import threading
+        started, release = threading.Event(), threading.Event()
+
+        class SlowApplicability(ApplicabilityProvider):
+            def classify(inner_self, request, candidate):
+                started.set()
+                release.wait(10)
+                return super().classify(request, candidate)
+
+        engine = self.engine(SlowApplicability())
+        results = {}
+        worker = threading.Thread(target=lambda: results.setdefault("slow", self.call(engine)))
+        worker.start()
+        self.assertTrue(started.wait(10))
+        # While another thread is inside authorize(), this thread is not "nested".
+        other = self.engine(ApplicabilityProvider())
+        results["other"] = self.call(other)
+        release.set()
+        worker.join(10)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(results["other"].decision, Decision.ALLOW)
+        self.assertEqual(results["slow"].decision, Decision.ALLOW)
+
+    def test_non_dict_request_while_active_still_blocks_without_error(self):
+        test = self
+        nested = []
+
+        class ReentrantApplicability(ApplicabilityProvider):
+            def classify(inner_self, request, candidate):
+                nested.append(engine.authorize("not-a-dict", authenticated_context=None,
+                                               candidate_target=None, now=test.now))
+                return super().classify(request, candidate)
+
+        engine = self.engine(ReentrantApplicability())
+        self.call(engine)
+        self.assertEqual(nested[0].reason_codes, ("AUTHORITY_REENTRANT_EVALUATION",))
+
+
 class RecoveryTests(unittest.TestCase):
     def test_unknown_outcome_requires_reconciliation(self):
         self.assertEqual(RecoveryManager.classify_outcome(
