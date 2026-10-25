@@ -65,7 +65,9 @@ All routes require Authorization: Bearer token and a Host header identifying the
 | GET | /v1/tasks/<task_id> | Read-only task snapshot |
 | POST | /v1/tasks | Submit one constrained task through the canonical HG runtime |
 
-POST requires a valid Idempotency-Key, Content-Type application/json, one bounded Content-Length, and a JSON object with exactly task and steps. Only fs.write and fs.read adapters are exposed; paths must be normalized under out/ with exact out/ scope. test.run, url.read, shell, arbitrary adapter names and public binds are disabled at this boundary.
+POST requires a valid Idempotency-Key, Content-Type application/json, one bounded Content-Length, and a JSON object with exactly task and steps.
+
+Transport limits: each socket read times out after 5 s; reading the whole request (request line, headers, body) must finish within 15 s on the monotonic clock, otherwise an incomplete request line/headers is closed without a response and an incomplete body gets 408 (`request_timeout` for silence, `request_deadline_exceeded` for the total). At most 32 connections are served concurrently; beyond that the server answers 503 `server_busy`. These are implementation defaults, not contract values. Only fs.write and fs.read adapters are exposed; paths must be normalized under out/ with exact out/ scope. test.run, url.read, shell, arbitrary adapter names and public binds are disabled at this boundary.
 
 For the initial submission API, the task must declare one mandatory AC-READBACK criterion accepting TEST_RESULT evidence and at least one fs.write step. After the tool completes, the verifier reads every planned file back within the runtime root and compares actual content to planned content. Only the real TaskStore and AcceptanceGate can authorize CLOSED_VERIFIED.
 
