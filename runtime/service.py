@@ -13,14 +13,11 @@ import sys
 import threading
 from typing import Callable
 
+from runtime.errors import RuntimeStartupError
 from runtime.http_server import HGHTTPServer
 
 FACTORY_ENV = "HG_RUNTIME_FACTORY"
 BLOCKED_EXIT = 78
-
-
-class RuntimeStartupError(RuntimeError):
-    """Safe-to-report startup/configuration failure."""
 
 
 def load_factory(spec: str | None = None) -> Callable[[], HGHTTPServer]:
@@ -55,6 +52,9 @@ def create_service(spec: str | None = None) -> HGHTTPServer:
     factory = load_factory(spec)
     try:
         service = factory()
+    except RuntimeStartupError:
+        # Factories report safe, actionable blockers with this type; keep their message.
+        raise
     except Exception as exc:
         raise RuntimeStartupError(f"HG runtime composition failed closed ({type(exc).__name__})") from exc
     if not isinstance(service, HGHTTPServer):

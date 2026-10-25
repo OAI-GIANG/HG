@@ -42,6 +42,23 @@ class RuntimeServiceEntrypointTests(unittest.TestCase):
                 with self.assertRaisesRegex(service.RuntimeStartupError, "must return runtime.http_server.HGHTTPServer"):
                     service.create_service()
 
+    def test_factory_startup_error_message_is_kept_other_errors_are_redacted(self):
+        def blocked():
+            raise service.RuntimeStartupError("actionable blocker")
+
+        def leaky():
+            raise ValueError("provider detail that must not be printed")
+
+        module = types.ModuleType("hg_test_runtime_config_errors")
+        module.blocked, module.leaky = blocked, leaky
+        with patch.dict(sys.modules, {module.__name__: module}):
+            with self.assertRaisesRegex(service.RuntimeStartupError, "^actionable blocker$"):
+                service.create_service(module.__name__ + ":blocked")
+            with self.assertRaises(service.RuntimeStartupError) as caught:
+                service.create_service(module.__name__ + ":leaky")
+        self.assertIn("failed closed (ValueError)", str(caught.exception))
+        self.assertNotIn("provider detail", str(caught.exception))
+
 
 if __name__ == "__main__":
     unittest.main()
