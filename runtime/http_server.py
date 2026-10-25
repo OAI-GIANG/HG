@@ -5,8 +5,10 @@ coordinator, MemoryStore remains the task/state owner, and NativePolicyEngine re
 the authority. No authentication, trust-root, policy, evidence or ledger defaults exist.
 """
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import io
 import json
 import re
+import time
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from brain.orchestrator import OrchestrationError
@@ -14,14 +16,47 @@ from maep.core import MAEPError
 from maep.native_authority import AuthorityError
 
 MAX_BODY_BYTES = 1_048_576
-# Per-connection socket timeout. Without it a client that stalls mid-request holds a
-# handler thread forever (one thread per connection). Same value as hg serve.
+# Two different limits on reading a request (request line, headers, body):
+# - REQUEST_TIMEOUT_SECONDS bounds each socket read (silence). Same value as hg serve.
+# - REQUEST_DEADLINE_SECONDS bounds the whole read on the monotonic clock, so a client
+#   that sends a byte just before every per-read timeout ("slow drip") cannot hold a
+#   handler thread indefinitely. No HG contract fixes a value; 15 s is three read
+#   timeouts, far above a loopback client sending at most MAX_BODY_BYTES.
 REQUEST_TIMEOUT_SECONDS = 5.0
 MAX_REQUEST_TIMEOUT_SECONDS = 60.0
+REQUEST_DEADLINE_SECONDS = 15.0
+MAX_REQUEST_DEADLINE_SECONDS = 120.0
 _TASK_PATH = re.compile(r"^/api/tasks/([^/]+)$")
 _TRANSITION_PATH = re.compile(r"^/api/tasks/([^/]+)/transition$")
 _REVIEW_PATH = re.compile(r"^/api/tasks/([^/]+)/review-and-simulate$")
 _EVIDENCE_PATH = "/api/evidence"
+
+
+class _DeadlineSocketReader(io.RawIOBase):
+    """Raw reader: every recv is bounded by the per-read timeout and the request deadline."""
+
+    def __init__(self, sock, *, read_timeout, deadline):
+        super().__init__()
+        self._sock = sock
+        self._read_timeout = read_timeout
+        self._deadline = deadline
+        self.deadline_exceeded = False
+
+    def readable(self):
+        return True
+
+    def readinto(self, buffer):
+        remaining = self._deadline - time.monotonic()
+        if remaining <= 0:
+            self.deadline_exceeded = True
+            raise TimeoutError("request deadline exceeded")
+        self._sock.settimeout(min(self._read_timeout, remaining))
+        try:
+            return self._sock.recv_into(buffer)
+        except TimeoutError:
+            if time.monotonic() >= self._deadline:
+                self.deadline_exceeded = True
+            raise
 
 
 class HTTPBoundaryError(RuntimeError):
@@ -50,7 +85,8 @@ class HGHTTPServer:
     """
 
     def __init__(self, *, runtime, authenticate_request, host="127.0.0.1", port=0,
-                 max_body_bytes=MAX_BODY_BYTES, request_timeout_seconds=REQUEST_TIMEOUT_SECONDS):
+                 max_body_bytes=MAX_BODY_BYTES, request_timeout_seconds=REQUEST_TIMEOUT_SECONDS,
+                 request_deadline_seconds=REQUEST_DEADLINE_SECONDS):
         if runtime is None or not callable(authenticate_request):
             raise HTTPBoundaryError(503, "runtime_and_authenticator_required")
         if host != "127.0.0.1":
@@ -72,6 +108,10 @@ class HGHTTPServer:
                 or not 0 < request_timeout_seconds <= MAX_REQUEST_TIMEOUT_SECONDS):
             raise HTTPBoundaryError(400, "invalid_request_timeout")
         self.request_timeout_seconds = float(request_timeout_seconds)
+        if (not isinstance(request_deadline_seconds, (int, float)) or isinstance(request_deadline_seconds, bool)
+                or not self.request_timeout_seconds <= request_deadline_seconds <= MAX_REQUEST_DEADLINE_SECONDS):
+            raise HTTPBoundaryError(400, "invalid_request_deadline")
+        self.request_deadline_seconds = float(request_deadline_seconds)
         self.runtime = runtime
         self.authenticate_request = authenticate_request
         self.max_body_bytes = max_body_bytes
@@ -122,6 +162,18 @@ class HGHTTPServer:
             # request line/headers raises TimeoutError, which closes the connection.
             timeout = service.request_timeout_seconds
 
+            def setup(self):
+                super().setup()
+                # Replace the buffered reader so every read of request line, headers and
+                # body also honours the total deadline. A deadline hit while reading the
+                # request line or headers closes the connection without a response (the
+                # request never completed); a hit while reading the body answers 408.
+                self.rfile.close()          # releases the makefile() reference, not the socket
+                self._request_reader = _DeadlineSocketReader(
+                    self.connection, read_timeout=service.request_timeout_seconds,
+                    deadline=time.monotonic() + service.request_deadline_seconds)
+                self.rfile = io.BufferedReader(self._request_reader)
+
             def log_message(self, fmt, *args):
                 # Avoid leaking request bodies, bearer material or provider details.
                 return
@@ -129,13 +181,20 @@ class HGHTTPServer:
             def _send(self, status, value):
                 raw = json.dumps(value, ensure_ascii=False, sort_keys=True,
                                  separators=(",", ":"), allow_nan=False).encode("utf-8")
-                self.send_response(status)
-                self.send_header("Content-Type", "application/json; charset=utf-8")
-                self.send_header("Content-Length", str(len(raw)))
-                self.send_header("Cache-Control", "no-store")
-                self.send_header("X-Content-Type-Options", "nosniff")
-                self.end_headers()
-                self.wfile.write(raw)
+                # Reads may have left a near-zero timeout on the socket; writes get the
+                # normal per-operation timeout.
+                self.connection.settimeout(service.request_timeout_seconds)
+                try:
+                    self.send_response(status)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(raw)))
+                    self.send_header("Cache-Control", "no-store")
+                    self.send_header("X-Content-Type-Options", "nosniff")
+                    self.end_headers()
+                    self.wfile.write(raw)
+                except (BrokenPipeError, ConnectionResetError, TimeoutError):
+                    # The client went away or stopped reading; nothing left to tell it.
+                    self.close_connection = True
 
             def _body(self):
                 if self.headers.get_content_type() != "application/json":
@@ -151,7 +210,9 @@ class HGHTTPServer:
                     raw = self.rfile.read(size)
                 except TimeoutError as exc:
                     self.close_connection = True
-                    raise HTTPBoundaryError(408, "request_body_timeout") from exc
+                    code = ("request_deadline_exceeded" if self._request_reader.deadline_exceeded
+                            else "request_body_timeout")
+                    raise HTTPBoundaryError(408, code) from exc
                 if len(raw) != size:
                     raise HTTPBoundaryError(400, "incomplete_request_body")
                 try:
