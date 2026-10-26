@@ -85,7 +85,7 @@ def provision(base: str | Path, *, port: int = 0) -> dict:
     candidate_ref = candidate["candidate_ref"]
 
     config = {
-        "schema": "hg-runtime-factory-config-v1", "host": "127.0.0.1", "port": port,
+        "schema": "hg-runtime-factory-config-v2", "host": "127.0.0.1", "port": port,
         "checkout": str(checkout), "authority_dir": str(base / "authority"),
         "policy_path": str(base / "policy.json"), "evidence_dir": str(base / "evidence"),
         "memory_db": str(base / "memory" / "hg.sqlite3"),
@@ -147,6 +147,7 @@ def provision(base: str | Path, *, port: int = 0) -> dict:
 
     session = {"session_path": str(base / "session" / "session.json"),
                "revocation_path": str(base / "session" / "revocations.json")}
+    config.update(session_record=session["session_path"], session_revocations=session["revocation_path"])
     issue_session(session_path=session["session_path"], token_path=base / "session" / "token",
                   revocation_path=session["revocation_path"], principal_id="STT", valid_days=1,
                   capabilities=["READ", "WRITE"], resource_scopes=resources, allowed_scopes=scopes)

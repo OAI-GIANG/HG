@@ -29,11 +29,13 @@ from maep.trust_source_contracts import require_trust_source_contract
 from maep.trusted_providers import TrustedApplicabilityProvider, TrustedGateEvidenceProvider
 from memory import AuthorityEvidenceReader
 from runtime.errors import RuntimeStartupError
+from runtime.session_auth import TokenSessionSource
 
 CONFIG_ENV = "HG_RUNTIME_CONFIG"
-CONFIG_SCHEMA = "hg-runtime-factory-config-v1"
+CONFIG_SCHEMA = "hg-runtime-factory-config-v2"
 PATH_KEYS = ("checkout", "authority_dir", "policy_path", "evidence_dir",
-             "memory_db", "idempotency_db", "receipts_dir")
+             "memory_db", "idempotency_db", "receipts_dir",
+             "session_record", "session_revocations")
 CONFIG_KEYS = frozenset(("schema", "host", "port") + PATH_KEYS)
 
 # Every binding build_runtime and HGHTTPServer need that has no production implementation
@@ -53,12 +55,23 @@ def _build_record_reader(config: dict[str, Any]) -> AuthorityEvidenceReader:
     return AuthorityEvidenceReader(config["memory_db"])
 
 
+def _build_session_source(config: dict[str, Any]) -> TokenSessionSource:
+    # D3 (owner decision): owner-issued session record + revocation list, see
+    # runtime/session_auth.py. The source is stateless; every call re-reads both files.
+    return TokenSessionSource(session_path=config["session_record"],
+                              revocation_path=config["session_revocations"])
+
+
 # name -> builder(config) returning the binding object. Builders run only after the
 # configuration and the trust root have been validated.
 APPROVED_BINDINGS: dict[str, Any] = {
     # Read-only authority record source (PR #18): breaks the authorize() -> Memory
     # -> authorize() cycle. One reader per configured Memory database.
     "maep022-record-reader": _build_record_reader,
+    # D3 -- DRAFT, registered only after the owner approves the session source.
+    "authenticated-session-resolver": _build_session_source,
+    "request-authenticator": lambda config: _build_session_source(config).authenticate_request,
+    "authenticated-context-provider": lambda config: _build_session_source(config).authenticated_context,
 }
 
 
