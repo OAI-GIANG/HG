@@ -55,6 +55,58 @@ def _active_binding(root_store: Any, policy_provider: Any, expected_policy: dict
     return root, policy
 
 
+MEMORY_RESOURCE_PREFIX = "memory:"
+_RULE_KEYS = frozenset({"rule_id", "actions", "resource_prefix", "classification"})
+
+
+def _memory_rule(policy: dict[str, Any], request: dict[str, Any], memory_store_path: str | None):
+    """Return the policy applicability rule covering this Memory data-plane request, or None.
+
+    Rules live in the active, provenance-verified policy (owner-approved via D2). They are
+    deliberately narrow: they can only classify `memory:` resources as NOT_REQUIRED, and
+    only resources bound to the configured Memory store (MemoryStore appends
+    " [store:<path>]"). Any malformed, duplicate or overlapping rule set blocks.
+    """
+    rules = policy.get("applicability_rules")
+    if rules is None:
+        return None
+    if not isinstance(rules, list):
+        raise AuthorityError("policy applicability rules are malformed")
+    seen, matches = set(), []
+    action, resource = request.get("action"), request.get("resource")
+    for rule in rules:
+        if not isinstance(rule, dict) or set(rule) != _RULE_KEYS:
+            raise AuthorityError("policy applicability rule has unknown or missing fields")
+        rule_id, actions, prefix = rule["rule_id"], rule["actions"], rule["resource_prefix"]
+        if not isinstance(rule_id, str) or not rule_id.strip() or rule_id in seen:
+            raise AuthorityError("policy applicability rule identity is invalid or duplicated")
+        seen.add(rule_id)
+        if (not isinstance(actions, list) or not actions or len(actions) != len(set(actions))
+                or any(not isinstance(item, str) or not item.strip() for item in actions)):
+            raise AuthorityError("policy applicability rule actions are invalid")
+        if not isinstance(prefix, str) or not prefix.startswith(MEMORY_RESOURCE_PREFIX):
+            raise AuthorityError("policy applicability rules may only cover memory: resources")
+        if rule["classification"] != "NOT_REQUIRED":
+            raise AuthorityError("policy applicability rules may only declare NOT_REQUIRED")
+        if (memory_store_path and isinstance(resource, str) and resource.startswith(prefix)
+                and resource.endswith(f" [store:{memory_store_path}]") and action in actions):
+            matches.append(rule)
+    if len(matches) > 1:
+        raise AuthorityError("policy applicability rules overlap for this request")
+    return matches[0] if matches else None
+
+
+def _rule_applicability(rule: dict[str, Any], request: dict[str, Any], candidate: dict[str, Any],
+                        policy: dict[str, Any]) -> dict[str, Any]:
+    return {"verified": True, "classification": "NOT_REQUIRED",
+            "candidate_ref": candidate["candidate_ref"], "action": request["action"],
+            "resource": request["resource"], "applicability_id": "policy-rule:" + rule["rule_id"],
+            "rule_version": policy["version"],
+            "facts_used": ["policy:" + policy["policy_digest"], "rule:" + rule["rule_id"],
+                           "resource-class:memory-data-plane"],
+            "evidence_refs": list(policy["approval_evidence_refs"])}
+
+
 def _verify(verifier: ApprovedRecordProvenanceVerifier, record: Any, *, record_type: str,
             root: TrustRootRecord, policy: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(record, dict):
@@ -87,9 +139,12 @@ def _resolve_verified_evidence(resolver: TrustedRecordResolver, verifier: Approv
 class TrustedApplicabilityProvider:
     """Resolve applicability by request/candidate, then validate authoritative provenance."""
     def __init__(self, *, root_store: Any, policy_provider: Any,
-                 resolver: TrustedRecordResolver, verifier: ApprovedRecordProvenanceVerifier):
+                 resolver: TrustedRecordResolver, verifier: ApprovedRecordProvenanceVerifier,
+                 memory_store_path: str | None = None):
         if any(value is None for value in (root_store, policy_provider, resolver, verifier)):
             raise AuthorityError("trusted applicability provider requires root, policy, resolver and verifier")
+        # Policy applicability rules only ever apply to resources bound to this store.
+        self.memory_store_path = str(memory_store_path) if memory_store_path else None
         if not callable(getattr(resolver, "resolve_applicability", None)) or not callable(getattr(resolver, "resolve_evidence", None)):
             raise AuthorityError("trusted applicability resolver contract incomplete")
         if not callable(getattr(verifier, "validate_record_provenance", None)):
@@ -99,11 +154,20 @@ class TrustedApplicabilityProvider:
 
     def classify(self, request: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any] | None:
         root, policy = _active_binding(self.root_store, self.policy_provider)
+        rule = _memory_rule(policy, request, self.memory_store_path)
+        # Lookup errors propagate (never converted into a rule decision); only the
+        # absence of a task-level record lets the policy rule decide.
         record = self.resolver.resolve_applicability(request, candidate)
+        if record is None and rule is not None:
+            return _rule_applicability(rule, request, candidate, policy)
         _verify(self.verifier, record, record_type="MAEP022_APPLICABILITY", root=root, policy=policy)
         expected = (candidate.get("candidate_ref"), request.get("action"), request.get("resource"))
         observed = (record.get("candidate_ref"), record.get("action"), record.get("resource"))
         if observed != expected:
+            if rule is not None:
+                # The task's approved record classifies another operation; this Memory
+                # data-plane request is classified by the owner-approved policy rule.
+                return _rule_applicability(rule, request, candidate, policy)
             raise AuthorityError("trusted applicability record does not bind candidate/action/resource")
         if record.get("classification") not in {"REQUIRED", "NOT_REQUIRED"}:
             raise AuthorityError("trusted applicability classification is unknown")

@@ -255,6 +255,19 @@ class BrainTests(unittest.TestCase):
         self.assertEqual(self.adapter.calls, 0)
         self.assertEqual(len(self.auth_sink.events), before)
 
+    def test_memory_resources_are_never_dispatchable(self):
+        # Memory data-plane resources belong to MemoryStore; a tool dispatch naming one
+        # must not borrow Memory's applicability rules (cross-domain, N1).
+        for request in (dict(self.request, resource='memory:task/task-1'),
+                        dict(self.request, scope=['fixture', 'memory:task:task:1:write'])):
+            before = len(self.auth_sink.events)
+            with self.assertRaisesRegex(OrchestrationError, 'Memory resources are not dispatchable'):
+                self.brain.dispatch(request=request, authenticated_context='fixture-session',
+                                    candidate_target='candidate-target', adapter_name='test',
+                                    idempotency_key='idem:memory-resource')
+            self.assertEqual(self.adapter.calls, 0)
+            self.assertEqual(len(self.auth_sink.events), before)
+
     def test_malformed_adapter_result_is_unknown_and_receipted(self):
         class MalformedAdapter:
             def __init__(self): self.calls = 0

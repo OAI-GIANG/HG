@@ -193,6 +193,8 @@ class AuthorityMemoryReadPathTests(unittest.TestCase):
         # evaluation is BLOCKED at depth 2 and the outer decision fails closed.
         class LateBound:
             target = None
+            def has_task(self, task_id):
+                return True     # report the task present so the read reaches the authorizing API
             def __getattr__(self, name):
                 return lambda *args, **kwargs: getattr(LateBound.target, name)(*args, **kwargs)
         engine = self._engine(LateBound())

@@ -34,7 +34,11 @@ NEW_TASK = "T-E2E-NEW"
 UNLISTED_TASK = "T-E2E-UNLISTED"        # approved record, absent from policy and session (N10)
 RUN_READ_TASK = "T-E2E-RUN-READ"        # RUNNING; its one applicability record binds the task read
 RUN_EXEC_TASK = "T-E2E-RUN-EXEC"        # RUNNING; its one applicability record binds the dispatch
+RUN_REQ_TASK = "T-E2E-RUN-REQ"          # RUNNING; its record classifies the dispatch REQUIRED (no gate)
 DISPATCH_ACTION, DISPATCH_RESOURCE = "EXECUTE", "tool:fixture:echo"
+NEW_EVIDENCE = "EV-NEW-1"
+MEMORY_RULES = [{"rule_id": "memory-data-plane", "actions": ["READ", "WRITE"],
+                 "resource_prefix": "memory:", "classification": "NOT_REQUIRED"}]
 
 
 class FixturePolicySourceVerifier:
@@ -56,7 +60,7 @@ class FixtureAdapter:
 
     def execute(self, **kwargs):
         self.calls += 1
-        return {"outcome": "SUCCEEDED"}
+        return {"outcome": "SUCCESS", "idempotent": False, "provider_ref": "fixture-effect"}
 
 
 def _fixture_acceptance(task_id, target):
@@ -74,7 +78,7 @@ def _git(checkout: Path, *args: str) -> None:
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
 
 
-def provision(base: str | Path, *, port: int = 0) -> dict:
+def provision(base: str | Path, *, port: int = 0, memory_rules: bool = False) -> dict:
     """Create an isolated HG state directory; returns config and the bearer token path."""
     base = Path(base)
     checkout = base / "checkout"
@@ -112,7 +116,8 @@ def provision(base: str | Path, *, port: int = 0) -> dict:
     def resource(kind, task_id):
         return f"memory:{kind}/{task_id} [store:{db}]"
 
-    def add_task(task_id, source, *, app_action="READ", app_resource=None, running=False):
+    def add_task(task_id, source, *, app_action="READ", app_resource=None, running=False,
+                 classification="NOT_REQUIRED"):
         task = store_fixtures.MemoryStoreTests.task(task_id)
         task["inputs"] = [{"ref_id": f"{task_id}-APP", "kind": "EVIDENCE", "description": "maep022:applicability"},
                           {"ref_id": f"{task_id}-SUP", "kind": "EVIDENCE", "description": "support"}]
@@ -123,7 +128,7 @@ def provision(base: str | Path, *, port: int = 0) -> dict:
                 (f"{task_id}-SUP", {"candidate_ref": candidate_ref}),
                 (f"{task_id}-APP", {"candidate_ref": candidate_ref, "action": app_action,
                                     "resource": app_resource or resource("task", task_id),
-                                    "classification": "NOT_REQUIRED",
+                                    "classification": classification,
                                     "facts_used": ["memory-data-plane"], "evidence_refs": [f"{task_id}-SUP"],
                                     "rule_version": "MAEP-022-v1", "applicability_id": f"APP-{task_id}"})):
             evidence = store_fixtures.MemoryStoreTests.evidence(evidence_id, candidate_ref)
@@ -148,9 +153,11 @@ def provision(base: str | Path, *, port: int = 0) -> dict:
     add_task(RUN_READ_TASK, APPROVED_SOURCE, running=True)
     add_task(RUN_EXEC_TASK, APPROVED_SOURCE, app_action=DISPATCH_ACTION, app_resource=DISPATCH_RESOURCE,
              running=True)
+    add_task(RUN_REQ_TASK, APPROVED_SOURCE, app_action=DISPATCH_ACTION, app_resource=DISPATCH_RESOURCE,
+             running=True, classification="REQUIRED")
 
     rules, resources, scopes = [], [], []
-    for task_id in (READ_TASK, UNAPPROVED_TASK, RUN_READ_TASK, RUN_EXEC_TASK):
+    for task_id in (READ_TASK, UNAPPROVED_TASK, RUN_READ_TASK, RUN_EXEC_TASK, RUN_REQ_TASK, NEW_TASK):
         rules.append({"action": "READ", "resource": resource("task", task_id),
                       "scope": [f"memory:task:{task_id}:read"], "effect": "ALLOW"})
         resources.append(resource("task", task_id))
@@ -159,12 +166,17 @@ def provision(base: str | Path, *, port: int = 0) -> dict:
                   "scope": [DISPATCH_RESOURCE], "effect": "ALLOW"})
     resources.append(DISPATCH_RESOURCE)
     scopes.append(DISPATCH_RESOURCE)
+    rules.append({"action": "WRITE", "resource": resource("evidence", NEW_EVIDENCE),
+                  "scope": [f"memory:task:{NEW_TASK}:evidence:write"], "effect": "ALLOW"})
+    resources.append(resource("evidence", NEW_EVIDENCE))
+    scopes.append(f"memory:task:{NEW_TASK}:evidence:write")
     rules.append({"action": "WRITE", "resource": resource("task", NEW_TASK),
                   "scope": [f"memory:task:{NEW_TASK}:write"], "effect": "ALLOW"})
-    resources.append(resource("task", NEW_TASK))
-    scopes.append(f"memory:task:{NEW_TASK}:write")
+    scopes.append(f"memory:task:{NEW_TASK}:write")    # resource already listed for its READ rule
     policy = {"status": "ACTIVE", "version": POLICY_VERSION, "root_generation": 1,
               "approval_evidence_refs": ["fixture:policy-approval"], "grant_ttl_seconds": 60, "rules": rules}
+    if memory_rules:
+        policy["applicability_rules"] = MEMORY_RULES
     policy_path = Path(config["policy_path"])
     fd = os.open(policy_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as handle:

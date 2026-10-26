@@ -515,6 +515,11 @@ class BrainOrchestrator:
             validate_adapter_request(request, idempotency_key=idempotency_key)
         except AdapterError as exc:
             raise OrchestrationError("BLOCKED: invalid tools-and-automation request") from exc
+        # Memory data-plane resources are only reachable through MemoryStore. A tool
+        # dispatch naming one must not be classified by Memory applicability rules.
+        if str(request["resource"]).startswith("memory:") or any(
+                str(item).startswith("memory:") for item in request.get("scope", [])):
+            raise OrchestrationError("BLOCKED: Memory resources are not dispatchable")
 
         # Bind every external effect to the canonical, persisted MAEP task. A caller
         # supplied task object or state label is never accepted as the source of truth.

@@ -122,3 +122,42 @@ class AuthorityReaderTaskIdSourceTests(unittest.TestCase):
             raw.close()
         with self.assertRaisesRegex(MAEPError, "disagree"):
             self.reader.list_canonical_task_ids()
+
+
+class AuthorityReaderTaskExistsTests(unittest.TestCase):
+    def setUp(self):
+        self.fixture = store_fixtures.MemoryStoreTests()
+        self.fixture.setUp()
+        self.addCleanup(self.fixture.tearDown)
+        self.reader = AuthorityEvidenceReader(self.fixture.db)
+
+    def test_reports_present_and_absent_tasks(self):
+        self.assertIs(self.reader.has_task("T-MK-1"), True)
+        self.assertIs(self.reader.has_task("T-NOT-THERE"), False)
+        with self.assertRaises(MAEPError):
+            self.reader.has_task("")
+
+    def test_tampered_store_raises_instead_of_reporting_absent(self):
+        raw = sqlite3.connect(self.fixture.db)
+        try:
+            raw.execute("DROP TRIGGER maep_events_no_update")
+            row = raw.execute("SELECT sequence, payload_json FROM maep_events ORDER BY sequence DESC LIMIT 1").fetchone()
+            payload = json.loads(row[1])
+            payload["tampered"] = True
+            raw.execute("UPDATE maep_events SET payload_json=? WHERE sequence=?", (json.dumps(payload), row[0]))
+            raw.commit()
+        finally:
+            raw.close()
+        with self.assertRaisesRegex(MAEPError, "digest mismatch"):
+            self.reader.has_task("T-NOT-THERE")
+
+    def test_selectors_distinguish_absent_task_from_lookup_failure(self):
+        from maep.memory_evidence_providers import CanonicalMemoryTaskSelectors
+        from maep.native_authority import AuthorityError
+        selectors = CanonicalMemoryTaskSelectors(memory_store=self.reader, canonical_task_id_source=self.reader)
+        self.assertIs(selectors.task_exists("T-NOT-THERE"), False)
+        self.assertIs(selectors.task_exists("T-MK-1"), True)
+        os.chmod(self.fixture.db, 0o644)
+        with self.assertRaisesRegex(AuthorityError, "existence check failed"):
+            selectors.task_exists("T-NOT-THERE")
+        os.chmod(self.fixture.db, 0o600)

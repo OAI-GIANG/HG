@@ -931,6 +931,24 @@ class MemoryStore:
         )
         return self._read_task(task_id)
 
+    def _read_task_exists(self, task_id):
+        """Read-only existence check for AuthorityEvidenceReader (authority path only).
+
+        False only when the integrity-checked store has no such task; every other
+        condition (schema, event chain, row/payload binding) raises.
+        """
+        _require_nonempty(task_id, "task_id")
+        connection = self._connect(readonly=True)
+        try:
+            self._ensure_ready(connection)
+            row = connection.execute("SELECT 1 FROM tasks WHERE task_id=?", (task_id,)).fetchone()
+            if row is None:
+                return False
+            self._task_row(connection, task_id)
+            return True
+        finally:
+            connection.close()
+
     def _read_task_ids(self):
         """Read-only canonical task IDs for AuthorityEvidenceReader (authority path only).
 
@@ -2217,3 +2235,7 @@ class AuthorityEvidenceReader:
     def list_canonical_task_ids(self):
         """CanonicalTaskIdSource for CanonicalMemoryTaskSelectors (no index-scope task needed)."""
         return self._store._read_task_ids()
+
+    def has_task(self, task_id):
+        """True/False from the integrity-checked store; any other condition raises."""
+        return self._store._read_task_exists(task_id)
