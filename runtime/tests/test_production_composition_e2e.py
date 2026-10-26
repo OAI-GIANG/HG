@@ -109,6 +109,82 @@ class CompositionE2ETests(unittest.TestCase):
         reader = AuthorityEvidenceReader(self.config["memory_db"])
         self.assertNotIn(fixture.NEW_TASK, reader.list_canonical_task_ids())
 
+    # -- N10: exact resource/scope matching ------------------------------------------
+    def test_n10_task_not_enumerated_in_policy_and_session_is_denied(self):
+        # Approved applicability record, same candidate, but neither the policy rules nor
+        # the session list this task's resource: exact matching denies it.
+        server = self.start()
+        status, body = self.call(server, "GET", f"/api/tasks/{fixture.UNLISTED_TASK}")
+        self.assertEqual(status, 403, body)
+        self.assertEqual(self.decisions(), [("authorization.deny", ["PRINCIPAL_SCOPE_DENIED"])])
+
+    def test_n10_memory_restored_to_a_new_path_loses_every_authorization(self):
+        # Memory resources embed the database path ("memory:task/T [store:/path]"), so a
+        # backup restored elsewhere no longer matches its own applicability records,
+        # the policy rules or the session scopes.
+        provisioner = fixture.MemoryStore(self.config["memory_db"], principal_provider=lambda: "provisioner",
+                                          policy_evaluator=fixture.store_fixtures.policy_decision,
+                                          applicability_provider=fixture.store_fixtures.applicability_provider_for_test)
+        restored = Path(self.tmp.name) / "restored" / "hg.sqlite3"
+        restored.parent.mkdir(mode=0o700)
+        provisioner.backup_to(restored, task_id=fixture.READ_TASK)
+        self.config = dict(self.config, memory_db=str(restored))
+        server = self.start()
+        status, body = self.call(server, "GET", f"/api/tasks/{fixture.READ_TASK}")
+        self.assertEqual(status, 403, body)
+        self.assertEqual(self.decisions(), [("authorization.blocked", ["AUTHORITY_VALIDATION_FAILED"])])
+
+    # -- N1: dispatch through the production graph ---------------------------------
+    def dispatch(self, server, task_id, adapter):
+        request = {"task_ref": task_id, "action": fixture.DISPATCH_ACTION,
+                   "resource": fixture.DISPATCH_RESOURCE, "scope": [fixture.DISPATCH_RESOURCE]}
+        return self.call(server, "POST", "/api/dispatch",
+                         body={"request": request, "adapter_name": "fixture", "idempotency_key": "e2e-k-1"})
+
+    def receipts(self):
+        from maep.local_runtime_providers import LocalReceiptSink
+        sink = LocalReceiptSink(self.config["receipts_dir"])
+        self.assertTrue(sink.verify_integrity())
+        return sink.read_all()
+
+    def test_n1_dispatch_blocked_when_the_task_record_binds_the_task_read(self):
+        adapter = fixture.FixtureAdapter()
+        server = self.start(adapter=adapter)
+        status, body = self.dispatch(server, fixture.RUN_READ_TASK, adapter)
+        self.assertEqual(status, 403, body)
+        self.assertEqual(adapter.calls, 0)
+        # canonical task read ALLOWed (+ recheck), then the dispatch decision is BLOCKED
+        self.assertEqual(self.decisions(), [("authorization.decision", ["AUTHORIZED"])] * 2
+                         + [("authorization.blocked", ["AUTHORITY_VALIDATION_FAILED"])])
+        self.assertEqual([r.get("payload", r).get("outcome") for r in self.receipts()], ["BLOCKED"])
+
+    def test_n1_dispatch_blocked_when_the_task_record_binds_the_dispatch(self):
+        adapter = fixture.FixtureAdapter()
+        server = self.start(adapter=adapter)
+        status, body = self.dispatch(server, fixture.RUN_EXEC_TASK, adapter)
+        self.assertEqual(status, 403, body)
+        self.assertEqual(adapter.calls, 0)
+        # the canonical task read itself is BLOCKED: the one record binds the dispatch
+        self.assertEqual(self.decisions(), [("authorization.blocked", ["AUTHORITY_VALIDATION_FAILED"])])
+        self.assertEqual(self.receipts(), [])
+
+    # -- policy version compatibility -----------------------------------------------
+    def test_active_policy_with_another_version_blocks_memory_access(self):
+        # Memory records are bound to the policy version they were written under, and
+        # MemoryLedgerProvenanceVerifier requires that version to equal the active
+        # policy's. A policy version change therefore invalidates every existing
+        # applicability record until it is re-assessed under the new version.
+        from maep.core import POLICY_VERSION
+        from maep.local_runtime_providers import _digest
+        raw = json.loads(Path(self.config["policy_path"]).read_text())
+        raw["policy"]["version"] = POLICY_VERSION + "-next"
+        raw["policy_digest"] = _digest(raw["policy"])
+        Path(self.config["policy_path"]).write_text(json.dumps(raw))
+        server = self.start()
+        status, body = self.call(server, "GET", f"/api/tasks/{fixture.READ_TASK}")
+        self.assertEqual(status, 403, body)
+        self.assertEqual(self.decisions(), [("authorization.blocked", ["AUTHORITY_VALIDATION_FAILED"])])
+
     def test_policy_source_rejection_blocks_startup(self):
         class Reject:
             def verify_policy_source(self, record, *, root, policy):
