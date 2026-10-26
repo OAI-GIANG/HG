@@ -31,6 +31,10 @@ APPROVED_SOURCE = "test://approved-source"
 READ_TASK = "T-E2E-READ"
 UNAPPROVED_TASK = "T-E2E-UNAPPROVED"
 NEW_TASK = "T-E2E-NEW"
+UNLISTED_TASK = "T-E2E-UNLISTED"        # approved record, absent from policy and session (N10)
+RUN_READ_TASK = "T-E2E-RUN-READ"        # RUNNING; its one applicability record binds the task read
+RUN_EXEC_TASK = "T-E2E-RUN-EXEC"        # RUNNING; its one applicability record binds the dispatch
+DISPATCH_ACTION, DISPATCH_RESOURCE = "EXECUTE", "tool:fixture:echo"
 
 
 class FixturePolicySourceVerifier:
@@ -108,31 +112,53 @@ def provision(base: str | Path, *, port: int = 0) -> dict:
     def resource(kind, task_id):
         return f"memory:{kind}/{task_id} [store:{db}]"
 
-    def add_task(task_id, source):
+    def add_task(task_id, source, *, app_action="READ", app_resource=None, running=False):
         task = store_fixtures.MemoryStoreTests.task(task_id)
         task["inputs"] = [{"ref_id": f"{task_id}-APP", "kind": "EVIDENCE", "description": "maep022:applicability"},
                           {"ref_id": f"{task_id}-SUP", "kind": "EVIDENCE", "description": "support"}]
+        if running:
+            task["scope"]["include"].append(DISPATCH_RESOURCE)
         store.create_task(task, candidate_ref=candidate_ref)
         for evidence_id, payload in (
                 (f"{task_id}-SUP", {"candidate_ref": candidate_ref}),
-                (f"{task_id}-APP", {"candidate_ref": candidate_ref, "action": "READ",
-                                    "resource": resource("task", task_id), "classification": "NOT_REQUIRED",
+                (f"{task_id}-APP", {"candidate_ref": candidate_ref, "action": app_action,
+                                    "resource": app_resource or resource("task", task_id),
+                                    "classification": "NOT_REQUIRED",
                                     "facts_used": ["memory-data-plane"], "evidence_refs": [f"{task_id}-SUP"],
                                     "rule_version": "MAEP-022-v1", "applicability_id": f"APP-{task_id}"})):
             evidence = store_fixtures.MemoryStoreTests.evidence(evidence_id, candidate_ref)
             evidence.update(evidence_type="OTHER", source_ref=source,
                             result=json.dumps(payload, sort_keys=True, separators=(",", ":")))
             store.record_evidence(task_id, evidence)
+        if running:
+            # Provisioning-only lifecycle under the test evaluator (no production path exists, N1).
+            for state, version in (("READY", 1), ("ASSESSED", 2), ("PLANNED", 3)):
+                store.transition_task(task_id, state, expected_version=version)
+            action_request = {"principal": "provisioner", "action": DISPATCH_ACTION,
+                              "resource": DISPATCH_RESOURCE, "scope": [DISPATCH_RESOURCE],
+                              "task_id": task_id, "policy_version": POLICY_VERSION,
+                              "capability_affecting": False,
+                              "capability_gate": {"applies": False, "reason": "fixture echo adapter"}}
+            store.transition_task(task_id, "AUTHORIZED", expected_version=4, action_request=action_request)
+            store.transition_task(task_id, "RUNNING", expected_version=5, action_request=action_request)
 
     add_task(READ_TASK, APPROVED_SOURCE)
     add_task(UNAPPROVED_TASK, "test://not-approved")
+    add_task(UNLISTED_TASK, APPROVED_SOURCE)
+    add_task(RUN_READ_TASK, APPROVED_SOURCE, running=True)
+    add_task(RUN_EXEC_TASK, APPROVED_SOURCE, app_action=DISPATCH_ACTION, app_resource=DISPATCH_RESOURCE,
+             running=True)
 
     rules, resources, scopes = [], [], []
-    for task_id in (READ_TASK, UNAPPROVED_TASK):
+    for task_id in (READ_TASK, UNAPPROVED_TASK, RUN_READ_TASK, RUN_EXEC_TASK):
         rules.append({"action": "READ", "resource": resource("task", task_id),
                       "scope": [f"memory:task:{task_id}:read"], "effect": "ALLOW"})
         resources.append(resource("task", task_id))
         scopes.append(f"memory:task:{task_id}:read")
+    rules.append({"action": DISPATCH_ACTION, "resource": DISPATCH_RESOURCE,
+                  "scope": [DISPATCH_RESOURCE], "effect": "ALLOW"})
+    resources.append(DISPATCH_RESOURCE)
+    scopes.append(DISPATCH_RESOURCE)
     rules.append({"action": "WRITE", "resource": resource("task", NEW_TASK),
                   "scope": [f"memory:task:{NEW_TASK}:write"], "effect": "ALLOW"})
     resources.append(resource("task", NEW_TASK))
@@ -150,7 +176,8 @@ def provision(base: str | Path, *, port: int = 0) -> dict:
     config.update(session_record=session["session_path"], session_revocations=session["revocation_path"])
     issue_session(session_path=session["session_path"], token_path=base / "session" / "token",
                   revocation_path=session["revocation_path"], principal_id="STT", valid_days=1,
-                  capabilities=["READ", "WRITE"], resource_scopes=resources, allowed_scopes=scopes)
+                  capabilities=["READ", "WRITE", DISPATCH_ACTION], resource_scopes=resources,
+                  allowed_scopes=scopes)
     (base / "fixture.json").write_text(json.dumps({"config": config, "session": session}), encoding="utf-8")
     return {"config": config, "session": session, "token_path": str(base / "session" / "token"),
             "candidate_ref": candidate_ref, "resource": resource}
