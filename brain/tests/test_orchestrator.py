@@ -268,6 +268,55 @@ class BrainTests(unittest.TestCase):
             self.assertEqual(self.adapter.calls, 0)
             self.assertEqual(len(self.auth_sink.events), before)
 
+    def test_unknown_effect_blocks_further_effects_until_reconciled(self):
+        # MAEP-018 (parity with hg serve ActionGateway): with a readable receipt ledger an
+        # UNKNOWN outcome blocks every further effect on the task until reconcile().
+        class ReadableSink(Sink):
+            def read_all(self): return list(self.events)
+        class Reconciling(Adapter):
+            def __init__(self): super().__init__(timeout=True); self.finding = 'APPLIED'
+            def intent(self, request): return {'resource': request['resource']}
+            def reconcile(self, intent): return self.finding
+        self.brain.receipt_sink = self.receipt_sink = ReadableSink()
+        adapter = Reconciling(); self.brain.adapter_registry['test'] = adapter
+        with self.assertRaisesRegex(OrchestrationError, 'OUTCOME_UNKNOWN'):
+            self.dispatch(key='idem:u1')
+        self.assertEqual(self.receipt_sink.events[-1]['payload']['intent'], {'resource': 'hg://test/resource'})
+        auth_before = len(self.auth_sink.events)
+        with self.assertRaisesRegex(OrchestrationError, 'unreconciled UNKNOWN effect'):
+            self.dispatch(key='idem:u2')
+        self.assertEqual((adapter.calls, len(self.auth_sink.events)), (1, auth_before))
+        with self.assertRaisesRegex(OrchestrationError, 'no unreconciled'):
+            self.brain.reconcile(task_ref='task:1', idempotency_key='idem:other',
+                                 authenticated_context='fixture-session', candidate_target='candidate-target')
+        adapter.finding = 'UNKNOWN'
+        result = self.brain.reconcile(task_ref='task:1', idempotency_key='idem:u1',
+                                      authenticated_context='fixture-session', candidate_target='candidate-target')
+        self.assertTrue(result['pending'])
+        self.assertIn('idem:u1', self.brain.pending_effects('task:1'))
+        adapter.finding = 'APPLIED'
+        result = self.brain.reconcile(task_ref='task:1', idempotency_key='idem:u1',
+                                      authenticated_context='fixture-session', candidate_target='candidate-target')
+        self.assertEqual((result['finding'], result['pending']), ('APPLIED', False))
+        self.assertEqual(self.brain.pending_effects('task:1'), {})
+        self.assertEqual(adapter.calls, 1)              # reconciliation never re-executes
+
+    def test_real_adapter_timeout_is_unknown(self):
+        import threading
+        release = threading.Event()
+        class Hangs(Adapter):
+            timeout_s = 0.2
+            def execute(self, **kwargs):
+                self.calls += 1
+                release.wait(5)
+                return {'outcome': 'SUCCESS'}
+        self.addCleanup(release.set)
+        adapter = Hangs(); self.brain.adapter_registry['test'] = adapter
+        with self.assertRaisesRegex(OrchestrationError, 'OUTCOME_UNKNOWN'):
+            self.dispatch(key='idem:hang')
+        self.assertEqual(self.receipt_sink.events[-1]['payload']['outcome'], 'UNKNOWN')
+        self.assertEqual(self.receipt_sink.events[-1]['payload']['adapter_receipt']['reason'], 'adapter timeout')
+
     def test_malformed_adapter_result_is_unknown_and_receipted(self):
         class MalformedAdapter:
             def __init__(self): self.calls = 0

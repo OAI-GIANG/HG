@@ -87,7 +87,7 @@ def build_runtime(*, root_store, principal_provider, candidate_provider, policy_
         (policy_provider, "load_active"), (applicability_provider, "classify"),
         (gate_provider, "evaluate"), (evidence_sink, "append"),
         (idempotency_ledger, "claim"), (idempotency_ledger, "record_outcome"),
-        (receipt_sink, "append"),
+        (receipt_sink, "append"), (receipt_sink, "read_all"),
     )
     if any(not callable(getattr(provider, method, None)) for provider, method in provider_contracts):
         raise AuthorityError("runtime startup blocked: authority/evidence provider contract incomplete")

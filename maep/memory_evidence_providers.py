@@ -170,6 +170,12 @@ class MemoryMAEPRecordResolver:
         decoded["_evidence_record"] = record["_evidence_record"]
         return decoded
 
+    def resolve_task_evidence(self, task_id: str, evidence_ref: str, *, candidate_ref: str | None = None) -> dict[str, Any] | None:
+        """Ledger-bound record of one evidence item of a known canonical task (acceptance)."""
+        if not isinstance(task_id, str) or not task_id or not isinstance(evidence_ref, str) or not evidence_ref:
+            raise AuthorityError("task and evidence references are required")
+        return self._load(task_id, evidence_ref, candidate_ref=candidate_ref)
+
     def resolve_evidence(self, evidence_ref: str) -> dict[str, Any] | None:
         if not isinstance(evidence_ref, str) or not evidence_ref:
             raise AuthorityError("evidence reference is required")
