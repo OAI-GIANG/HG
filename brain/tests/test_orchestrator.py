@@ -95,7 +95,10 @@ class IdempotencyLedger:
         self.claims[idempotency_key] = {'request_digest':request_digest,'decision_digest':decision_digest}
         return {'status':'RESERVED'}
     def record_outcome(self, *, idempotency_key, request_digest, outcome, receipt):
-        self.receipts[idempotency_key] = {'request_digest':request_digest,'outcome':outcome,'receipt':receipt}
+        old = self.claims[idempotency_key]
+        self.receipts[idempotency_key] = {'request_digest':request_digest,'decision_digest':old['decision_digest'],'status':outcome,'outcome':outcome,'receipt':receipt}
+    def inspect(self, idempotency_key):
+        return dict(self.receipts[idempotency_key]) if idempotency_key in self.receipts else None
 
 class Adapter:
     def __init__(self, timeout=False): self.calls = 0; self.timeout = timeout
@@ -206,7 +209,7 @@ class BrainTests(unittest.TestCase):
         self.assertEqual(self.receipt_sink.events[-1]['payload']['outcome'], 'BLOCKED')
         self.assertEqual(self.receipt_sink.events[-1]['payload']['candidate_ref'], self.candidate.ref)
 
-    def test_maep022_current_pass_allows_once_with_bound_receipt_and_replay_blocked(self):
+    def test_maep022_current_pass_allows_once_with_bound_receipt_and_replay(self):
         class RequiredApplicability:
             def classify(self, request, candidate):
                 return {'verified': True, 'classification': Applicability.REQUIRED.value,
@@ -224,17 +227,19 @@ class BrainTests(unittest.TestCase):
         self.assertEqual(receipt['outcome'], 'SUCCESS')
         self.assertEqual(self.idempotency.receipts['idem:maep022-current-pass']['receipt'], receipt)
         self.assertEqual(self.receipt_sink.events[-1]['payload'], receipt)
-        with self.assertRaisesRegex(OrchestrationError, 'duplicate'):
-            self.dispatch(key='idem:maep022-current-pass')
+        replay = self.dispatch(key='idem:maep022-current-pass')
+        self.assertTrue(replay['replayed'])
+        self.assertEqual(replay['receipt_id'], receipt['receipt_id'])
         self.assertEqual(self.adapter.calls, 1)
 
     def test_authorized_dispatch_records_receipt(self):
         receipt = self.dispatch()
         self.assertEqual(receipt['outcome'], 'SUCCESS'); self.assertEqual(self.adapter.calls, 1)
         self.assertIn('idem:1', self.idempotency.receipts); self.assertTrue(self.receipt_sink.events)
-    def test_duplicate_idempotency_key_does_not_dispatch_twice(self):
+    def test_completed_idempotency_key_replays_without_dispatching_twice(self):
         self.dispatch()
-        with self.assertRaisesRegex(OrchestrationError, 'duplicate'): self.dispatch()
+        replay = self.dispatch()
+        self.assertTrue(replay['replayed'])
         self.assertEqual(self.adapter.calls, 1)
     def test_timeout_is_unknown_not_failure(self):
         self.brain.adapter_registry['timeout'] = Adapter(timeout=True)
@@ -285,7 +290,8 @@ class BrainTests(unittest.TestCase):
         auth_before = len(self.auth_sink.events)
         with self.assertRaisesRegex(OrchestrationError, 'unreconciled UNKNOWN effect'):
             self.dispatch(key='idem:u2')
-        self.assertEqual((adapter.calls, len(self.auth_sink.events)), (1, auth_before))
+        # Authorization is deliberately evaluated before revealing the pending UNKNOWN state.
+        self.assertEqual((adapter.calls, len(self.auth_sink.events)), (1, auth_before + 1))
         with self.assertRaisesRegex(OrchestrationError, 'no unreconciled'):
             self.brain.reconcile(task_ref='task:1', idempotency_key='idem:other',
                                  authenticated_context='fixture-session', candidate_target='candidate-target')

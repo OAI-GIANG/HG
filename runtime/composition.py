@@ -34,6 +34,7 @@ class HGRuntime:
     critique_engine: Any | None = None
     scenario_engine: ScenarioEngine | None = None
     cost_router: CostRouter | None = None
+    readiness_provider: Any | None = None
 
 
 def build_runtime(*, root_store, principal_provider, candidate_provider, policy_provider,
@@ -44,7 +45,8 @@ def build_runtime(*, root_store, principal_provider, candidate_provider, policy_
                   adapter_registry, idempotency_ledger, receipt_sink,
                   reasoning_provider=None, context_resolver=None,
                   critique_provider=None, critique_providers=None, scenario_engine=None,
-                  cost_router=None, routing_context_provider=None, routing_budget_ledger=None):
+                  cost_router=None, routing_context_provider=None, routing_budget_ledger=None,
+                  readiness_provider=None):
     """Construct HG's authority/Brain/Memory graph; never bootstrap or initialize data.
 
     All dependencies are explicit. This factory intentionally cannot invent a principal,
@@ -104,6 +106,8 @@ def build_runtime(*, root_store, principal_provider, candidate_provider, policy_
                              live_state_provider, acceptance_provider)
     if any(not callable(item) for item in callable_dependencies):
         raise AuthorityError("runtime startup blocked: required runtime provider is not callable")
+    if readiness_provider is not None and not callable(readiness_provider):
+        raise AuthorityError("runtime composition blocked: readiness provider contract invalid")
     if not isinstance(adapter_registry, dict) or not adapter_registry or any(
             not callable(getattr(adapter, "execute", None)) for adapter in adapter_registry.values()):
         raise AuthorityError("runtime startup blocked: adapter registry is invalid")
@@ -198,5 +202,5 @@ def build_runtime(*, root_store, principal_provider, candidate_provider, policy_
         authenticated_context_provider=authenticated_context_provider,
         candidate_target_provider=candidate_target_provider,
         planner=planner, critique_engine=critique_engine, scenario_engine=scenario_engine,
-        cost_router=cost_router,
+        cost_router=cost_router, readiness_provider=readiness_provider,
     )

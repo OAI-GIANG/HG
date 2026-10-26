@@ -576,18 +576,6 @@ class BrainOrchestrator:
         except Exception as exc:
             raise OrchestrationError("BLOCKED before side effect: canonical MAEP task contract unavailable or invalid") from exc
 
-        # MAEP-018: an effect whose outcome is UNKNOWN blocks every further effect on the
-        # task until reconcile() has inspected live state.
-        try:
-            pending = self.pending_effects(request["task_ref"])
-        except Exception as exc:
-            raise OrchestrationError("BLOCKED before side effect: effect receipts unreadable") from exc
-        if idempotency_key in pending:
-            raise OrchestrationError("BLOCKED before side effect: duplicate idempotency key; "
-                                     "its UNKNOWN outcome is unreconciled")
-        if pending:
-            raise OrchestrationError("BLOCKED before side effect: unreconciled UNKNOWN effect on this task")
-
         request_digest = _canonical_digest(request)
         decision = self.authority.authorize(
             request, authenticated_context=authenticated_context,
@@ -604,6 +592,18 @@ class BrainOrchestrator:
             })
             raise OrchestrationError("BLOCKED before side effect: " + ",".join(decision.reason_codes))
 
+        # Only an authorized request may learn whether an idempotency key has an
+        # unresolved outcome. This remains before reservation and every adapter effect.
+        try:
+            pending = self.pending_effects(request["task_ref"])
+        except Exception as exc:
+            raise OrchestrationError("BLOCKED before side effect: effect receipts unreadable") from exc
+        if idempotency_key in pending:
+            raise OrchestrationError("OUTCOME_UNKNOWN: duplicate idempotency key; "
+                                     "its UNKNOWN outcome is unreconciled")
+        if pending:
+            raise OrchestrationError("BLOCKED before side effect: unreconciled UNKNOWN effect on this task")
+
         # Durable idempotency reservation is mandatory before any adapter invocation.
         try:
             reservation = self.idempotency_ledger.claim(
@@ -612,8 +612,37 @@ class BrainOrchestrator:
             )
         except Exception as exc:
             raise OrchestrationError("BLOCKED: idempotency reservation failed") from exc
-        if not isinstance(reservation, dict) or reservation.get("status") != "RESERVED":
-            raise OrchestrationError("BLOCKED: duplicate, conflicting, or unresolved idempotency key")
+        if not isinstance(reservation, dict):
+            raise OrchestrationError("BLOCKED: idempotency ledger returned an invalid reservation")
+        if reservation.get("status") == "DUPLICATE":
+            # A completed same-key/same-digest result may be replayed only when the
+            # durable ledger can prove both digests and expose a finalized outcome.
+            # RESERVED/UNKNOWN or ledgers without inspect() remain fail-closed.
+            inspect = getattr(self.idempotency_ledger, "inspect", None)
+            try:
+                prior = inspect(idempotency_key) if callable(inspect) else None
+            except Exception as exc:
+                raise OrchestrationError("BLOCKED: completed idempotency outcome unreadable; reconciliation required") from exc
+            if not isinstance(prior, dict) or prior.get("request_digest") != request_digest:
+                raise OrchestrationError("CONFLICT: duplicate idempotency key does not match the stored request")
+            if prior.get("status") == "RESERVED":
+                raise OrchestrationError("IN_PROGRESS: idempotency key is owned by a live request")
+            if prior.get("status") == "UNKNOWN":
+                raise OrchestrationError("OUTCOME_UNKNOWN: idempotency outcome requires reconciliation")
+            if prior.get("status") not in {"SUCCESS", "FAILURE"} or not isinstance(prior.get("receipt"), dict):
+                raise OrchestrationError("BLOCKED: duplicate idempotency key has an unresolved outcome")
+            replay = dict(prior["receipt"])
+            replay["replayed"] = True
+            return replay
+        status = reservation.get("status")
+        if status == "IN_PROGRESS":
+            raise OrchestrationError("IN_PROGRESS: idempotency key is owned by a live request")
+        if status == "CONFLICT":
+            raise OrchestrationError("CONFLICT: idempotency key was already used for a different request")
+        if status == "UNKNOWN":
+            raise OrchestrationError("OUTCOME_UNKNOWN: idempotency outcome requires reconciliation")
+        if status != "RESERVED":
+            raise OrchestrationError("BLOCKED: idempotency reservation is unresolved")
 
         # Re-run the complete authorization chain immediately before dispatch so
         # revocation, policy, applicability and MAEP-022 gate changes are observed.

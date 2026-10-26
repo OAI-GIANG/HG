@@ -331,29 +331,34 @@ class SQLiteIdempotencyLedger:
         Never replays an adapter. A reservation owned by a live process is left alone;
         legacy reservations without process provenance block startup instead of guessing.
         Receipt delivery is at-least-once with a stable recovery_event_id for deduplication.
+        Recoverable rows commit even if a different legacy row blocks startup, so repeated
+        startup attempts continue making safe progress without hiding the blocker.
         """
         if not callable(getattr(receipt_sink, "append", None)):
             raise AuthorityError("recovery requires a durable receipt sink")
-        current_pid = os.getpid()
         conn = self._connect()
         recovered: list[dict[str, Any]] = []
+        blockers: list[str] = []
         try:
             conn.execute("BEGIN IMMEDIATE")
             rows = conn.execute("SELECT key,request_digest,decision_digest,owner_pid,owner_start_token FROM idempotency WHERE status='RESERVED'").fetchall()
             for key, request_digest, decision_digest, owner_pid, owner_token in rows:
                 if (not isinstance(owner_pid, int) or isinstance(owner_pid, bool) or owner_pid <= 0
                         or not isinstance(owner_token, str) or not owner_token):
-                    raise AuthorityError("recovery blocked: legacy RESERVED row lacks process ownership provenance")
+                    blockers.append("legacy RESERVED row lacks process ownership provenance")
+                    continue
                 observed = self._process_start_token(owner_pid)
                 if observed is None:
                     try:
                         os.kill(owner_pid, 0)
                     except ProcessLookupError:
                         pass  # Kernel confirms the owner PID no longer exists.
-                    except PermissionError as exc:
-                        raise AuthorityError("recovery blocked: cannot inspect reservation owner process") from exc
+                    except OSError:
+                        blockers.append("cannot inspect reservation owner process")
+                        continue
                     else:
-                        raise AuthorityError("recovery blocked: owner process exists but its identity cannot be verified")
+                        blockers.append("owner process exists but its identity cannot be verified")
+                        continue
                 elif observed == owner_token:
                     continue  # Still-owned by a live process; never steal its reservation.
                 # A different start token means the numeric PID was reused; the original owner is gone.
@@ -405,6 +410,10 @@ class SQLiteIdempotencyLedger:
                 raise
             finally:
                 conn.close()
+        if blockers:
+            unique_blockers = sorted(set(blockers))
+            raise AuthorityError("recovery blocked: " + "; ".join(unique_blockers)
+                                 + f" ({len(blockers)} unresolved RESERVED row(s))")
         return recovered
 
     def claim(self, *, idempotency_key: str, request_digest: str, decision_digest: str) -> dict[str, Any]:
@@ -413,12 +422,38 @@ class SQLiteIdempotencyLedger:
         conn = self._connect()
         try:
             conn.execute("BEGIN IMMEDIATE")
-            row = conn.execute("SELECT request_digest, decision_digest, status FROM idempotency WHERE key=?", (idempotency_key,)).fetchone()
+            row = conn.execute("SELECT request_digest, decision_digest, status, owner_pid, owner_start_token FROM idempotency WHERE key=?", (idempotency_key,)).fetchone()
             if row is not None:
                 conn.rollback()
-                if row[0] != request_digest or row[1] != decision_digest:
+                if row[0] != request_digest:
                     return {"status": "CONFLICT"}
-                return {"status": "DUPLICATE" if row[2] == "RESERVED" or row[2] in {"SUCCESS", "FAILURE", "UNKNOWN"} else "UNRESOLVED"}
+                # Finalized same-request outcomes can replay after the caller has passed
+                # current authorization. The original decision digest remains binding
+                # for every unfinished or crash-unknown reservation.
+                if row[2] in {"SUCCESS", "FAILURE"}:
+                    return {"status": "DUPLICATE"}
+                if row[1] != decision_digest:
+                    return {"status": "CONFLICT"}
+                if row[2] == "UNKNOWN":
+                    return {"status": "UNKNOWN"}
+                if row[2] == "RESERVED":
+                    owner_pid, owner_token = row[3], row[4]
+                    if isinstance(owner_pid, int) and not isinstance(owner_pid, bool) and owner_pid > 0 and isinstance(owner_token, str) and owner_token:
+                        observed = self._process_start_token(owner_pid)
+                        if observed == owner_token:
+                            return {"status": "IN_PROGRESS"}
+                        if observed is None:
+                            try:
+                                os.kill(owner_pid, 0)
+                            except ProcessLookupError:
+                                return {"status": "UNKNOWN"}
+                            except (PermissionError, OSError):
+                                return {"status": "UNKNOWN"}
+                            else:
+                                return {"status": "UNKNOWN"}
+                        return {"status": "UNKNOWN"}  # PID reused; original owner is gone.
+                    return {"status": "UNKNOWN"}  # Legacy row has no owner provenance.
+                return {"status": "UNRESOLVED"}
             start_token = self._process_start_token(os.getpid())
             if start_token is None:
                 conn.rollback()
