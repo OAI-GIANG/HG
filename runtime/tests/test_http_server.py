@@ -170,6 +170,37 @@ class HTTPServerTests(unittest.TestCase):
             data = sock.recv(4096)
         self.assertIn(b" 400 ", data.split(b"\r\n", 1)[0])
 
+    def test_wp0_post_rejects_missing_duplicate_or_unapproved_host_before_effect(self):
+        import socket
+
+        host_headers = (
+            b"",  # Missing Host.
+            b"Host: 127.0.0.1:" + str(self.port).encode() + b"\r\n"
+            b"Host: attacker.invalid\r\n",  # Duplicate Host.
+            b"Host: attacker.invalid\r\n",  # Unapproved Host.
+        )
+        for host_header in host_headers:
+            with self.subTest(host_header=host_header):
+                request = (
+                    b"POST /api/dispatch HTTP/1.1\r\n"
+                    + host_header
+                    + b"Content-Type: application/json\r\n"
+                    + b"Content-Length: 2\r\n"
+                    + b"Connection: close\r\n\r\n{}"
+                )
+                with socket.create_connection((self.host, self.port), timeout=2) as sock:
+                    sock.sendall(request)
+                    chunks = []
+                    while True:
+                        chunk = sock.recv(4096)
+                        if not chunk:
+                            break
+                        chunks.append(chunk)
+                response = b"".join(chunks)
+                self.assertIn(b" 400 ", response.split(b"\r\n", 1)[0])
+                self.assertIn(b"host_header_invalid", response)
+                self.assertEqual(self.fixture.adapter.calls, 0)
+
     def test_wp0_health_is_liveness_not_readiness(self):
         status, body = self.request("GET", "/health")
         self.assertEqual(status, 200)
