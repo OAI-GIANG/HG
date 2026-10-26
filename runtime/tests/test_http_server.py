@@ -535,6 +535,33 @@ class HTTPServerTests(unittest.TestCase):
         self.assertEqual(body.get("error"), "RUNTIME_OPERATION_FAILED")
         self.assertNotIn("fixture secret", json.dumps(body))
 
+    def test_wp0_task_create_policy_denial_maps_to_403(self):
+        self.runtime.candidate_target_provider = lambda _request: "missing-candidate"
+        self.runtime.authority.candidate_provider.inspect = lambda _target: {"verified": False}
+        status, body = self.request("POST", "/api/tasks", {"task": {"task_id": "HTTP-DENIED-TASK"}})
+        self.assertEqual(status, 403)
+        self.assertEqual(body.get("error"), "candidate_identity_unverified")
+        self.assertEqual(self.memory.calls, [])
+
+    def test_wp0_evidence_authorization_failure_maps_to_403(self):
+        self.memory.record_evidence = lambda *_args, **_kwargs: (_ for _ in ()).throw(AuthorityError("denied"))
+        status, body = self.request("POST", "/api/evidence", {"task_id": "T-1", "evidence": {"evidence_id": "E-1"}})
+        self.assertEqual(status, 403)
+        self.assertEqual(body.get("error"), "MAEP_AUTHORIZATION_OR_CONTRACT_DENIED")
+
+    def test_wp0_transition_authorization_failure_maps_to_403(self):
+        self.memory.transition_task = lambda *_args, **_kwargs: (_ for _ in ()).throw(AuthorityError("denied"))
+        status, body = self.request("POST", "/api/tasks/T-1/transition", {"target": "READY", "expected_version": 1})
+        self.assertEqual(status, 403)
+        self.assertEqual(body.get("error"), "MAEP_AUTHORIZATION_OR_CONTRACT_DENIED")
+
+    def test_wp0_reconcile_backend_failure_maps_to_generic_500(self):
+        self.fixture.brain.reconcile = lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("fixture secret"))
+        status, body = self.request("POST", "/api/reconcile", {"task_ref": "T-1", "idempotency_key": "reconcile-500"})
+        self.assertEqual(status, 500)
+        self.assertEqual(body.get("error"), "RUNTIME_OPERATION_FAILED")
+        self.assertNotIn("fixture secret", json.dumps(body))
+
     def test_wp0_transition_invalid_fields_and_backend_failure(self):
         status, body = self.request("POST", "/api/tasks/T-1/transition", {"target": "READY"})
         self.assertEqual(status, 400)
