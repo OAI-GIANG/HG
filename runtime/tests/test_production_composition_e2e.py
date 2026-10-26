@@ -185,5 +185,20 @@ class ServiceProcessE2ETests(unittest.TestCase):
         self.assertEqual(integrity["status"], "PASS")
 
 
+class CompositionLiveStateTests(CompositionE2ETests):
+    """compose_service wires the production LocalLiveStateProvider into Memory."""
+    for _name in [n for n in dir(CompositionE2ETests) if n.startswith("test_")]:
+        locals()[_name] = None
+
+    def test_memory_observes_live_state_through_the_composed_provider(self):
+        server = self.start()
+        observed = server.runtime.memory._live_state(fixture.READ_TASK)
+        self.assertEqual(observed["candidate_ref"], self.state["candidate_ref"])
+        self.assertEqual(observed["resources"][0]["resource_id"], "repo:OAI-GIANG/HG")
+        Path(self.config["checkout"], "README.md").write_text("drift\n", encoding="utf-8")
+        self.assertNotEqual(server.runtime.memory._live_state(fixture.READ_TASK)["candidate_ref"],
+                            self.state["candidate_ref"])
+
+
 if __name__ == "__main__":
     unittest.main()

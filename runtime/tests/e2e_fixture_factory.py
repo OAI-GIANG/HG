@@ -1,8 +1,8 @@
 """TEST-ONLY provisioning and factory for runtime.service end-to-end tests.
 
 Everything that is an owner decision is a clearly labelled fixture here:
-  D2 policy-source verifier, D4 approved-Memory-record rule, tool adapter, live-state and
-  acceptance providers. They must never be registered in runtime/production_config.py.
+  D2 policy-source verifier, D4 approved-Memory-record rule, tool adapter and acceptance
+  provider. They must never be registered in runtime/production_config.py.
 Everything else is the production code path: runtime.production_config.compose_service,
 LocalRootStore/LocalPolicyProvider/GitCandidateProvider/LocalEvidenceSink, NativePolicyEngine,
 Trusted* providers over memory.AuthorityEvidenceReader, MemoryStore, HGHTTPServer, and the
@@ -53,10 +53,6 @@ class FixtureAdapter:
     def execute(self, **kwargs):
         self.calls += 1
         return {"outcome": "SUCCEEDED"}
-
-
-def _fixture_live_state(task_id):
-    raise RuntimeError("fixture live-state provider: not exercised by these tests")
 
 
 def _fixture_acceptance(task_id, target):
@@ -169,7 +165,6 @@ def bindings(session: TokenSessionSource, config: dict, *, policy_verifier=None,
         "approved-memory-record-verifier": FixtureMemoryRecordVerifier(),
         "maep022-record-reader": AuthorityEvidenceReader(config["memory_db"]),
         "tool-adapter-registry": {"fixture": adapter or FixtureAdapter()},
-        "live-state-provider": _fixture_live_state,
         "acceptance-provider": _fixture_acceptance,
     }
 

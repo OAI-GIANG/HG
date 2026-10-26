@@ -241,6 +241,49 @@ class GitCandidateProvider:
             return None
 
 
+class LocalLiveStateProvider:
+    """Observe the live state Memory checkpoints and resume compare against.
+
+    Returns the task id, the current verified candidate of the configured checkout, the
+    version of the active policy (as verified by the injected policy provider against the
+    current trust root) and one live resource: the checkout itself, versioned by its
+    source manifest digest. It observes; it grants nothing and never repairs drift.
+    """
+    RESOURCE_ID = "repo:OAI-GIANG/HG"
+
+    def __init__(self, *, candidate_provider: Any, checkout: str | Path, policy_provider: Any, root_store: Any):
+        if not callable(getattr(candidate_provider, "inspect", None)):
+            raise AuthorityError("live-state provider requires a candidate provider")
+        if not callable(getattr(policy_provider, "load_active", None)) or not callable(getattr(root_store, "load_active", None)):
+            raise AuthorityError("live-state provider requires policy provider and root store")
+        self.candidate_provider = candidate_provider
+        self.checkout = str(Path(checkout).expanduser().absolute())
+        self.policy_provider = policy_provider
+        self.root_store = root_store
+
+    def __call__(self, task_id: str) -> dict[str, Any]:
+        if not isinstance(task_id, str) or not task_id.strip():
+            raise AuthorityError("live-state observation requires a task id")
+        root = self.root_store.load_active()
+        if not isinstance(root, TrustRootRecord) or not root.verify_integrity():
+            raise AuthorityError("live-state observation blocked: trust root unavailable")
+        policy = self.policy_provider.load_active(root)
+        if not isinstance(policy, dict) or policy.get("provenance_verified") is not True:
+            raise AuthorityError("live-state observation blocked: active policy unverified")
+        candidate = self.candidate_provider.inspect(self.checkout)
+        if (not isinstance(candidate, dict) or candidate.get("verified") is not True
+                or not isinstance(candidate.get("candidate_ref"), str)
+                or not isinstance(candidate.get("source_manifest_digest"), str)):
+            raise AuthorityError("live-state observation blocked: candidate unverified")
+        return {
+            "task_id": task_id,
+            "candidate_ref": candidate["candidate_ref"],
+            "policy_version": policy.get("version"),
+            "observed_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "resources": [{"resource_id": self.RESOURCE_ID, "version": candidate["source_manifest_digest"]}],
+        }
+
+
 class SQLiteIdempotencyLedger:
     """Durable idempotency ledger with transactional duplicate/conflict handling."""
     def __init__(self, path: str | Path):
