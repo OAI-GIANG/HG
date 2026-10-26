@@ -215,3 +215,39 @@ class LocalEvidenceSink:
         if load_json_strict(self.head_path) != expected:
             raise AuthorityError("evidence head integrity check failed")
         return True
+
+    def find_decision(self, decision_digest: str) -> dict[str, Any] | None:
+        """Return the one ALLOW decision record with this digest from an intact ledger.
+
+        Reads under a shared lock (appends hold it exclusively), verifies the whole
+        ledger and its head first, and raises on any integrity problem or ambiguity.
+        Only `authorization.decision` events (ALLOW) are considered.
+        """
+        if (not isinstance(decision_digest, str) or len(decision_digest) != 71
+                or not decision_digest.startswith("sha256:")
+                or any(ch not in "0123456789abcdef" for ch in decision_digest[7:])):
+            raise AuthorityError("decision digest is malformed")
+        if not self.ledger_path.exists() and not self.ledger_path.is_symlink():
+            return None
+        flags = os.O_RDONLY | (os.O_NOFOLLOW if hasattr(os, "O_NOFOLLOW") else 0)
+        try:
+            fd = os.open(str(self.ledger_path), flags)
+        except OSError as exc:
+            raise AuthorityError("evidence ledger must be a regular non-symlink file") from exc
+        try:
+            fcntl.flock(fd, fcntl.LOCK_SH)
+            try:
+                if self.verify_integrity() is not True:
+                    raise AuthorityError("evidence ledger integrity unverified")
+                events = self._read_events()
+            finally:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
+        matches = [event["payload"] for event in events
+                   if event.get("event_type") == "authorization.decision"
+                   and isinstance(event.get("payload"), dict)
+                   and event["payload"].get("decision_digest") == decision_digest]
+        if len(matches) > 1:
+            raise AuthorityError("decision digest is not unique in the evidence ledger")
+        return dict(matches[0]) if matches else None
