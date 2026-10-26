@@ -221,3 +221,46 @@ class SessionSourceHTTPIntegrationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SessionSourceReviewFixTests(unittest.TestCase):
+    """Defects found reviewing PR #24 (startup validation, partial issuance)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix="hg-session-review-")
+        self.addCleanup(self.tmp.cleanup)
+        self.base = Path(self.tmp.name)
+
+    def issue(self, name="s"):
+        return issue_session(session_path=self.base / f"{name}.json", token_path=self.base / f"{name}.token",
+                             revocation_path=self.base / "revoked.json", principal_id="STT", valid_days=1,
+                             capabilities=CAPS, resource_scopes=RES, allowed_scopes=SCOPES)
+
+    def test_missing_or_malformed_revocation_list_blocks_construction(self):
+        self.issue()
+        (self.base / "revoked.json").unlink()
+        with self.assertRaises(AuthorityError):
+            TokenSessionSource(session_path=self.base / "s.json", revocation_path=self.base / "revoked.json")
+        fd = os.open(self.base / "revoked.json", os.O_WRONLY | os.O_CREAT, 0o600)
+        os.write(fd, b'{"schema":"hg-runtime-session-revocations-v1","revoked_session_ids":"x"}')
+        os.close(fd)
+        with self.assertRaises(AuthorityError):
+            TokenSessionSource(session_path=self.base / "s.json", revocation_path=self.base / "revoked.json")
+
+    def test_failed_issuance_leaves_no_usable_or_orphan_files(self):
+        from unittest import mock
+        from runtime import session_auth
+        real = session_auth._write_new_json
+
+        def fail_on_session(path, body, *args, **kwargs):
+            if Path(path).name == "s.json":
+                raise OSError("disk full")
+            return real(path, body, *args, **kwargs)
+
+        with mock.patch.object(session_auth, "_write_new_json", side_effect=fail_on_session):
+            with self.assertRaises(OSError):
+                self.issue()
+        self.assertFalse((self.base / "s.token").exists(), "orphan token left after failed issuance")
+        self.assertFalse((self.base / "s.json").exists())
+        self.issue()                                   # a retry with the same paths succeeds
+        self.assertTrue((self.base / "s.token").exists())

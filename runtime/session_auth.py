@@ -109,7 +109,8 @@ class TokenSessionSource:
     def __init__(self, *, session_path: str | Path, revocation_path: str | Path):
         self.session_path = _absolute(session_path, "session_path")
         self.revocation_path = _absolute(revocation_path, "revocation_path")
-        self._load()        # validate now: a broken source blocks startup, not first request
+        # Validate both files now: a broken source blocks startup, not the first request.
+        self._revoked(self._load()["session_id"])
 
     def __repr__(self):
         return f"TokenSessionSource(session_path={str(self.session_path)!r})"
@@ -228,13 +229,25 @@ def issue_session(*, session_path: str | Path, token_path: str | Path, revocatio
     }
     token_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     fd = os.open(str(token_path), os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
-    with os.fdopen(fd, "w", encoding="ascii") as handle:
-        handle.write(token + "\n")
-        handle.flush()
-        os.fsync(handle.fileno())
-    _write_new_json(session_path, record)
-    if not revocation_path.exists():
-        _write_new_json(revocation_path, {"schema": REVOCATION_SCHEMA, "revoked_session_ids": []})
+    created = [token_path]
+    try:
+        with os.fdopen(fd, "w", encoding="ascii") as handle:
+            handle.write(token + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        if not revocation_path.exists():
+            _write_new_json(revocation_path, {"schema": REVOCATION_SCHEMA, "revoked_session_ids": []})
+            created.append(revocation_path)
+        # The session record is written last: until it exists the token authenticates
+        # nothing, and a failure before this point removes everything created here.
+        _write_new_json(session_path, record)
+    except BaseException:
+        for path in created:
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
+        raise
     return {"session_id": session_id, "expires_at": record["expires_at"]}
 
 

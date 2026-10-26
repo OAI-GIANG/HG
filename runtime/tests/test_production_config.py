@@ -120,19 +120,39 @@ class ProductionConfigTests(unittest.TestCase):
         # No Memory database, ledger, evidence or receipt state is created.
         self.assertEqual(self.snapshot(), before)
 
-    def test_registered_bindings_without_composition_still_block(self):
+    def test_registered_bindings_that_break_their_contracts_still_block(self):
         self.provision_test_root()
         path = self.write(self.config)
-        sentinels = {name: object() for name, _reason in pc.REQUIRED_BINDINGS}
-        with patch.dict(pc.APPROVED_BINDINGS, sentinels), \
+        before = self.snapshot()
+        builders = {name: (lambda config: object()) for name, _reason in pc.REQUIRED_BINDINGS}
+        with patch.dict(pc.APPROVED_BINDINGS, builders), \
                 patch.dict(os.environ, {pc.CONFIG_ENV: path}, clear=True):
-            with self.assertRaisesRegex(service.RuntimeStartupError, "composition is not implemented"):
+            with self.assertRaisesRegex(service.RuntimeStartupError, "contract is invalid|not callable"):
                 pc.create_service()
+        self.assertEqual(self.snapshot(), before)          # no ledger/state created
+
+    def test_failing_binding_builder_blocks_with_its_name(self):
+        self.provision_test_root()
+        path = self.write(self.config)
+
+        def broken(config):
+            raise ValueError("secret-looking detail must not leak")
+        builders = {name: (lambda config: object()) for name, _reason in pc.REQUIRED_BINDINGS}
+        builders["authenticated-session-resolver"] = broken
+        with patch.dict(pc.APPROVED_BINDINGS, builders), \
+                patch.dict(os.environ, {pc.CONFIG_ENV: path}, clear=True):
+            with self.assertRaises(service.RuntimeStartupError) as ctx:
+                pc.create_service()
+        self.assertIn("authenticated-session-resolver could not be constructed (ValueError)", str(ctx.exception))
+        self.assertNotIn("secret-looking", str(ctx.exception))
 
     def test_only_reviewed_bindings_are_registered_in_production_code(self):
         # Exactly the reviewed set; anything else registered here is a defect.
         from memory import AuthorityEvidenceReader
-        self.assertEqual(pc.APPROVED_BINDINGS, {"maep022-record-reader": AuthorityEvidenceReader})
+        self.assertEqual(set(pc.APPROVED_BINDINGS), {"maep022-record-reader"})
+        reader = pc.APPROVED_BINDINGS["maep022-record-reader"](self.config)
+        self.assertIsInstance(reader, AuthorityEvidenceReader)
+        self.assertEqual(reader.path, Path(self.config["memory_db"]))
         missing = pc.missing_bindings()
         self.assertEqual(len(missing), len(pc.REQUIRED_BINDINGS) - 1)
         self.assertFalse(any(item.startswith("maep022-record-reader") for item in missing))

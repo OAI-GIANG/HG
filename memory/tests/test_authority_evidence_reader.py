@@ -87,3 +87,38 @@ class AuthorityEvidenceReaderTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AuthorityReaderTaskIdSourceTests(unittest.TestCase):
+    """The reader is the canonical task-ID source for CanonicalMemoryTaskSelectors."""
+
+    def setUp(self):
+        self.fixture = store_fixtures.MemoryStoreTests()
+        self.fixture.setUp()
+        self.addCleanup(self.fixture.tearDown)
+        self.fixture.store.create_task(store_fixtures.MemoryStoreTests.task("T-MK-2"), candidate_ref="candidate-1")
+        self.reader = AuthorityEvidenceReader(self.fixture.db)
+
+    def test_lists_every_canonical_task_id_in_order(self):
+        self.assertEqual(self.reader.list_canonical_task_ids(), ["T-MK-1", "T-MK-2"])
+
+    def test_satisfies_the_selector_task_id_source_contract(self):
+        from maep.memory_evidence_providers import CanonicalMemoryTaskSelectors
+        from maep.trust_source_contracts import CanonicalTaskIdSource
+        self.assertIsInstance(self.reader, CanonicalTaskIdSource)
+        selectors = CanonicalMemoryTaskSelectors(memory_store=self.reader, canonical_task_id_source=self.reader)
+        self.fixture.store.record_evidence("T-MK-2", self.fixture.evidence("EV-ONLY-2"))
+        self.assertIsNone(selectors.resolve_evidence_task("EV-ONLY-2"))  # not referenced by inputs
+
+    def test_tampered_task_row_blocks_listing(self):
+        raw = sqlite3.connect(self.fixture.db)
+        try:
+            triggers = [r[0] for r in raw.execute("SELECT name FROM sqlite_master WHERE type='trigger' AND tbl_name='tasks'")]
+            for name in triggers:
+                raw.execute(f"DROP TRIGGER {name}")
+            raw.execute("UPDATE tasks SET state='RUNNING' WHERE task_id='T-MK-2'")
+            raw.commit()
+        finally:
+            raw.close()
+        with self.assertRaisesRegex(MAEPError, "disagree"):
+            self.reader.list_canonical_task_ids()

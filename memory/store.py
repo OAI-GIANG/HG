@@ -931,6 +931,23 @@ class MemoryStore:
         )
         return self._read_task(task_id)
 
+    def _read_task_ids(self):
+        """Read-only canonical task IDs for AuthorityEvidenceReader (authority path only).
+
+        Every listed row must pass the same row/payload binding checks as a task read,
+        after the full schema/event-chain validation of _ensure_ready.
+        """
+        connection = self._connect(readonly=True)
+        try:
+            self._ensure_ready(connection)
+            task_ids = [row["task_id"] for row in connection.execute(
+                "SELECT task_id FROM tasks ORDER BY task_id").fetchall()]
+            for task_id in task_ids:
+                self._task_row(connection, task_id)
+            return task_ids
+        finally:
+            connection.close()
+
     def _read_task(self, task_id):
         """Read-only task snapshot shared by get_task and AuthorityEvidenceReader."""
         connection = self._connect(readonly=True)
@@ -2196,3 +2213,7 @@ class AuthorityEvidenceReader:
 
     def list_tasks(self, *, index_scope_task_id, limit=100, offset=0):
         return self._store._read_task_index(index_scope_task_id, limit=limit, offset=offset)
+
+    def list_canonical_task_ids(self):
+        """CanonicalTaskIdSource for CanonicalMemoryTaskSelectors (no index-scope task needed)."""
+        return self._store._read_task_ids()

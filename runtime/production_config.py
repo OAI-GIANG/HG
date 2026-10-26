@@ -7,8 +7,9 @@ required production binding has an owner-approved implementation registered in t
 
 Approved implementations are registered in code (reviewed by pull request), not injected
 through configuration, so a configuration file cannot select a permissive verifier. Nothing
-here creates a trust root, policy, principal, session, evidence, Memory database or ledger,
-and nothing uses test fixtures.
+here creates a trust root, policy, principal, session, evidence or Memory database, and
+nothing uses test fixtures. Once every binding is registered, compose_service() wires the
+production graph; until then create_service() blocks and names what is missing.
 """
 from __future__ import annotations
 
@@ -18,8 +19,14 @@ from pathlib import Path
 import stat
 from typing import Any
 
-from maep.local_authority_store import LocalRootStore
-from maep.native_authority import AuthorityError
+from maep.local_authority_store import LocalEvidenceSink, LocalRootStore
+from maep.local_runtime_providers import (GitCandidateProvider, LocalPolicyProvider, LocalPrincipalProvider,
+                                          LocalReceiptSink, SQLiteIdempotencyLedger)
+from maep.memory_evidence_providers import (CanonicalMemoryTaskSelectors, MemoryLedgerProvenanceVerifier,
+                                            MemoryMAEPRecordResolver)
+from maep.native_authority import AuthorityError, TrustRootRecord
+from maep.trust_source_contracts import require_trust_source_contract
+from maep.trusted_providers import TrustedApplicabilityProvider, TrustedGateEvidenceProvider
 from memory import AuthorityEvidenceReader
 from runtime.errors import RuntimeStartupError
 
@@ -43,10 +50,16 @@ REQUIRED_BINDINGS = (
     ("live-state-provider", "no production implementation"),
     ("acceptance-provider", "no production implementation"),
 )
+def _build_record_reader(config: dict[str, Any]) -> AuthorityEvidenceReader:
+    return AuthorityEvidenceReader(config["memory_db"])
+
+
+# name -> builder(config) returning the binding object. Builders run only after the
+# configuration and the trust root have been validated.
 APPROVED_BINDINGS: dict[str, Any] = {
     # Read-only authority record source (PR #18): breaks the authorize() -> Memory
-    # -> authorize() cycle. Constructed per Memory database at composition time.
-    "maep022-record-reader": AuthorityEvidenceReader,
+    # -> authorize() cycle. One reader per configured Memory database.
+    "maep022-record-reader": _build_record_reader,
 }
 
 
@@ -108,16 +121,143 @@ def missing_bindings() -> list[str]:
             if APPROVED_BINDINGS.get(name) is None]
 
 
-def create_service():
-    """HG_RUNTIME_FACTORY target. Fails closed until all production bindings exist."""
-    config = load_config(os.environ.get(CONFIG_ENV))
+def _require_callable(value: Any, name: str) -> Any:
+    if not callable(value):
+        raise RuntimeStartupError(f"production binding {name} is not callable")
+    return value
+
+
+def _require_contract(value: Any, method: str, name: str) -> Any:
     try:
-        root = LocalRootStore(config["authority_dir"]).load_active()
+        return require_trust_source_contract(value, method, source_name=name)
+    except AuthorityError as exc:
+        raise RuntimeStartupError(f"production binding {name} contract is invalid") from exc
+
+
+def _verified_root(config: dict[str, Any]) -> tuple[LocalRootStore, TrustRootRecord]:
+    root_store = LocalRootStore(config["authority_dir"])
+    try:
+        root = root_store.load_active()
     except AuthorityError as exc:
         raise RuntimeStartupError("provisioned trust root is invalid") from exc
     if root is None:
         raise RuntimeStartupError("no active trust root is provisioned (owner bootstrap required)")
+    if not isinstance(root, TrustRootRecord) or not root.verify_integrity():
+        raise RuntimeStartupError("provisioned trust root is invalid")
+    return root_store, root
+
+
+def compose_service(config: dict[str, Any], bindings: dict[str, Any]):
+    """Wire HG's production graph from a validated configuration and binding objects.
+
+    ``bindings`` maps every REQUIRED_BINDINGS name to an object (not a builder). This
+    function performs no trust decision of its own: identity, policy provenance and
+    Memory record approval come only from the supplied bindings, and build_runtime()
+    re-checks the trust root and active policy binding before anything is constructed.
+    It creates no trust root, policy, session, evidence or Memory database. The only
+    file it may create is the idempotency ledger, after every check has passed.
+    """
+    from runtime.composition import build_runtime
+    from runtime.http_server import HGHTTPServer
+
+    missing = [name for name, _reason in REQUIRED_BINDINGS if bindings.get(name) is None]
+    if missing:
+        raise RuntimeStartupError("production bindings not provisioned: " + "; ".join(missing))
+    unknown = sorted(set(bindings) - {name for name, _reason in REQUIRED_BINDINGS})
+    if unknown:
+        raise RuntimeStartupError("unknown production bindings: " + ", ".join(unknown))
+    policy_source = _require_contract(bindings["approved-policy-source-verifier"],
+                                      "verify_policy_source", "approved-policy-source-verifier")
+    session_resolver = _require_contract(bindings["authenticated-session-resolver"],
+                                         "resolve_authenticated_session", "authenticated-session-resolver")
+    memory_verifier = _require_contract(bindings["approved-memory-record-verifier"],
+                                        "verify_approved_memory_record", "approved-memory-record-verifier")
+    authenticate_request = _require_callable(bindings["request-authenticator"], "request-authenticator")
+    context_provider = _require_callable(bindings["authenticated-context-provider"],
+                                         "authenticated-context-provider")
+    live_state_provider = _require_callable(bindings["live-state-provider"], "live-state-provider")
+    acceptance_provider = _require_callable(bindings["acceptance-provider"], "acceptance-provider")
+    reader = bindings["maep022-record-reader"]
+    if not isinstance(reader, AuthorityEvidenceReader):
+        raise RuntimeStartupError("production binding maep022-record-reader must be memory.AuthorityEvidenceReader")
+    if reader.path != Path(config["memory_db"]).expanduser().absolute():
+        raise RuntimeStartupError("maep022-record-reader is bound to another Memory database")
+    adapters = bindings["tool-adapter-registry"]
+    if (not isinstance(adapters, dict) or not adapters
+            or any(not isinstance(name, str) or not callable(getattr(adapter, "execute", None))
+                   for name, adapter in adapters.items())):
+        raise RuntimeStartupError("production binding tool-adapter-registry is invalid")
+    if not Path(config["memory_db"]).is_file():
+        raise RuntimeStartupError("Memory database is not provisioned (owner initialization required)")
+
+    root_store, root = _verified_root(config)
+    checkout = str(Path(config["checkout"]).expanduser().absolute())
+    candidate_provider = GitCandidateProvider(checkout)
+    principal_provider = LocalPrincipalProvider(session_resolver)
+    policy_provider = LocalPolicyProvider(config["policy_path"], policy_source)
+    # Verify the active policy before anything is written (build_runtime re-checks it).
+    try:
+        policy_provider.load_active(root)
+    except AuthorityError as exc:
+        raise RuntimeStartupError("production composition blocked: active policy is not verified") from exc
+    selectors = CanonicalMemoryTaskSelectors(memory_store=reader, canonical_task_id_source=reader)
+    record_resolver = MemoryMAEPRecordResolver(memory_store=reader, selectors=selectors)
+    provenance = MemoryLedgerProvenanceVerifier(memory_verifier)
+    applicability = TrustedApplicabilityProvider(root_store=root_store, policy_provider=policy_provider,
+                                                 resolver=record_resolver, verifier=provenance)
+    gate = TrustedGateEvidenceProvider(root_store=root_store, policy_provider=policy_provider,
+                                       resolver=record_resolver, verifier=provenance)
+
+    def candidate_target(_request=None):
+        return checkout
+
+    def memory_principal():
+        principal = principal_provider.resolve(context_provider())
+        if not isinstance(principal, dict) or not principal.get("principal_id"):
+            raise AuthorityError("Memory principal unavailable: runtime session is not active")
+        return principal["principal_id"]
+
+    def memory_candidate_ref(_task_id):
+        candidate = candidate_provider.inspect(checkout)
+        if not isinstance(candidate, dict) or candidate.get("verified") is not True:
+            raise AuthorityError("Memory candidate unavailable: checkout is not a verified HG candidate")
+        return candidate["candidate_ref"]
+
+    try:
+        runtime = build_runtime(
+            root_store=root_store, principal_provider=principal_provider,
+            candidate_provider=candidate_provider, policy_provider=policy_provider,
+            applicability_provider=applicability, gate_provider=gate,
+            evidence_sink=LocalEvidenceSink(config["evidence_dir"]),
+            authenticated_context_provider=context_provider,
+            candidate_target_provider=candidate_target,
+            memory_principal_provider=memory_principal,
+            memory_candidate_ref_provider=memory_candidate_ref,
+            memory_db_path=config["memory_db"], live_state_provider=live_state_provider,
+            acceptance_provider=acceptance_provider, adapter_registry=dict(adapters),
+            idempotency_ledger=SQLiteIdempotencyLedger(config["idempotency_db"]),
+            receipt_sink=LocalReceiptSink(config["receipts_dir"]),
+        )
+    except AuthorityError as exc:
+        raise RuntimeStartupError("production composition blocked: " + str(exc)) from exc
+    return HGHTTPServer(runtime=runtime, authenticate_request=authenticate_request,
+                        host=config["host"], port=config["port"])
+
+
+def create_service():
+    """HG_RUNTIME_FACTORY target. Fails closed until all production bindings exist."""
+    config = load_config(os.environ.get(CONFIG_ENV))
+    _verified_root(config)
     missing = missing_bindings()
     if missing:
         raise RuntimeStartupError("production bindings not provisioned: " + "; ".join(missing))
-    raise RuntimeStartupError("production composition is not implemented for the registered bindings")
+    bindings = {}
+    for name, _reason in REQUIRED_BINDINGS:
+        try:
+            bindings[name] = APPROVED_BINDINGS[name](config)
+        except RuntimeStartupError:
+            raise
+        except Exception as exc:
+            raise RuntimeStartupError(f"production binding {name} could not be constructed "
+                                      f"({type(exc).__name__})") from exc
+    return compose_service(config, bindings)
