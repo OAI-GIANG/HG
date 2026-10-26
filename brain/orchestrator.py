@@ -6,6 +6,7 @@ dispatch. This module is not a production runtime by itself.
 """
 from __future__ import annotations
 
+import concurrent.futures
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -23,6 +24,27 @@ from .simulation import ScenarioEngine, SimulationError
 from .cost_router import CostRouter, CostRouterError, RouteRequest
 from .council import CritiqueCouncil
 from .provider_guard import authorize_provider_calls, guard_provider
+
+
+def _execute_with_deadline(adapter: Any, **kwargs: Any) -> Any:
+    """Run adapter.execute, bounded by the adapter's declared `timeout_s` when it has one.
+
+    Same model as hg serve's ActionGateway: the call runs in a single-use worker thread;
+    on expiry the coordinator stops waiting and the outcome is UNKNOWN (the effect may
+    still complete), so MAEP-018 reconciliation applies. Adapters without `timeout_s`
+    run inline as before.
+    """
+    timeout = getattr(adapter, "timeout_s", None)
+    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or timeout <= 0:
+        return adapter.execute(**kwargs)
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="hg-adapter")
+    future = pool.submit(adapter.execute, **kwargs)
+    try:
+        return future.result(timeout=float(timeout))
+    except concurrent.futures.TimeoutError:
+        raise TimeoutError("adapter timed out") from None
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
 
 
 class OrchestrationError(RuntimeError):
@@ -554,6 +576,18 @@ class BrainOrchestrator:
         except Exception as exc:
             raise OrchestrationError("BLOCKED before side effect: canonical MAEP task contract unavailable or invalid") from exc
 
+        # MAEP-018: an effect whose outcome is UNKNOWN blocks every further effect on the
+        # task until reconcile() has inspected live state.
+        try:
+            pending = self.pending_effects(request["task_ref"])
+        except Exception as exc:
+            raise OrchestrationError("BLOCKED before side effect: effect receipts unreadable") from exc
+        if idempotency_key in pending:
+            raise OrchestrationError("BLOCKED before side effect: duplicate idempotency key; "
+                                     "its UNKNOWN outcome is unreconciled")
+        if pending:
+            raise OrchestrationError("BLOCKED before side effect: unreconciled UNKNOWN effect on this task")
+
         request_digest = _canonical_digest(request)
         decision = self.authority.authorize(
             request, authenticated_context=authenticated_context,
@@ -621,10 +655,16 @@ class BrainOrchestrator:
             })
             raise OrchestrationError("BLOCKED before side effect: authorization stale") from exc
 
+        intent = None
+        if callable(getattr(adapter, "intent", None)):
+            try:
+                intent = adapter.intent(dict(request))
+            except Exception:
+                intent = None          # invalid input: the adapter reports it without effect
         started_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         try:
-            adapter_result = adapter.execute(
-                request=dict(request), authorization=decision,
+            adapter_result = _execute_with_deadline(
+                adapter, request=dict(request), authorization=decision,
                 idempotency_key=idempotency_key,
             )
             try:
@@ -643,6 +683,10 @@ class BrainOrchestrator:
 
         receipt = {
             "receipt_id": "effect:" + idempotency_key,
+            # Canonical task the effect belongs to (acceptance reads effects back per task).
+            "task_ref": request["task_ref"],
+            "action": request["action"], "resource": request["resource"], "scope": list(request["scope"]),
+            "intent": intent,
             "idempotency_key": idempotency_key,
             "request_digest": request_digest,
             "decision_digest": decision.decision_digest,
@@ -672,6 +716,59 @@ class BrainOrchestrator:
             )
             raise OrchestrationError("OUTCOME_UNKNOWN: " + recovery)
         return receipt
+
+    def pending_effects(self, task_ref: str) -> dict[str, dict[str, Any]]:
+        """UNKNOWN effect receipts of a task not yet reconciled to a known finding.
+
+        Requires a receipt sink that can be read back (runtime composition enforces it);
+        a sink without read_all() has no pending view and reports none.
+        """
+        read_all = getattr(self.receipt_sink, "read_all", None)
+        if not callable(read_all):
+            return {}
+        pending: dict[str, dict[str, Any]] = {}
+        for row in read_all():
+            payload = row.get("payload") if isinstance(row, dict) else None
+            if not isinstance(payload, dict) or payload.get("task_ref") != task_ref:
+                continue
+            receipt_id = str(payload.get("receipt_id", ""))
+            if receipt_id.startswith("effect:") and payload.get("outcome") == "UNKNOWN":
+                pending[payload["idempotency_key"]] = payload
+            elif receipt_id.startswith("reconcile:") and payload.get("finding") in {"APPLIED", "NOT_APPLIED"}:
+                pending.pop(payload.get("idempotency_key"), None)
+        return pending
+
+    def reconcile(self, *, task_ref: str, idempotency_key: str, authenticated_context: Any,
+                  candidate_target: Any) -> dict[str, Any]:
+        """Inspect live state for one UNKNOWN effect; never re-executes it (MAEP-018)."""
+        receipt = self.pending_effects(task_ref).get(idempotency_key)
+        if receipt is None:
+            raise OrchestrationError("BLOCKED: no unreconciled UNKNOWN effect for this task and key")
+        adapter = self.adapter_registry.get(receipt.get("adapter"))
+        if adapter is None or not callable(getattr(adapter, "reconcile", None)):
+            raise OrchestrationError("BLOCKED: adapter cannot inspect live state for reconciliation")
+        # Inspecting the outcome needs current authority for the effect being reconciled
+        # (same action/resource/scope); nothing is executed.
+        request = {"task_ref": task_ref, "action": receipt["action"], "resource": receipt["resource"],
+                   "scope": list(receipt["scope"])}
+        decision = self.authority.authorize(request, authenticated_context=authenticated_context,
+                                            candidate_target=candidate_target)
+        if decision.decision is not Decision.ALLOW:
+            raise OrchestrationError("BLOCKED: reconciliation not authorized: " + ",".join(decision.reason_codes))
+        intent = receipt.get("intent")
+        try:
+            finding = adapter.reconcile(intent) if isinstance(intent, dict) else "UNKNOWN"
+        except Exception:
+            finding = "UNKNOWN"
+        if finding not in {"APPLIED", "NOT_APPLIED", "UNKNOWN"}:
+            finding = "UNKNOWN"
+        record = {"receipt_id": "reconcile:" + idempotency_key, "task_ref": task_ref,
+                  "idempotency_key": idempotency_key, "adapter": receipt.get("adapter"),
+                  "resource": receipt["resource"], "intent": intent, "finding": finding,
+                  "decision_digest": decision.decision_digest,
+                  "reconciled_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")}
+        self._record_receipt(record)
+        return {"finding": finding, "pending": finding == "UNKNOWN", "receipt": record}
 
     def _record_receipt(self, receipt: dict[str, Any]) -> None:
         ref = self.receipt_sink.append({

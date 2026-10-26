@@ -54,6 +54,9 @@ class ReceiptFixture:
     def append(self, event):
         return "fixture:receipt"
 
+    def read_all(self):
+        return []
+
 
 class LocalRuntimeCompositionTests(unittest.TestCase):
     def test_composition_reopens_local_root_and_evidence_without_production_writes(self):

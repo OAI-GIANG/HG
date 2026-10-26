@@ -335,6 +335,16 @@ class HGHTTPServer:
                             request=request, authenticated_context=context,
                             candidate_target=target, adapter_name=body["adapter_name"],
                             idempotency_key=body["idempotency_key"]))
+                    if parsed.path == "/api/reconcile":
+                        if (set(body) != {"task_ref", "idempotency_key"}
+                                or not all(isinstance(body[k], str) and body[k] for k in body)):
+                            raise HTTPBoundaryError(400, "reconcile_fields_invalid")
+                        request = {"action": "READ", "resource": "reconcile", "scope": [],
+                                   "task_ref": body["task_ref"]}
+                        target, _ = service._candidate(request)
+                        return self._run(lambda: service.runtime.brain.reconcile(
+                            task_ref=body["task_ref"], idempotency_key=body["idempotency_key"],
+                            authenticated_context=context, candidate_target=target))
                     if parsed.path == "/api/tasks":
                         if set(body) != {"task"} or not isinstance(body["task"], dict):
                             raise HTTPBoundaryError(400, "task_fields_invalid")

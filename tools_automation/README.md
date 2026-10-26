@@ -21,7 +21,8 @@ Tools & Automation owns bounded tool-adapter interfaces and execution-boundary v
 - Adapters must independently enforce exact action/resource/scope immediately before side effects.
 - Results use only `SUCCESS`, `FAILURE`, or `UNKNOWN`. A timeout or ambiguous post-dispatch error must remain `UNKNOWN` until reconciled.
 - Provider/evidence references are identifiers, not self-authenticating proof.
-- No ambient credentials, unrestricted handles, network clients, filesystem adapters, process adapters, or production defaults are supplied by this contract package.
+- No ambient credentials, unrestricted handles, network clients, process adapters, or production defaults are supplied by this contract package.
+- `tools_automation/file_write_adapter.py` `RootedFileWriteAdapter` (`fs.write`, MAEP-022 EXTEND_EXISTING of hg serve's adapter): rooted relative paths, no `..` or symlink components, authorization must be an unexpired ALLOW binding this exact request digest/action/resource/task, resource `file:<path>` inside a `file:` scope prefix, atomic write + fsync + replace, read-back digest; invalid input is FAILURE with no effect; `intent()`/`reconcile()` for UNKNOWN outcomes; `timeout_s` bounds the call (BrainOrchestrator then records UNKNOWN). Not registered in production.
 
 ## Cross-branch flow
 
