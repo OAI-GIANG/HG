@@ -115,6 +115,13 @@ class LocalRuntimeCompositionTests(unittest.TestCase):
 
             durable_idempotency = SQLiteIdempotencyLedger(Path(temp) / "idempotency.sqlite3")
             durable_receipts = LocalReceiptSink(Path(temp) / "receipts")
+            durable_idempotency.claim(idempotency_key="crashed-before-restart", request_digest="req:crashed", decision_digest="dec:crashed")
+            # Model a prior process that no longer exists; composition must recover before returning.
+            recovery_conn = durable_idempotency._connect()
+            try:
+                recovery_conn.execute("UPDATE idempotency SET owner_pid=2147483647,owner_start_token='stale-owner' WHERE key='crashed-before-restart'")
+            finally:
+                recovery_conn.close()
             runtime = build_runtime(
                 root_store=root_store,
                 principal_provider=PrincipalFixture(),
@@ -144,6 +151,11 @@ class LocalRuntimeCompositionTests(unittest.TestCase):
             self.assertTrue(evidence_sink.verify_integrity())
             self.assertIs(runtime.brain.idempotency_ledger, durable_idempotency)
             self.assertIs(runtime.brain.receipt_sink, durable_receipts)
+            self.assertEqual(durable_idempotency.inspect("crashed-before-restart")["status"], "UNKNOWN")
+            recovery_receipts = [row for row in durable_receipts.read_all()
+                                 if row.get("event_type") == "idempotency.interrupted_reservation"]
+            self.assertEqual(len(recovery_receipts), 1)
+            self.assertIs(recovery_receipts[0]["effect_replayed"], False)
             claim = durable_idempotency.claim(idempotency_key="composition-fixture", request_digest="req:1", decision_digest="dec:1")
             self.assertEqual(claim["status"], "RESERVED")
             durable_idempotency.record_outcome(idempotency_key="composition-fixture", request_digest="req:1", outcome="UNKNOWN", receipt={"status": "UNKNOWN"})

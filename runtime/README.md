@@ -47,4 +47,8 @@ The factory verifies the configuration and the provisioned trust root, then bloc
 - Production startup (`HG_RUNTIME_FACTORY=runtime.production_config:create_service`), supervision and deployment: **not performed**. The currently running `hg serve` release is the separate `hg-runtime-service-config-v1` path at release `f7cfd766…`; it does not contain `runtime/production_config.py`, `runtime/session_auth.py` or the new factory. No production config, token/session, policy approval, Memory DB or state was created/migrated by this change.
 - Before deploying `runtime.service`, the owner must provision a separate `hg-runtime-factory-config-v2` file (mode `0600`, absolute paths, explicit `file_write_roots`, policy approval path, session and revocation files), validate the active trust root/policy and Memory state, issue the owner session, and complete the deployment/rollback preflight. Do not rewrite the existing `hg serve` config or reuse its state as factory state.
 
-The existing `hg serve` deployment is unchanged. Do not bypass the factory startup checks or claim `HG_RUNTIME_READY` until this separate runtime has been provisioned and verified.
+The existing `hg serve` deployment is unchanged. Do not bypass the factory startup checks or claim `HG_RUNTIME_READY` until this separate runtime has been provisioned and verified. The runtime must remain stopped until the production factory and its trust inputs are explicitly provisioned and verified.
+
+## Interrupted idempotency recovery
+
+The SQLite ledger records process ownership for new reservations. During composition, proven orphan reservations transition to `UNKNOWN` and a durable outbox retries recovery receipts; no adapter is automatically replayed. Legacy reservations without ownership provenance block startup and require reconciliation.
