@@ -263,7 +263,9 @@ class MemoryApplicabilityRulesE2ETests(CompositionE2ETests):
         status, body = self.dispatch(server, fixture.RUN_EXEC_TASK, adapter)
         self.assertEqual(status, 200, body)
         self.assertEqual(adapter.calls, 1)
-        outcomes = [r.get("payload", r).get("outcome") for r in self.receipts()]
+        outcomes = [payload.get("outcome") for row in self.receipts()
+                    for payload in [row.get("payload", row)]
+                    if str(payload.get("receipt_id", "")).startswith("effect:")]
         self.assertEqual(outcomes, ["SUCCESS"])
 
     def test_dispatch_without_its_own_record_stays_blocked(self):

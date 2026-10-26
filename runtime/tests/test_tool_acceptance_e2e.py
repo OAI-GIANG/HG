@@ -11,10 +11,14 @@ authority) -> dispatch fs.write -> result evidence -> VERIFYING -> ACCEPTED (app
 evidence + independent read-back) -> CLOSED_VERIFIED, plus the refusals around it.
 """
 import hashlib
+import http.client
 import json
 import os
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
+import time
 import unittest
 from threading import Thread
 from unittest.mock import patch
@@ -159,8 +163,9 @@ class ToolAcceptanceLifecycleE2ETests(composition.CompositionE2ETests):
             "observed": "sha256:" + hashlib.sha256(CONTENT.encode()).hexdigest()}))
 
     def effect_receipts(self):
-        return [r["payload"] for r in LocalReceiptSink(self.config["receipts_dir"]).read_all()
-                if str(r["payload"].get("receipt_id", "")).startswith("effect:")]
+        return [payload for row in LocalReceiptSink(self.config["receipts_dir"]).read_all()
+                for payload in [row.get("payload", row)]
+                if isinstance(payload, dict) and str(payload.get("receipt_id", "")).startswith("effect:")]
 
     # -- tests ---------------------------------------------------------------------------
     def test_full_lifecycle_reaches_closed_verified_with_independent_readback(self):
@@ -245,6 +250,109 @@ class ToolAcceptanceLifecycleE2ETests(composition.CompositionE2ETests):
         crashing.execute = lambda **kwargs: RootedFileWriteAdapter.execute(crashing, **kwargs)
         self.assertEqual(self.dispatch(server, key="life-k-2")[0], 200)
         self.assertEqual((self.tool_root / PATH).read_text(), CONTENT)
+
+    def test_real_process_crash_after_http_side_effect_recovers_unknown_without_replay(self):
+        # Prepare the task through the real in-process service, then replace it with a
+        # separate OS process. The child terminates abruptly after the rooted write has
+        # landed but before Brain can persist a finalized idempotency receipt.
+        first = self.start()
+        self.run_to_running(first)
+        port = first.address[1]
+        self.config["port"] = port
+        first.shutdown()
+
+        # The lifecycle owner session is intentionally distinct from fixture.provision's
+        # bootstrap session; pass the exact session source already bound by the parent.
+        self.config["session_record"] = str(self.session.session_path)
+        self.config["session_revocations"] = str(self.session.revocation_path)
+        config_path = self.base / "crash-runtime-config.json"
+        config_path.write_text(json.dumps(self.config, sort_keys=True), encoding="utf-8")
+        ready_path = self.base / "crash-runtime-ready"
+        child = r'''import json, os, sys
+from pathlib import Path
+from maep.local_authority_store import LocalEvidenceSink
+from runtime.acceptance import build_acceptance_provider
+from runtime.owner_approvals import AuthorizedWriteRecordVerifier, LocalPolicyApprovalVerifier
+from runtime.production_config import compose_service
+from runtime.session_auth import TokenSessionSource
+from tools_automation.file_write_adapter import RootedFileWriteAdapter
+import e2e_fixture_factory as fixture
+config = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+tool_root = Path(sys.argv[3])
+session = TokenSessionSource(session_path=config["session_record"],
+                            revocation_path=config["session_revocations"])
+policy_verifier = LocalPolicyApprovalVerifier(config["policy_approval_path"])
+memory_verifier = AuthorizedWriteRecordVerifier(
+    evidence_sink=LocalEvidenceSink(config["evidence_dir"]), memory_store_path=config["memory_db"])
+class CrashAfterWrite(RootedFileWriteAdapter):
+    def execute(self, **kwargs):
+        super().execute(**kwargs)
+        os._exit(73)
+bindings = fixture.bindings(session, config, policy_verifier=policy_verifier,
+                            memory_verifier=memory_verifier)
+bindings["tool-adapter-registry"] = {"fs.write": CrashAfterWrite(tool_root)}
+bindings["acceptance-provider"] = build_acceptance_provider(
+    config=config, policy_verifier=policy_verifier, memory_verifier=memory_verifier,
+    file_adapters={"fs.write": RootedFileWriteAdapter(tool_root)})
+server = compose_service(config, bindings)
+Path(sys.argv[2]).write_text("ready", encoding="utf-8")
+server.serve_forever()
+'''
+        repo_root = Path(__file__).resolve().parents[2]
+        env = os.environ.copy()
+        env["PYTHONPATH"] = os.pathsep.join((str(repo_root / "runtime" / "tests"),
+                                               str(repo_root), env.get("PYTHONPATH", "")))
+        process = subprocess.Popen(
+            [sys.executable, "-c", child, str(config_path), str(ready_path), str(self.tool_root)],
+            cwd=str(repo_root), env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        def stop_child():
+            if process.poll() is None:
+                process.kill()
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                pass
+        self.addCleanup(stop_child)
+        deadline = time.monotonic() + 10
+        while not ready_path.exists() and process.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.05)
+        self.assertTrue(ready_path.exists(), f"crash-test child failed to start: {process.poll()}")
+
+        request = {"task_ref": TASK, "action": "WRITE", "resource": FILE_RESOURCE,
+                   "scope": [FILE_SCOPE], "params": {"path": PATH, "content": CONTENT}}
+        child_server = type("ChildServerAddress", (), {"address": ("127.0.0.1", port)})()
+        try:
+            status, response_body = self.call(child_server, "POST", "/api/dispatch",
+                                              body={"request": request, "adapter_name": "fs.write",
+                                                    "idempotency_key": "life-k-1"})
+            self.fail(f"child process unexpectedly returned HTTP {status}: {response_body}")
+        except (OSError, http.client.HTTPException):
+            pass  # Expected: os._exit closes the connection before a response is finalized.
+        self.assertEqual(process.wait(timeout=5), 73)
+        self.assertEqual((self.tool_root / PATH).read_text(encoding="utf-8"), CONTENT)
+        def effect_intents():
+            return [payload for row in LocalReceiptSink(self.config["receipts_dir"]).read_all()
+                    for payload in [row.get("payload", row)]
+                    if isinstance(payload, dict) and payload.get("receipt_id") == "effect-intent:life-k-1"]
+        self.assertEqual(len(effect_intents()), 1)
+        self.assertEqual(self.effect_receipts(), [])  # process died before final effect receipt
+
+        # Composition startup detects the now-dead reservation and commits UNKNOWN.
+        restarted = self.start()
+        from maep.local_runtime_providers import SQLiteIdempotencyLedger
+        ledger = SQLiteIdempotencyLedger(self.config["idempotency_db"])
+        self.assertEqual(ledger.inspect("life-k-1")["status"], "UNKNOWN")
+        status, body = self.dispatch(restarted, key="life-k-1")
+        self.assertEqual(status, 409, body)
+        self.assertEqual(body.get("error"), "IDEMPOTENCY_RECONCILIATION_REQUIRED")
+        self.assertEqual(len(effect_intents()), 1)
+        self.assertEqual(self.effect_receipts(), [])
+        self.assertEqual((self.tool_root / PATH).read_text(encoding="utf-8"), CONTENT)
+        status, body = self.reconcile(restarted, key="life-k-1")
+        self.assertEqual((status, body["result"]["finding"]), (200, "APPLIED"), body)
+        self.assertEqual(len(effect_intents()), 1)
+        self.assertEqual(self.effect_receipts(), [])
 
     def test_pending_unknown_effect_survives_a_restart(self):
         class WritesThenCrashes(RootedFileWriteAdapter):

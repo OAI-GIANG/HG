@@ -691,6 +691,29 @@ class BrainOrchestrator:
             except Exception:
                 intent = None          # invalid input: the adapter reports it without effect
         started_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        # Persist the exact effect intent before entering adapter code. If the process
+        # dies after an external effect but before its completion receipt, startup can
+        # expose this intent as UNKNOWN and reconcile live state without replaying it.
+        intent_receipt = {
+            "receipt_id": "effect-intent:" + idempotency_key,
+            "task_ref": request["task_ref"],
+            "action": request["action"], "resource": request["resource"],
+            "scope": list(request["scope"]), "intent": intent,
+            "idempotency_key": idempotency_key,
+            "request_digest": request_digest,
+            "decision_digest": decision.decision_digest,
+            "candidate_ref": decision.candidate_ref,
+            "policy_version": decision.policy_version,
+            "root_generation": decision.root_generation,
+            "adapter": adapter_name,
+            "started_at": started_at,
+            "outcome": "STARTED",
+        }
+        try:
+            self._record_receipt(intent_receipt)
+        except Exception as exc:
+            # No external adapter is entered unless its intent is durably recorded.
+            raise OrchestrationError("BLOCKED before side effect: durable effect intent unavailable") from exc
         try:
             adapter_result = _execute_with_deadline(
                 adapter, request=dict(request), authorization=decision,
@@ -761,10 +784,21 @@ class BrainOrchestrator:
             if not isinstance(payload, dict) or payload.get("task_ref") != task_ref:
                 continue
             receipt_id = str(payload.get("receipt_id", ""))
-            if receipt_id.startswith("effect:") and payload.get("outcome") == "UNKNOWN":
-                pending[payload["idempotency_key"]] = payload
+            key = payload.get("idempotency_key")
+            if not isinstance(key, str) or not key:
+                continue
+            if receipt_id.startswith("effect-intent:") and payload.get("outcome") == "STARTED":
+                # An intent without a later finalized effect receipt means the process
+                # may have died at any point after entering the external-effect window.
+                pending[key] = {**payload, "outcome": "UNKNOWN",
+                                "reason": "durable intent has no finalized effect receipt"}
+            elif receipt_id.startswith("effect:"):
+                if payload.get("outcome") == "UNKNOWN":
+                    pending[key] = payload
+                elif payload.get("outcome") in {"SUCCESS", "FAILURE"}:
+                    pending.pop(key, None)
             elif receipt_id.startswith("reconcile:") and payload.get("finding") in {"APPLIED", "NOT_APPLIED"}:
-                pending.pop(payload.get("idempotency_key"), None)
+                pending.pop(key, None)
         return pending
 
     def reconcile(self, *, task_ref: str, idempotency_key: str, authenticated_context: Any,
