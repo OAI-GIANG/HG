@@ -371,11 +371,17 @@ class HGHTTPServer:
                     scope_task_id = scope_values[0]
                     return self._run(lambda: service.runtime.memory.list_tasks(
                         index_scope_task_id=scope_task_id, limit=limit, offset=offset))
+                # All non-public GET paths authenticate before route recognition so
+                # protected route existence and path validation are not disclosed.
+                try:
+                    context = service._context(self.headers)
+                except HTTPBoundaryError as exc:
+                    return self._send(exc.status, {"status": "BLOCKED", "error": exc.code})
                 match = _TASK_PATH.fullmatch(parsed.path)
                 if match is None:
                     return self._send(404, {"status": "BLOCKED", "error": "NOT_FOUND"})
                 task_id = unquote(match.group(1))
-                return self._run(lambda: (self._protected(), service.runtime.memory.get_task(task_id))[1])
+                return self._run(lambda: service.runtime.memory.get_task(task_id))
 
             def do_POST(self):
                 try:
