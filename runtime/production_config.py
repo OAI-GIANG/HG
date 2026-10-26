@@ -20,8 +20,8 @@ import stat
 from typing import Any
 
 from maep.local_authority_store import LocalEvidenceSink, LocalRootStore
-from maep.local_runtime_providers import (GitCandidateProvider, LocalPolicyProvider, LocalPrincipalProvider,
-                                          LocalReceiptSink, SQLiteIdempotencyLedger)
+from maep.local_runtime_providers import (GitCandidateProvider, LocalLiveStateProvider, LocalPolicyProvider,
+                                          LocalPrincipalProvider, LocalReceiptSink, SQLiteIdempotencyLedger)
 from maep.memory_evidence_providers import (CanonicalMemoryTaskSelectors, MemoryLedgerProvenanceVerifier,
                                             MemoryMAEPRecordResolver)
 from maep.native_authority import AuthorityError, TrustRootRecord
@@ -47,7 +47,6 @@ REQUIRED_BINDINGS = (
     ("approved-memory-record-verifier", "D4: owner rule for approved Memory records"),
     ("maep022-record-reader", "D4: non-recursive authority read path"),
     ("tool-adapter-registry", "no production ToolAdapter implementation"),
-    ("live-state-provider", "no production implementation"),
     ("acceptance-provider", "no production implementation"),
 )
 def _build_record_reader(config: dict[str, Any]) -> AuthorityEvidenceReader:
@@ -175,7 +174,6 @@ def compose_service(config: dict[str, Any], bindings: dict[str, Any]):
     authenticate_request = _require_callable(bindings["request-authenticator"], "request-authenticator")
     context_provider = _require_callable(bindings["authenticated-context-provider"],
                                          "authenticated-context-provider")
-    live_state_provider = _require_callable(bindings["live-state-provider"], "live-state-provider")
     acceptance_provider = _require_callable(bindings["acceptance-provider"], "acceptance-provider")
     reader = bindings["maep022-record-reader"]
     if not isinstance(reader, AuthorityEvidenceReader):
@@ -200,6 +198,10 @@ def compose_service(config: dict[str, Any], bindings: dict[str, Any]):
         policy_provider.load_active(root)
     except AuthorityError as exc:
         raise RuntimeStartupError("production composition blocked: active policy is not verified") from exc
+    # Live state is observed from the already-composed candidate/policy/root providers;
+    # it is not an owner-decision seam.
+    live_state_provider = LocalLiveStateProvider(candidate_provider=candidate_provider, checkout=checkout,
+                                                 policy_provider=policy_provider, root_store=root_store)
     selectors = CanonicalMemoryTaskSelectors(memory_store=reader, canonical_task_id_source=reader)
     record_resolver = MemoryMAEPRecordResolver(memory_store=reader, selectors=selectors)
     provenance = MemoryLedgerProvenanceVerifier(memory_verifier)
