@@ -370,6 +370,139 @@ class HTTPServerTests(unittest.TestCase):
         self.assertEqual(status, 200, body)
         self.assertEqual(self.memory.calls, [("get_task", "HTTP-DETAIL-1")])
 
+    def test_wp0_task_detail_not_found_error_maps_to_not_found(self):
+        from runtime.http_server import HTTPBoundaryError
+        self.memory.get_task = lambda task_id: (_ for _ in ()).throw(HTTPBoundaryError(404, "task_not_found"))
+        status, body = self.request("GET", "/api/tasks/MISSING-TASK")
+        self.assertEqual(status, 404)
+        self.assertEqual(body.get("error"), "task_not_found")
+
+    def test_wp0_missing_task_key_error_does_not_leak_fixture_detail(self):
+        self.memory.get_task = lambda task_id: (_ for _ in ()).throw(KeyError(task_id))
+        status, body = self.request("GET", "/api/tasks/MISSING-TASK")
+        self.assertEqual(status, 400)
+        self.assertEqual(body.get("error"), "INVALID_REQUEST")
+        self.assertNotIn("MISSING-TASK", json.dumps(body))
+
+    def test_wp0_task_detail_missing_task_maps_to_not_found(self):
+        def missing(task_id):
+            self.memory.calls.append(("get_task", task_id))
+            raise KeyError(task_id)
+        self.memory.get_task = missing
+        status, body = self.request("GET", "/api/tasks/MISSING-TASK")
+        self.assertEqual(status, 400)
+        self.assertEqual(body.get("error"), "INVALID_REQUEST")
+        self.assertEqual(self.memory.calls, [("get_task", "MISSING-TASK")])
+
+    def test_wp0_task_detail_backend_failure_maps_to_generic_500(self):
+        self.memory.get_task = lambda _task_id: (_ for _ in ()).throw(RuntimeError("fixture secret"))
+        status, body = self.request("GET", "/api/tasks/HTTP-DETAIL-FAIL")
+        self.assertEqual(status, 500)
+        self.assertEqual(body.get("error"), "RUNTIME_OPERATION_FAILED")
+        self.assertNotIn("fixture secret", json.dumps(body))
+
+    def test_wp0_post_rejects_non_json_content_type_after_auth(self):
+        status, body = self.request(
+            "POST", "/api/tasks", token=True, raw=b"{}", content_type="text/plain"
+        )
+        self.assertEqual(status, 415)
+        self.assertEqual(body.get("error"), "application_json_required")
+        status, body = self.request(
+            "POST", "/api/tasks", token=False, raw=b"{}", content_type="text/plain"
+        )
+        self.assertEqual(status, 401)
+        self.assertEqual(body.get("error"), "authentication_unavailable_or_denied")
+
+    def test_wp0_post_rejects_missing_content_length(self):
+        import socket
+        request = (
+            b"POST /api/tasks HTTP/1.1\r\n"
+            + f"Host: 127.0.0.1:{self.port}\r\n".encode()
+            + b"Authorization: Bearer test-only\r\n"
+            + b"Content-Type: application/json\r\n"
+            + b"Connection: close\r\n\r\n{}"
+        )
+        with socket.create_connection((self.host, self.port), timeout=2) as sock:
+            sock.sendall(request)
+            data = b""
+            while True:
+                part = sock.recv(4096)
+                if not part:
+                    break
+                data += part
+        self.assertIn(b" 411 ", data.split(b"\r\n", 1)[0])
+        self.assertIn(b"content_length_required", data)
+        self.assertEqual(self.memory.calls, [])
+
+    def test_wp0_dispatch_candidate_lookup_failure_maps_to_503(self):
+        self.runtime.candidate_target_provider = lambda _request: (_ for _ in ()).throw(RuntimeError("fixture secret"))
+        payload = {"request": self.fixture.request, "adapter_name": "test", "idempotency_key": "http-503"}
+        status, body = self.request("POST", "/api/dispatch", payload)
+        self.assertEqual(status, 503)
+        self.assertEqual(body.get("error"), "candidate_identity_unavailable")
+        self.assertEqual(self.fixture.adapter.calls, 0)
+        self.assertNotIn("fixture secret", json.dumps(body))
+
+    def test_wp0_dispatch_unverified_candidate_maps_to_403(self):
+        self.fixture.candidate.verified = False
+        payload = {"request": self.fixture.request, "adapter_name": "test", "idempotency_key": "http-403"}
+        status, body = self.request("POST", "/api/dispatch", payload)
+        self.assertEqual(status, 403)
+        self.assertEqual(body.get("error"), "candidate_identity_unverified")
+        self.assertEqual(self.fixture.adapter.calls, 0)
+
+    def test_wp0_review_backend_failure_maps_to_generic_500(self):
+        self.fixture.brain.critique_engine = object()
+        self.fixture.brain.review_and_simulate = lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("fixture secret"))
+        status, body = self.request("POST", "/api/tasks/T-REVIEW-500/review-and-simulate", {"plan": {"task_id": "T-REVIEW-500"}})
+        self.assertEqual(status, 500)
+        self.assertEqual(body.get("error"), "RUNTIME_OPERATION_FAILED")
+        self.assertNotIn("fixture secret", json.dumps(body))
+
+    def test_wp0_dispatch_backend_failure_maps_to_generic_500(self):
+        self.fixture.brain.dispatch = lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("fixture secret"))
+        payload = {"request": self.fixture.request, "adapter_name": "test", "idempotency_key": "http-500"}
+        status, body = self.request("POST", "/api/dispatch", payload)
+        self.assertEqual(status, 500)
+        self.assertEqual(body.get("error"), "RUNTIME_OPERATION_FAILED")
+        self.assertNotIn("fixture secret", json.dumps(body))
+        self.assertEqual(self.fixture.adapter.calls, 0)
+
+    def test_wp0_reconcile_invalid_fields_rejected(self):
+        for payload in ({}, {"task_ref": "x"}, {"task_ref": "x", "idempotency_key": "", "extra": 1}):
+            with self.subTest(payload=payload):
+                status, body = self.request("POST", "/api/reconcile", payload)
+                self.assertEqual(status, 400)
+                self.assertEqual(body.get("error"), "reconcile_fields_invalid")
+
+    def test_wp0_task_create_backend_failure_maps_to_generic_500(self):
+        self.memory.create_task = lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("fixture secret"))
+        payload = {"task": {"task_id": "HTTP-FAIL-TASK"}}
+        status, body = self.request("POST", "/api/tasks", payload)
+        self.assertEqual(status, 500)
+        self.assertEqual(body.get("error"), "RUNTIME_OPERATION_FAILED")
+        self.assertNotIn("fixture secret", json.dumps(body))
+
+    def test_wp0_transition_invalid_fields_and_backend_failure(self):
+        status, body = self.request("POST", "/api/tasks/T-1/transition", {"target": "READY"})
+        self.assertEqual(status, 400)
+        self.assertEqual(body.get("error"), "transition_fields_invalid")
+        self.memory.transition_task = lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("fixture secret"))
+        status, body = self.request("POST", "/api/tasks/T-1/transition", {"target": "READY", "expected_version": 1})
+        self.assertEqual(status, 500)
+        self.assertEqual(body.get("error"), "RUNTIME_OPERATION_FAILED")
+        self.assertNotIn("fixture secret", json.dumps(body))
+
+    def test_wp0_evidence_invalid_fields_and_backend_failure(self):
+        status, body = self.request("POST", "/api/evidence", {"task_id": "T-1"})
+        self.assertEqual(status, 400)
+        self.assertEqual(body.get("error"), "evidence_fields_invalid")
+        self.memory.record_evidence = lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("fixture secret"))
+        status, body = self.request("POST", "/api/evidence", {"task_id": "T-1", "evidence": {"evidence_id": "E-1"}})
+        self.assertEqual(status, 500)
+        self.assertEqual(body.get("error"), "RUNTIME_OPERATION_FAILED")
+        self.assertNotIn("fixture secret", json.dumps(body))
+
     def test_task_index_routes_through_authorized_memory_boundary(self):
         status, body = self.request("GET", "/api/tasks?index_scope_task_id=HTTP-TASK-1&limit=25&offset=5")
         self.assertEqual(status, 200, body)
