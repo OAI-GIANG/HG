@@ -434,6 +434,28 @@ class HTTPServerTests(unittest.TestCase):
         self.assertIn(b"content_length_required", data)
         self.assertEqual(self.memory.calls, [])
 
+    def test_wp0_dispatch_after_effect_receipt_failure_is_unknown_not_replayed(self):
+        adapter = self.fixture.adapter
+        # Mirror runtime/composition.py: production requires append() + read_all().
+        self.fixture.brain.receipt_sink.read_all = lambda: list(self.fixture.brain.receipt_sink.events)
+        original_record = self.fixture.brain._record_receipt
+        def fail_final_effect_receipt(receipt):
+            if receipt.get("receipt_id", "").startswith("effect:"):
+                raise OSError("simulated durable final receipt failure")
+            return original_record(receipt)
+        self.fixture.brain._record_receipt = fail_final_effect_receipt
+        payload = {"request": self.fixture.request, "adapter_name": "test", "idempotency_key": "http-final-receipt-fail"}
+        status, body = self.request("POST", "/api/dispatch", payload)
+        self.assertEqual(status, 409)
+        self.assertEqual(body.get("status"), "UNKNOWN")
+        self.assertEqual(body.get("error"), "IDEMPOTENCY_RECONCILIATION_REQUIRED")
+        self.assertEqual(adapter.calls, 1)
+        # A duplicate after the final receipt write fails must not execute the effect again.
+        status, body = self.request("POST", "/api/dispatch", payload)
+        self.assertEqual(status, 409)
+        self.assertEqual(body.get("status"), "UNKNOWN")
+        self.assertEqual(adapter.calls, 1)
+
     def test_wp0_dispatch_candidate_lookup_failure_maps_to_503(self):
         self.runtime.candidate_target_provider = lambda _request: (_ for _ in ()).throw(RuntimeError("fixture secret"))
         payload = {"request": self.fixture.request, "adapter_name": "test", "idempotency_key": "http-503"}
