@@ -34,16 +34,18 @@ def utcnow():
     return datetime.now(timezone.utc)
 
 
-def open_task_store(path, evaluator, clock):
+def open_task_store(path, evaluator, clock, history_versions=()):
     path = Path(path)
     if path.exists() and read_events(path):
-        return TaskStore.restore(path, policy_evaluator=evaluator, clock=clock)
+        return TaskStore.restore(path, policy_evaluator=evaluator, clock=clock,
+                                 history_versions=history_versions)
     return TaskStore(path, policy_evaluator=evaluator, clock=clock)
 
 
 def build_runtime(workdir, grants, *, principal=DEFAULT_PRINCIPAL, mode="AUTHORIZED_EXECUTION",
                   verifiers=None, clock=None, extra_adapters=(), condition_provider=None, authority=None,
-                  allow_fixture_grants=False, issue_task_grants=False, memory=None, grant_ttl_s=3600):
+                  allow_fixture_grants=False, issue_task_grants=False, memory=None, grant_ttl_s=3600,
+                  history_versions=()):
     if authority is not None and allow_fixture_grants:
         raise MAEPError("pass either authority or allow_fixture_grants, not both")
     if issue_task_grants and (authority is None or list(grants)):
@@ -72,7 +74,7 @@ def build_runtime(workdir, grants, *, principal=DEFAULT_PRINCIPAL, mode="AUTHORI
     if memory is True:
         from hg.memory.store import MemoryStore
         memory = MemoryStore(workdir / "memory.jsonl", clock=clock)
-    store = open_task_store(workdir / "tasks.jsonl", evaluator, clock)
+    store = open_task_store(workdir / "tasks.jsonl", evaluator, clock, history_versions)
     actions = EventLog(workdir / "actions.jsonl", clock=clock)
     adapters = [LocalFileWriteAdapter(root), LocalFileReadAdapter(root), CodeSearchAdapter(root),
                 SymbolIndexAdapter(root), CodeDiffAdapter(root), TestRunAdapter(root), UrlReadAdapter(),
