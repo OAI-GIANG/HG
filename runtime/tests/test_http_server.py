@@ -547,6 +547,32 @@ class HTTPServerTests(unittest.TestCase):
         self.assertEqual(body.get("error"), "RUNTIME_OPERATION_FAILED")
         self.assertNotIn("fixture secret", json.dumps(body))
 
+    def test_wp0_task_create_authentication_failure_maps_to_401(self):
+        status, body = self.request("POST", "/api/tasks", {"task": {"task_id": "HTTP-UNAUTH-TASK"}}, token=False)
+        self.assertEqual(status, 401)
+        self.assertEqual(body.get("error"), "authentication_unavailable_or_denied")
+        self.assertEqual(self.memory.calls, [])
+
+    def test_wp0_task_create_candidate_provider_failure_maps_to_503(self):
+        self.runtime.candidate_target_provider = lambda _request: (_ for _ in ()).throw(RuntimeError("fixture secret"))
+        status, body = self.request("POST", "/api/tasks", {"task": {"task_id": "HTTP-UNAVAILABLE-TASK"}})
+        self.assertEqual(status, 503)
+        self.assertEqual(body.get("error"), "candidate_identity_unavailable")
+        self.assertEqual(self.memory.calls, [])
+        self.assertNotIn("fixture secret", json.dumps(body))
+
+    def test_wp0_reconcile_authentication_failure_maps_to_401(self):
+        status, body = self.request("POST", "/api/reconcile", {"task_ref": "T-1", "idempotency_key": "reconcile-unauth"}, token=False)
+        self.assertEqual(status, 401)
+        self.assertEqual(body.get("error"), "authentication_unavailable_or_denied")
+
+    def test_wp0_reconcile_candidate_provider_failure_maps_to_503(self):
+        self.runtime.candidate_target_provider = lambda _request: (_ for _ in ()).throw(RuntimeError("fixture secret"))
+        status, body = self.request("POST", "/api/reconcile", {"task_ref": "T-1", "idempotency_key": "reconcile-503"})
+        self.assertEqual(status, 503)
+        self.assertEqual(body.get("error"), "candidate_identity_unavailable")
+        self.assertNotIn("fixture secret", json.dumps(body))
+
     def test_wp0_task_create_policy_denial_maps_to_403(self):
         self.runtime.candidate_target_provider = lambda _request: "missing-candidate"
         self.runtime.authority.candidate_provider.inspect = lambda _target: {"verified": False}
