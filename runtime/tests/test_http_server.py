@@ -146,7 +146,13 @@ class HTTPServerTests(unittest.TestCase):
         import socket
         with socket.create_connection((self.host, self.port), timeout=2) as sock:
             sock.sendall(b"GET /health HTTP/1.1\r\nConnection: close\r\n\r\n")
-            data = sock.recv(4096)
+            chunks = []
+            while True:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+            data = b"".join(chunks)
         self.assertIn(b" 400 ", data.split(b"\r\n", 1)[0])
         self.assertIn(b"host_header_invalid", data)
 

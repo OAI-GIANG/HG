@@ -236,14 +236,17 @@ class HGHTTPServer:
 
             def send_error(self, code, message=None, explain=None):
                 # Never expose BaseHTTPRequestHandler's default HTML error pages.
-                if code in (501, 405):
+                if code in (400, 501, 405):
                     try:
                         service._validate_host(self.headers)
                     except HTTPBoundaryError as exc:
                         self._send(exc.status, {"status": "BLOCKED", "error": exc.code})
                         return
-                    self._send(405, {"status": "BLOCKED", "error": "METHOD_NOT_ALLOWED"},
-                               extra_headers={"Allow": "GET, POST"})
+                    if code in (501, 405):
+                        self._send(405, {"status": "BLOCKED", "error": "METHOD_NOT_ALLOWED"},
+                                   extra_headers={"Allow": "GET, POST"})
+                        return
+                    self._send(400, {"status": "BLOCKED", "error": "HTTP_REQUEST_REJECTED"})
                     return
                 self._send(code, {"status": "BLOCKED", "error": "HTTP_REQUEST_REJECTED"})
 
