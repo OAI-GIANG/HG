@@ -121,7 +121,8 @@ class CompositionE2ETests(unittest.TestCase):
     def test_n10_memory_restored_to_a_new_path_loses_every_authorization(self):
         # Memory resources embed the database path ("memory:task/T [store:/path]"), so a
         # backup restored elsewhere no longer matches its own applicability records,
-        # the policy rules or the session scopes.
+        # the policy rules or the session scopes. Intended: a restore never re-grants;
+        # the owner rebind path is covered by test_memory_rebind.py.
         provisioner = fixture.MemoryStore(self.config["memory_db"], principal_provider=lambda: "provisioner",
                                           policy_evaluator=fixture.store_fixtures.policy_decision,
                                           applicability_provider=fixture.store_fixtures.applicability_provider_for_test)
