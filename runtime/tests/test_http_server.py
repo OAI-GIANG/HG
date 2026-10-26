@@ -7,6 +7,7 @@ import unittest
 from runtime.http_server import HGHTTPServer, HTTPBoundaryError
 from brain.orchestrator import OrchestrationError
 from brain.tests.test_orchestrator import BrainTests
+from maep.native_authority import AuthorityError
 
 
 class MemoryStub:
@@ -393,6 +394,25 @@ class HTTPServerTests(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertEqual(body.get("error"), "INVALID_REQUEST")
         self.assertEqual(self.memory.calls, [("get_task", "MISSING-TASK")])
+
+    def test_wp0_task_detail_authorization_failure_maps_to_403(self):
+        self.runtime.memory.get_task = lambda _task_id: (_ for _ in ()).throw(AuthorityError("denied"))
+        status, body = self.request("GET", "/api/tasks/HTTP-DETAIL-DENIED")
+        self.assertEqual(status, 403)
+        self.assertEqual(body.get("error"), "MAEP_AUTHORIZATION_OR_CONTRACT_DENIED")
+
+    def test_wp0_task_index_backend_failure_maps_to_generic_500(self):
+        self.memory.list_tasks = lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("fixture secret"))
+        status, body = self.request("GET", "/api/tasks?index_scope_task_id=T-1")
+        self.assertEqual(status, 500)
+        self.assertEqual(body.get("error"), "RUNTIME_OPERATION_FAILED")
+        self.assertNotIn("fixture secret", json.dumps(body))
+
+    def test_wp0_task_index_authorization_failure_maps_to_403(self):
+        self.runtime.memory.list_tasks = lambda **_kwargs: (_ for _ in ()).throw(AuthorityError("denied"))
+        status, body = self.request("GET", "/api/tasks?index_scope_task_id=T-1")
+        self.assertEqual(status, 403)
+        self.assertEqual(body.get("error"), "MAEP_AUTHORIZATION_OR_CONTRACT_DENIED")
 
     def test_wp0_task_detail_backend_failure_maps_to_generic_500(self):
         self.memory.get_task = lambda _task_id: (_ for _ in ()).throw(RuntimeError("fixture secret"))
