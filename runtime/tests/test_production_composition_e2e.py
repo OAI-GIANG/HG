@@ -292,6 +292,40 @@ class MemoryApplicabilityRulesE2ETests(CompositionE2ETests):
         self.assertEqual(adapter.calls, 0)
 
 
+class CreateServiceWithRegisteredD3Tests(unittest.TestCase):
+    """create_service() with the D3 builders registered; remaining owner seams patched as fixtures."""
+
+    def test_registered_session_source_authenticates_through_create_service(self):
+        from unittest.mock import patch
+        from runtime import production_config as pc
+        tmp = tempfile.TemporaryDirectory(prefix="hg-e2e-create-")
+        self.addCleanup(tmp.cleanup)
+        state = fixture.provision(tmp.name, port=fixture.free_port())
+        config_path = Path(tmp.name) / "runtime-config.json"
+        fd = os.open(config_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w") as handle:
+            json.dump(state["config"], handle)
+        seams = {
+            "approved-policy-source-verifier": lambda config: fixture.FixturePolicySourceVerifier(),
+            "approved-memory-record-verifier": lambda config: fixture.FixtureMemoryRecordVerifier(),
+            "tool-adapter-registry": lambda config: {"fixture": fixture.FixtureAdapter()},
+            "acceptance-provider": lambda config: fixture._fixture_acceptance,
+        }
+        with patch.dict(pc.APPROVED_BINDINGS, seams), patch.dict(os.environ, {pc.CONFIG_ENV: str(config_path)}):
+            server = pc.create_service()
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(lambda: (server.shutdown(), thread.join(timeout=2)))
+        token = Path(state["token_path"]).read_text().strip()
+        for header, expected in (({"Authorization": "Bearer " + token}, 200), ({}, 401)):
+            conn = http.client.HTTPConnection(*server.address[:2], timeout=10)
+            conn.request("GET", f"/api/tasks/{fixture.READ_TASK}", headers=header)
+            response = conn.getresponse()
+            response.read()
+            conn.close()
+            self.assertEqual(response.status, expected)
+
+
 class ServiceProcessE2ETests(unittest.TestCase):
     """python -m runtime.service lifecycle on its own port and state directory."""
 

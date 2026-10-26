@@ -26,10 +26,14 @@ class ProductionConfigTests(unittest.TestCase):
             "checkout": str(self.base / "checkout"),
             "authority_dir": str(self.base / "authority"),
             "policy_path": str(self.base / "policy.json"),
+            "policy_approval_path": str(self.base / "authority" / "policy-approval.json"),
+            "file_write_roots": {"sandbox": str(self.base / "write-root")},
             "evidence_dir": str(self.base / "evidence"),
             "memory_db": str(self.base / "memory" / "hg.sqlite3"),
             "idempotency_db": str(self.base / "idempotency.sqlite3"),
             "receipts_dir": str(self.base / "receipts"),
+            "session_record": str(self.base / "session" / "session.json"),
+            "session_revocations": str(self.base / "session" / "revocations.json"),
         }
 
     def tearDown(self):
@@ -112,11 +116,7 @@ class ProductionConfigTests(unittest.TestCase):
             with self.assertRaises(service.RuntimeStartupError) as ctx:
                 pc.create_service()
         message = str(ctx.exception)
-        for name, _reason in pc.REQUIRED_BINDINGS:
-            if name in pc.APPROVED_BINDINGS:
-                self.assertNotIn(name, message)
-            else:
-                self.assertIn(name, message)
+        self.assertIn("could not be constructed", message)
         # No Memory database, ledger, evidence or receipt state is created.
         self.assertEqual(self.snapshot(), before)
 
@@ -149,17 +149,24 @@ class ProductionConfigTests(unittest.TestCase):
     def test_only_reviewed_bindings_are_registered_in_production_code(self):
         # Exactly the reviewed set; anything else registered here is a defect.
         from memory import AuthorityEvidenceReader
-        self.assertEqual(set(pc.APPROVED_BINDINGS), {"maep022-record-reader"})
+        from runtime.session_auth import TokenSessionSource, issue_session
+        self.assertEqual(set(pc.APPROVED_BINDINGS), {
+            "maep022-record-reader", "approved-policy-source-verifier",
+            "approved-memory-record-verifier", "tool-adapter-registry", "acceptance-provider",
+            "authenticated-session-resolver", "request-authenticator", "authenticated-context-provider"})
         reader = pc.APPROVED_BINDINGS["maep022-record-reader"](self.config)
         self.assertIsInstance(reader, AuthorityEvidenceReader)
         self.assertEqual(reader.path, Path(self.config["memory_db"]))
+        issue_session(session_path=self.config["session_record"], token_path=self.base / "session" / "token",
+                      revocation_path=self.config["session_revocations"], principal_id="STT", valid_days=1,
+                      capabilities=["READ"], resource_scopes=["r"], allowed_scopes=["s"])
+        source = pc.APPROVED_BINDINGS["authenticated-session-resolver"](self.config)
+        self.assertIsInstance(source, TokenSessionSource)
+        self.assertEqual(pc.APPROVED_BINDINGS["authenticated-context-provider"](self.config)(),
+                         source.authenticated_context())
+        self.assertTrue(callable(pc.APPROVED_BINDINGS["request-authenticator"](self.config)))
         missing = pc.missing_bindings()
-        self.assertEqual(len(missing), len(pc.REQUIRED_BINDINGS) - 1)
-        self.assertFalse(any(item.startswith("maep022-record-reader") for item in missing))
-        for owner_seam in ("approved-policy-source-verifier", "authenticated-session-resolver",
-                           "request-authenticator", "authenticated-context-provider",
-                           "approved-memory-record-verifier"):
-            self.assertTrue(any(item.startswith(owner_seam) for item in missing), owner_seam)
+        self.assertEqual(missing, [])
 
     def test_service_entrypoint_reports_blocker_and_exits_78(self):
         self.provision_test_root()
@@ -170,7 +177,7 @@ class ProductionConfigTests(unittest.TestCase):
                 contextlib.redirect_stdout(stdout):
             result = service.main()
         self.assertEqual(result, service.BLOCKED_EXIT)
-        self.assertIn("HG_BLOCKED: production bindings not provisioned", stderr.getvalue())
+        self.assertIn("HG_BLOCKED: production binding", stderr.getvalue())
         self.assertNotIn("HG_RUNTIME_READY", stdout.getvalue())
 
     def test_real_process_python_m_runtime_service_reports_blocker(self):

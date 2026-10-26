@@ -29,12 +29,13 @@ from maep.trust_source_contracts import require_trust_source_contract
 from maep.trusted_providers import TrustedApplicabilityProvider, TrustedGateEvidenceProvider
 from memory import AuthorityEvidenceReader
 from runtime.errors import RuntimeStartupError
+from runtime.session_auth import TokenSessionSource
 
 CONFIG_ENV = "HG_RUNTIME_CONFIG"
-CONFIG_SCHEMA = "hg-runtime-factory-config-v1"
-PATH_KEYS = ("checkout", "authority_dir", "policy_path", "evidence_dir",
-             "memory_db", "idempotency_db", "receipts_dir")
-CONFIG_KEYS = frozenset(("schema", "host", "port") + PATH_KEYS)
+CONFIG_SCHEMA = "hg-runtime-factory-config-v2"
+PATH_KEYS = ("checkout", "authority_dir", "policy_path", "policy_approval_path", "evidence_dir",
+             "memory_db", "idempotency_db", "receipts_dir", "session_record", "session_revocations")
+CONFIG_KEYS = frozenset(("schema", "host", "port", "file_write_roots") + PATH_KEYS)
 
 # Every binding build_runtime and HGHTTPServer need that has no production implementation
 # yet. Each entry names the blocker it waits for. Register an owner-approved implementation
@@ -53,12 +54,69 @@ def _build_record_reader(config: dict[str, Any]) -> AuthorityEvidenceReader:
     return AuthorityEvidenceReader(config["memory_db"])
 
 
+def _build_session_source(config: dict[str, Any]) -> TokenSessionSource:
+    # One shared source instance backs all three D3 seams so the authenticated context
+    # and the principal resolver cannot diverge across separately constructed readers.
+    return TokenSessionSource(session_path=config["session_record"],
+                              revocation_path=config["session_revocations"])
+
+
+def _build_session_bindings(config: dict[str, Any]) -> dict[str, Any]:
+    source = _build_session_source(config)
+    return {
+        "authenticated-session-resolver": source,
+        "request-authenticator": source.authenticate_request,
+        "authenticated-context-provider": source.authenticated_context,
+    }
+
+
 # name -> builder(config) returning the binding object. Builders run only after the
 # configuration and the trust root have been validated.
+def _build_policy_approval_verifier(config: dict[str, Any]):
+    from runtime.owner_approvals import LocalPolicyApprovalVerifier
+    return LocalPolicyApprovalVerifier(config["policy_approval_path"])
+
+
+def _build_memory_record_verifier(config: dict[str, Any]):
+    from runtime.owner_approvals import AuthorizedWriteRecordVerifier
+    return AuthorizedWriteRecordVerifier(
+        evidence_sink=LocalEvidenceSink(config["evidence_dir"]), memory_store_path=config["memory_db"])
+
+
+def _build_file_adapters(config: dict[str, Any]) -> dict[str, Any]:
+    from tools_automation.file_write_adapter import RootedFileWriteAdapter
+    roots = config["file_write_roots"]
+    if not isinstance(roots, dict) or not roots:
+        raise RuntimeStartupError("file_write_roots must name at least one owner-provisioned root")
+    adapters = {}
+    for name, root in roots.items():
+        if not isinstance(name, str) or not name or not isinstance(root, str) or not Path(root).is_absolute():
+            raise RuntimeStartupError("file_write_roots entries must be named absolute paths")
+        if name in adapters:
+            raise RuntimeStartupError("duplicate file write adapter name")
+        adapters[name] = RootedFileWriteAdapter(root)
+    return adapters
+
+
+def _build_acceptance_provider(config: dict[str, Any]):
+    from runtime.acceptance import build_acceptance_provider
+    return build_acceptance_provider(config=config,
+        policy_verifier=_build_policy_approval_verifier(config),
+        memory_verifier=_build_memory_record_verifier(config),
+        file_adapters=_build_file_adapters(config))
+
+
+# These are production builders, never test doubles. Owner-controlled config provides
+# only paths; authorization semantics remain code-owned and fail closed.
 APPROVED_BINDINGS: dict[str, Any] = {
-    # Read-only authority record source (PR #18): breaks the authorize() -> Memory
-    # -> authorize() cycle. One reader per configured Memory database.
     "maep022-record-reader": _build_record_reader,
+    "approved-policy-source-verifier": _build_policy_approval_verifier,
+    "approved-memory-record-verifier": _build_memory_record_verifier,
+    "tool-adapter-registry": _build_file_adapters,
+    "acceptance-provider": _build_acceptance_provider,
+    "authenticated-session-resolver": lambda config: _build_session_source(config),
+    "request-authenticator": lambda config: _build_session_source(config).authenticate_request,
+    "authenticated-context-provider": lambda config: _build_session_source(config).authenticated_context,
 }
 
 
@@ -110,6 +168,11 @@ def load_config(path: str | None) -> dict[str, Any]:
         value = config[key]
         if not isinstance(value, str) or not value or not Path(value).is_absolute():
             raise RuntimeStartupError(f"runtime configuration {key} must be an absolute path")
+    roots = config["file_write_roots"]
+    if not isinstance(roots, dict) or not roots or any(
+            not isinstance(name, str) or not name or not isinstance(value, str) or not Path(value).is_absolute()
+            for name, value in roots.items()):
+        raise RuntimeStartupError("runtime configuration file_write_roots must be a non-empty name-to-absolute-path map")
     if not Path(config["checkout"]).is_dir():
         raise RuntimeStartupError("runtime configuration checkout is not a directory")
     return config
