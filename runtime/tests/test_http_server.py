@@ -320,6 +320,25 @@ class HTTPServerTests(unittest.TestCase):
         self.assertEqual(self.memory.calls[0][0], "create_task")
         self.assertEqual(self.memory.calls[0][2], "candidate:1")
 
+    def test_wp0_unknown_get_route_authenticates_before_route_recognition(self):
+        status, body = self.request("GET", "/api/not-a-route", token=False)
+        self.assertEqual(status, 401)
+        self.assertEqual(body.get("error"), "authentication_unavailable_or_denied")
+        self.assertEqual(self.memory.calls, [])
+        status, body = self.request("GET", "/api/not-a-route", token=True)
+        self.assertEqual(status, 404)
+        self.assertEqual(body.get("error"), "NOT_FOUND")
+        self.assertEqual(self.memory.calls, [])
+
+    def test_wp0_task_detail_authenticates_before_memory_read(self):
+        status, body = self.request("GET", "/api/tasks/HTTP-DETAIL-1", token=False)
+        self.assertEqual(status, 401)
+        self.assertEqual(body.get("error"), "authentication_unavailable_or_denied")
+        self.assertEqual(self.memory.calls, [])
+        status, body = self.request("GET", "/api/tasks/HTTP-DETAIL-1", token=True)
+        self.assertEqual(status, 200, body)
+        self.assertEqual(self.memory.calls, [("get_task", "HTTP-DETAIL-1")])
+
     def test_task_index_routes_through_authorized_memory_boundary(self):
         status, body = self.request("GET", "/api/tasks?index_scope_task_id=HTTP-TASK-1&limit=25&offset=5")
         self.assertEqual(status, 200, body)
