@@ -16,6 +16,13 @@ or transitions are inconsistent. A plain constructor still refuses a non-empty l
 Sole coordinator (MAEP-006): `claim_writer()` issues one TaskWriter; once claimed, every
 mutation must come through it. The claim is an in-process capability, not OS isolation.
 
+Policy-version history (MAEP-012): by default restore() refuses any event recorded under
+another policy version. A caller migrating to a new version may name earlier versions in
+`history_versions`; their events are replayed with the same checks, and every task they
+touched becomes read-only history (`policy_status: "STALE"`, `recorded_policy_version`):
+it can be read, but no fact, transition or effect is accepted for it. Unknown, newer or
+non-earlier versions are refused. Nothing in the ledger is rewritten.
+
 Limits: in-process only. Authority comes from an injected PolicyEvaluator, which is not
 yet anchored to the trust root (RT-06). One authorization request is held per task.
 """
@@ -30,6 +37,28 @@ from .core import (
 from .ledger import append_event, read_events
 
 RESULT_STATES = {"RUNNING", "UNVERIFIED"}
+
+
+def _version_key(version):
+    """("MAEP-1.1.0") -> (1, 1, 0); anything else is not a policy version."""
+    if not isinstance(version, str) or not version.startswith("MAEP-"):
+        raise MAEPError(f"not a MAEP policy version: {version!r}")
+    parts = version[5:].split(".")
+    if len(parts) != 3 or not all(part.isdigit() and str(int(part)) == part for part in parts):
+        raise MAEPError(f"not a MAEP policy version: {version!r}")
+    return tuple(int(part) for part in parts)
+
+
+def _history_versions(versions):
+    """Validate the earlier policy versions a restore may replay as read-only history."""
+    if isinstance(versions, str):
+        raise MAEPError("history_versions must be a collection of versions, not one string")
+    accepted = frozenset(versions)
+    current = _version_key(POLICY_VERSION)
+    for version in accepted:
+        if _version_key(version) >= current:
+            raise MAEPError(f"history version {version} is not earlier than the store policy {POLICY_VERSION}")
+    return accepted
 
 
 def _new_record(task):
@@ -111,35 +140,48 @@ class TaskStore:
         self._active_writer = None
 
     @classmethod
-    def restore(cls, ledger_path, *, policy_evaluator=None, clock=None, ledger_append=None):
+    def restore(cls, ledger_path, *, policy_evaluator=None, clock=None, ledger_append=None,
+                history_versions=()):
         """Rebuild a store from its ledger (RT-05). Inconsistent history fails closed.
 
         Stored authorization decisions are history only: every guard that needs authority
-        re-evaluates the stored request with the evaluator given here.
+        re-evaluates the stored request with the evaluator given here. `history_versions`
+        (default none) names earlier policy versions whose events are replayed as
+        read-only history; see the module docstring.
         """
+        accepted = _history_versions(history_versions)
         store = cls(ledger_path, policy_evaluator=policy_evaluator, clock=clock,
                     ledger_append=ledger_append, _restoring=True)
         for event in read_events(ledger_path):
-            store._replay(event)
+            store._replay(event, accepted)
         return store
 
-    def _replay(self, event):
+    def _replay(self, event, history_versions=frozenset()):
         kind, task_id, version, data = (event.get("type"), event.get("task_id"), event.get("version"),
                                         event.get("data"))
         if event.get("event_id") != f"{task_id}@{version}" or not isinstance(data, dict):
             raise MAEPError(f"ledger event {event.get('event_id')} is malformed")
-        if event.get("policy_version") != POLICY_VERSION:
+        recorded = event.get("policy_version")
+        if recorded != POLICY_VERSION and recorded not in history_versions:
             raise MAEPError("ledger event policy version does not match the store policy (MAEP-012)")
         if kind == "TASK_CREATED":
             if task_id in self._records or version != 1:
                 raise MAEPError(f"ledger history inconsistent at {event['event_id']}")
+            if recorded != POLICY_VERSION and data["task"].get("policy_version") != recorded:
+                raise MAEPError(f"historical task does not carry its recorded policy at {event['event_id']}")
             record = _new_record(data["task"])
             record["version"] = 1
+            if recorded != POLICY_VERSION:
+                record["policy_status"], record["recorded_policy_version"] = "STALE", recorded
             self._records[task_id] = record
             return
         record = self._records.get(task_id)
         if record is None or version != record["version"] + 1 or kind not in _APPLIERS:
             raise MAEPError(f"ledger history inconsistent at {event['event_id']}")
+        if (recorded == POLICY_VERSION) != (record.get("policy_status") != "STALE") or (
+                recorded != POLICY_VERSION and recorded != record.get("recorded_policy_version")):
+            # History is read-only: a task never mixes events of two policy versions.
+            raise MAEPError(f"ledger mixes policy versions for one task at {event['event_id']}")
         if kind == "TRANSITION" and data.get("from") != record["task"]["state"]:
             raise MAEPError(f"ledger transition does not start from the recorded state at {event['event_id']}")
         record["version"] = version
@@ -380,6 +422,9 @@ class TaskStore:
     def _open_record(self, task_id, expected_version):
         self._require_writer()
         record = self._record(task_id)
+        if record.get("policy_status") == "STALE":
+            raise MAEPError(f"task was recorded under {record.get('recorded_policy_version')}; it is read-only "
+                            f"history under {POLICY_VERSION} (MAEP-012)")
         if isinstance(expected_version, bool) or not isinstance(expected_version, int):
             raise MAEPError("expected_version must be an integer")
         if expected_version != record["version"]:
@@ -393,6 +438,9 @@ class TaskStore:
 
         Live mutations use the same applier as restore() unless one is passed explicitly.
         """
+        if record.get("policy_status") == "STALE":
+            raise MAEPError(f"task was recorded under {record.get('recorded_policy_version')}; it is read-only "
+                            f"history under {POLICY_VERSION} (MAEP-012)")
         if apply is None:
             applier = _APPLIERS[event_type]
             apply = lambda r: applier(r, data)  # noqa: E731

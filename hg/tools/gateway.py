@@ -308,6 +308,8 @@ class ActionGateway:
             snapshot = self._snapshot(task_id)
         except MAEPError as exc:
             return self._outcome(task_id, step_id, "BLOCKED", str(exc))
+        if snapshot.get("policy_status", "CURRENT") != "CURRENT":
+            return self._outcome(task_id, step_id, "BLOCKED", "task is history of an earlier policy (MAEP-012)")
         if snapshot["task"]["state"] != "RUNNING":
             return self._outcome(task_id, step_id, "BLOCKED", "task is not RUNNING")
         if self.pending_actions(task_id):
