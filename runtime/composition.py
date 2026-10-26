@@ -91,6 +91,14 @@ def build_runtime(*, root_store, principal_provider, candidate_provider, policy_
     )
     if any(not callable(getattr(provider, method, None)) for provider, method in provider_contracts):
         raise AuthorityError("runtime startup blocked: authority/evidence provider contract incomplete")
+    # Recover only reservations whose owning process is provably gone. Unknown effects
+    # remain non-replayable; pending recovery receipts are drained before service startup.
+    recover_interrupted = getattr(idempotency_ledger, "recover_interrupted", None)
+    if callable(recover_interrupted):
+        try:
+            recover_interrupted(receipt_sink=receipt_sink)
+        except Exception as exc:
+            raise AuthorityError("runtime startup blocked: interrupted idempotency recovery incomplete") from exc
     callable_dependencies = (authenticated_context_provider, candidate_target_provider,
                              memory_principal_provider, memory_candidate_ref_provider,
                              live_state_provider, acceptance_provider)

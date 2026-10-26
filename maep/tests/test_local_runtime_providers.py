@@ -162,6 +162,78 @@ class LocalRuntimeProviderTests(unittest.TestCase):
             self.assertEqual(reopened.claim(idempotency_key="id-1", request_digest="req:1", decision_digest="dec:1")["status"], "DUPLICATE")
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
 
+    def test_interrupted_reservation_becomes_unknown_and_never_replays(self):
+        with tempfile.TemporaryDirectory(prefix="hg-idempotency-recovery-") as temp:
+            path = Path(temp) / "ledger.sqlite3"
+            ledger = SQLiteIdempotencyLedger(path)
+            self.assertEqual(ledger.claim(idempotency_key="crash-1", request_digest="req:crash", decision_digest="dec:crash")["status"], "RESERVED")
+            # Simulate a reservation whose owning PID no longer exists; no adapter is called.
+            conn = ledger._connect()
+            try:
+                conn.execute("UPDATE idempotency SET owner_pid=2147483647,owner_start_token='stale-owner' WHERE key='crash-1'")
+            finally:
+                conn.close()
+            sink = LocalReceiptSink(Path(temp) / "receipts")
+            recovered = ledger.recover_interrupted(receipt_sink=sink)
+            self.assertEqual(len(recovered), 1)
+            self.assertEqual(recovered[0]["outcome"], "UNKNOWN")
+            self.assertIs(recovered[0]["effect_replayed"], False)
+            self.assertEqual(ledger.inspect("crash-1")["status"], "UNKNOWN")
+            self.assertEqual(ledger.claim(idempotency_key="crash-1", request_digest="req:crash", decision_digest="dec:crash")["status"], "DUPLICATE")
+            self.assertEqual(len(sink.read_all()), 1)
+            self.assertEqual(sink.read_all()[0]["recovery_event_id"], recovered[0]["recovery_event_id"])
+            self.assertEqual(ledger.recover_interrupted(receipt_sink=sink), [])
+            self.assertEqual(len(sink.read_all()), 1)
+
+    def test_recovery_outbox_survives_receipt_sink_failure_and_retries(self):
+        with tempfile.TemporaryDirectory(prefix="hg-idempotency-outbox-") as temp:
+            ledger = SQLiteIdempotencyLedger(Path(temp) / "ledger.sqlite3")
+            ledger.claim(idempotency_key="crash-outbox", request_digest="req:outbox", decision_digest="dec:outbox")
+            conn = ledger._connect()
+            try:
+                conn.execute("UPDATE idempotency SET owner_pid=2147483647,owner_start_token='stale-owner' WHERE key='crash-outbox'")
+            finally:
+                conn.close()
+
+            class FailingSink:
+                def append(self, event):
+                    raise OSError("simulated receipt sink outage")
+
+            with self.assertRaisesRegex(AuthorityError, "receipt delivery pending"):
+                ledger.recover_interrupted(receipt_sink=FailingSink())
+            self.assertEqual(ledger.inspect("crash-outbox")["status"], "UNKNOWN")
+            conn = ledger._connect()
+            try:
+                pending = conn.execute("SELECT delivered FROM recovery_outbox").fetchone()[0]
+            finally:
+                conn.close()
+            self.assertEqual(pending, 0)
+
+            sink = LocalReceiptSink(Path(temp) / "receipts")
+            self.assertEqual(ledger.recover_interrupted(receipt_sink=sink), [])
+            self.assertEqual(len(sink.read_all()), 1)
+            conn = ledger._connect()
+            try:
+                delivered = conn.execute("SELECT delivered FROM recovery_outbox").fetchone()[0]
+            finally:
+                conn.close()
+            self.assertEqual(delivered, 1)
+
+    def test_recovery_leaves_live_reservation_alone_and_blocks_legacy_rows(self):
+        with tempfile.TemporaryDirectory(prefix="hg-idempotency-recovery-live-") as temp:
+            ledger = SQLiteIdempotencyLedger(Path(temp) / "ledger.sqlite3")
+            ledger.claim(idempotency_key="live-1", request_digest="req:live", decision_digest="dec:live")
+            sink = LocalReceiptSink(Path(temp) / "receipts")
+            self.assertEqual(ledger.recover_interrupted(receipt_sink=sink), [])
+            self.assertEqual(ledger.inspect("live-1")["status"], "RESERVED")
+            conn = ledger._connect()
+            try:
+                conn.execute("INSERT INTO idempotency(key,request_digest,decision_digest,status) VALUES('legacy-1','req:legacy','dec:legacy','RESERVED')")
+            finally:
+                conn.close()
+            with self.assertRaisesRegex(AuthorityError, "legacy RESERVED row lacks process ownership provenance"):
+                ledger.recover_interrupted(receipt_sink=sink)
+
     def test_receipt_sink_readback_and_tamper_detection(self):
         with tempfile.TemporaryDirectory(prefix="hg-receipts-") as temp:
             sink = LocalReceiptSink(temp)

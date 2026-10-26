@@ -304,9 +304,108 @@ class SQLiteIdempotencyLedger:
         conn.execute("PRAGMA foreign_keys=ON")
         if init:
             conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("CREATE TABLE IF NOT EXISTS idempotency (key TEXT PRIMARY KEY, request_digest TEXT NOT NULL, decision_digest TEXT NOT NULL, status TEXT NOT NULL, outcome TEXT, receipt_json TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)")
+            conn.execute("CREATE TABLE IF NOT EXISTS idempotency (key TEXT PRIMARY KEY, request_digest TEXT NOT NULL, decision_digest TEXT NOT NULL, status TEXT NOT NULL, outcome TEXT, receipt_json TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, owner_pid INTEGER, owner_start_token TEXT)")
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(idempotency)")}
+            if "owner_pid" not in columns:
+                conn.execute("ALTER TABLE idempotency ADD COLUMN owner_pid INTEGER")
+            if "owner_start_token" not in columns:
+                conn.execute("ALTER TABLE idempotency ADD COLUMN owner_start_token TEXT")
+            conn.execute("CREATE TABLE IF NOT EXISTS recovery_outbox (event_id TEXT PRIMARY KEY, idempotency_key TEXT NOT NULL, payload_json TEXT NOT NULL, delivered INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)")
         os.chmod(self.path, 0o600)
         return conn
+
+    @staticmethod
+    def _process_start_token(pid: int) -> str | None:
+        """Return Linux /proc start-time token, preventing PID-reuse false positives."""
+        try:
+            raw = Path(f"/proc/{pid}/stat").read_text(encoding="ascii")
+            # comm (field 2) may contain spaces or parentheses; split only after its final ')'.
+            tail = raw[raw.rfind(")") + 2:].split()
+            return tail[19] if len(tail) > 19 else None  # field 22, starttime
+        except (OSError, UnicodeError, IndexError):
+            return None
+
+    def recover_interrupted(self, *, receipt_sink: Any) -> list[dict[str, Any]]:
+        """Convert provably orphaned reservations to UNKNOWN and drain a durable receipt outbox.
+
+        Never replays an adapter. A reservation owned by a live process is left alone;
+        legacy reservations without process provenance block startup instead of guessing.
+        Receipt delivery is at-least-once with a stable recovery_event_id for deduplication.
+        """
+        if not callable(getattr(receipt_sink, "append", None)):
+            raise AuthorityError("recovery requires a durable receipt sink")
+        current_pid = os.getpid()
+        conn = self._connect()
+        recovered: list[dict[str, Any]] = []
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            rows = conn.execute("SELECT key,request_digest,decision_digest,owner_pid,owner_start_token FROM idempotency WHERE status='RESERVED'").fetchall()
+            for key, request_digest, decision_digest, owner_pid, owner_token in rows:
+                if (not isinstance(owner_pid, int) or isinstance(owner_pid, bool) or owner_pid <= 0
+                        or not isinstance(owner_token, str) or not owner_token):
+                    raise AuthorityError("recovery blocked: legacy RESERVED row lacks process ownership provenance")
+                observed = self._process_start_token(owner_pid)
+                if observed is None:
+                    try:
+                        os.kill(owner_pid, 0)
+                    except ProcessLookupError:
+                        pass  # Kernel confirms the owner PID no longer exists.
+                    except PermissionError as exc:
+                        raise AuthorityError("recovery blocked: cannot inspect reservation owner process") from exc
+                    else:
+                        raise AuthorityError("recovery blocked: owner process exists but its identity cannot be verified")
+                elif observed == owner_token:
+                    continue  # Still-owned by a live process; never steal its reservation.
+                # A different start token means the numeric PID was reused; the original owner is gone.
+                event_id = "hg-recovery:" + hashlib.sha256(
+                    (key + "\0" + request_digest + "\0" + decision_digest).encode("utf-8")
+                ).hexdigest()
+                payload = {
+                    "event_type": "idempotency.interrupted_reservation",
+                    "recovery_event_id": event_id,
+                    "idempotency_key": key,
+                    "request_digest": request_digest,
+                    "decision_digest": decision_digest,
+                    "outcome": "UNKNOWN",
+                    "reason": "OWNER_PROCESS_EXITED_RECONCILIATION_REQUIRED",
+                    "effect_replayed": False,
+                }
+                conn.execute("UPDATE idempotency SET status='UNKNOWN',outcome='UNKNOWN',receipt_json=?,updated_at=CURRENT_TIMESTAMP WHERE key=? AND status='RESERVED'",
+                             (_canonical({"status":"UNKNOWN","reason":payload["reason"],"recovery_event_id":event_id}).decode("utf-8"), key))
+                conn.execute("INSERT OR IGNORE INTO recovery_outbox(event_id,idempotency_key,payload_json) VALUES(?,?,?)",
+                             (event_id, key, _canonical(payload).decode("utf-8")))
+                recovered.append(payload)
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+        # Drain committed outbox entries. If append succeeds but acknowledgement crashes,
+        # the same event_id is emitted again; consumers can deduplicate on that stable key.
+        conn = self._connect()
+        try:
+            pending = conn.execute("SELECT event_id,payload_json FROM recovery_outbox WHERE delivered=0 ORDER BY created_at,event_id").fetchall()
+        finally:
+            conn.close()
+        for event_id, payload_json in pending:
+            payload = json.loads(payload_json)
+            try:
+                receipt_sink.append(payload)
+            except Exception as exc:
+                raise AuthorityError("recovery receipt delivery pending; startup must remain blocked") from exc
+            conn = self._connect()
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                conn.execute("UPDATE recovery_outbox SET delivered=1 WHERE event_id=?", (event_id,))
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+            finally:
+                conn.close()
+        return recovered
 
     def claim(self, *, idempotency_key: str, request_digest: str, decision_digest: str) -> dict[str, Any]:
         if not all(isinstance(v, str) and v.strip() for v in (idempotency_key, request_digest, decision_digest)):
@@ -320,7 +419,12 @@ class SQLiteIdempotencyLedger:
                 if row[0] != request_digest or row[1] != decision_digest:
                     return {"status": "CONFLICT"}
                 return {"status": "DUPLICATE" if row[2] == "RESERVED" or row[2] in {"SUCCESS", "FAILURE", "UNKNOWN"} else "UNRESOLVED"}
-            conn.execute("INSERT INTO idempotency(key,request_digest,decision_digest,status) VALUES(?,?,?,'RESERVED')", (idempotency_key, request_digest, decision_digest))
+            start_token = self._process_start_token(os.getpid())
+            if start_token is None:
+                conn.rollback()
+                raise AuthorityError("cannot reserve idempotency key without process identity provenance")
+            conn.execute("INSERT INTO idempotency(key,request_digest,decision_digest,status,owner_pid,owner_start_token) VALUES(?,?,?,'RESERVED',?,?)",
+                         (idempotency_key, request_digest, decision_digest, os.getpid(), start_token))
             conn.commit()
             return {"status": "RESERVED"}
         except Exception:
