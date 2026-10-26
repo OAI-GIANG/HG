@@ -111,18 +111,20 @@ class HTTPServerTests(unittest.TestCase):
         self.assertEqual(body.get("error"), "invalid_json")
 
     def test_wp0_unsupported_method_is_json_405_with_allow_header(self):
-        conn = http.client.HTTPConnection(self.host, self.port, timeout=2)
-        conn.request("PUT", "/api/tasks/unused")
-        response = conn.getresponse()
-        payload = json.loads(response.read().decode())
-        allow = response.getheader("Allow")
-        content_type = response.getheader("Content-Type")
-        conn.close()
-        self.assertEqual(response.status, 405)
-        self.assertEqual(payload.get("status"), "BLOCKED")
-        self.assertEqual(payload.get("error"), "METHOD_NOT_ALLOWED")
-        self.assertEqual(content_type, "application/json; charset=utf-8")
-        self.assertEqual(allow, "GET, POST")
+        for method in ("PUT", "DELETE", "PATCH", "OPTIONS"):
+            with self.subTest(method=method):
+                conn = http.client.HTTPConnection(self.host, self.port, timeout=2)
+                conn.request(method, "/api/tasks/unused")
+                response = conn.getresponse()
+                payload = json.loads(response.read().decode())
+                allow = response.getheader("Allow")
+                content_type = response.getheader("Content-Type")
+                conn.close()
+                self.assertEqual(response.status, 405)
+                self.assertEqual(payload.get("status"), "BLOCKED")
+                self.assertEqual(payload.get("error"), "METHOD_NOT_ALLOWED")
+                self.assertEqual(content_type, "application/json; charset=utf-8")
+                self.assertEqual(allow, "GET, POST")
 
     def test_wp0_unsupported_method_with_unapproved_host_is_host_rejected(self):
         conn = http.client.HTTPConnection(self.host, self.port, timeout=2)
