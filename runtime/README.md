@@ -49,6 +49,31 @@ The factory verifies the configuration and the provisioned trust root, then bloc
 
 The existing `hg serve` deployment is unchanged. Do not bypass the factory startup checks or claim `HG_RUNTIME_READY` until this separate runtime has been provisioned and verified. The runtime must remain stopped until the production factory and its trust inputs are explicitly provisioned and verified.
 
+## HTTP boundary contract (WP0)
+
+The candidate service binds IPv4 loopback only. Every request must carry exactly one `Host` header equal to `127.0.0.1:<actual-bound-port>`; missing, duplicate, malformed, or other host values receive a JSON `400` response (`host_header_invalid`). This check is a loopback client-binding guard, not proof that the production authenticator/session has been provisioned.
+
+| Endpoint | Authentication | Success / not-ready behavior | Purpose |
+| --- | --- | --- | --- |
+| `GET /health` | Public after Host validation | `200` with `status: LIVE` | Process liveness only; does not certify release readiness or trust state. |
+| `GET /health/ready` | Protected; current authenticated context must match runtime context | `200` only with `release: VERIFIED` and `trust: LOADED`; otherwise `503 NOT_READY` | Release/trust readiness evidence, re-evaluated for each request. |
+| `GET /api/tasks` | Protected before query parsing | `200` result or documented `400` query validation error | Authorized task index; requires `index_scope_task_id`, optional `limit` and `offset`. |
+| `GET /api/tasks/{task_id}` | Protected before Memory access | `200` result or generic route/resource error | Authorized task read. |
+| `POST /api/dispatch` | Protected before JSON parsing and route-specific validation | `200` result; `409` for in-progress/conflict/unknown idempotency state; other failures use the JSON error envelope | Authorized Brain dispatch. |
+| `POST /api/reconcile` | Protected before JSON parsing and route-specific validation | `200` reconciliation result or generic blocked response | Reads/reconciles uncertain effects; never automatically replays the adapter. |
+| `POST /api/tasks` | Protected before JSON parsing and route-specific validation | `200` result or documented validation/authorization error | Authorized Memory task creation. |
+| `POST /api/tasks/{task_id}/review-and-simulate` | Protected before JSON parsing and route-specific validation | `200` result or generic blocked response | Review/simulation path; fails closed without required providers. |
+| `POST /api/tasks/{task_id}/transition` | Protected before JSON parsing and route-specific validation | `200` result or generic blocked response | Authorized Memory transition. |
+| `POST /api/evidence` | Protected before JSON parsing and route-specific validation | `200` result or generic blocked response | Authorized evidence write. |
+
+Transport framing, request deadlines, and body-size limits may reject a request before authentication to bound resource use. For a protected route that passes those transport checks, authentication/context validation precedes route-specific query or JSON schema validation; an unauthenticated caller must not learn those validation details.
+
+Unsupported methods (`PUT`, `DELETE`, `PATCH`, `OPTIONS`, and other unimplemented verbs) return JSON `405 METHOD_NOT_ALLOWED` with `Allow: GET, POST`; inherited HTML error pages are not part of the API contract.
+
+For idempotent dispatch, a finalized same-key/same-request result may be replayed only after current authorization succeeds and the durable ledger proves the stored request digest and finalized receipt. A different request digest returns `409 IDEMPOTENCY_CONFLICT`. A live owner returns `409 IDEMPOTENCY_IN_PROGRESS`. A crash-unknown outcome returns `409 IDEMPOTENCY_RECONCILIATION_REQUIRED` and must be reconciled before retry; the runtime never infers that the effect did not happen and never automatically replays an uncertain effect.
+
+These are candidate-code contracts validated by tests, not a claim that a production service is running. Production authenticator/host wiring, owner-controlled configuration and trust inputs must be independently inspected before readiness or deployment can be claimed.
+
 ## Interrupted idempotency recovery
 
 The SQLite ledger records process ownership for new reservations. During composition, proven orphan reservations transition to `UNKNOWN` and a durable outbox retries recovery receipts; no adapter is automatically replayed. Legacy reservations without ownership provenance block startup and require reconciliation.
