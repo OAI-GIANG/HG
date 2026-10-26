@@ -206,7 +206,8 @@ def compose_service(config: dict[str, Any], bindings: dict[str, Any]):
     record_resolver = MemoryMAEPRecordResolver(memory_store=reader, selectors=selectors)
     provenance = MemoryLedgerProvenanceVerifier(memory_verifier)
     applicability = TrustedApplicabilityProvider(root_store=root_store, policy_provider=policy_provider,
-                                                 resolver=record_resolver, verifier=provenance)
+                                                 resolver=record_resolver, verifier=provenance,
+                                                 memory_store_path=str(reader.path))
     gate = TrustedGateEvidenceProvider(root_store=root_store, policy_provider=policy_provider,
                                        resolver=record_resolver, verifier=provenance)
 

@@ -207,6 +207,90 @@ class CompositionE2ETests(unittest.TestCase):
             compose_service(self.config, missing)
 
 
+class MemoryApplicabilityRulesE2ETests(CompositionE2ETests):
+    """N1 fixed: the approved policy carries a narrow memory: applicability rule."""
+    for _name in [n for n in dir(CompositionE2ETests) if n.startswith("test_")]:
+        locals()[_name] = None
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix="hg-e2e-n1-")
+        self.addCleanup(self.tmp.cleanup)
+        self.state = fixture.provision(self.tmp.name, memory_rules=True)
+        self.config = self.state["config"]
+        self.token = Path(self.state["token_path"]).read_text().strip()
+        self.session = TokenSessionSource(**self.state["session"])
+
+    def evidence(self, evidence_id):
+        item = fixture.store_fixtures.MemoryStoreTests.evidence(evidence_id, self.state["candidate_ref"])
+        item["source_ref"] = "test://created-over-http"
+        return item
+
+    def test_task_is_created_read_and_given_evidence_over_http(self):
+        server = self.start()
+        task = fixture.store_fixtures.MemoryStoreTests.task(fixture.NEW_TASK)
+        status, body = self.call(server, "POST", "/api/tasks", body={"task": task})
+        self.assertEqual(status, 200, body)
+        status, body = self.call(server, "GET", f"/api/tasks/{fixture.NEW_TASK}")
+        self.assertEqual((status, body["result"]["task"]["state"]), (200, "DRAFT"), body)
+        status, body = self.call(server, "POST", "/api/evidence",
+                                 body={"task_id": fixture.NEW_TASK, "evidence": self.evidence(fixture.NEW_EVIDENCE)})
+        self.assertEqual(status, 200, body)
+        reader = AuthorityEvidenceReader(self.config["memory_db"])
+        self.assertIn(fixture.NEW_TASK, reader.list_canonical_task_ids())
+        self.assertIsNotNone(reader.get_evidence(fixture.NEW_TASK, fixture.NEW_EVIDENCE))
+        decisions = self.decisions()
+        self.assertTrue(decisions and all(d == ("authorization.decision", ["AUTHORIZED"]) for d in decisions))
+
+    def test_rule_does_not_bypass_policy_rules_or_session_scopes(self):
+        server = self.start()
+        task = fixture.store_fixtures.MemoryStoreTests.task("T-E2E-NOT-IN-POLICY")
+        status, body = self.call(server, "POST", "/api/tasks", body={"task": task})
+        self.assertEqual(status, 403, body)
+        self.assertEqual(self.decisions(), [("authorization.deny", ["PRINCIPAL_SCOPE_DENIED"])])
+        status, body = self.call(server, "POST", "/api/evidence",
+                                 body={"task_id": fixture.READ_TASK, "evidence": self.evidence("EV-NOT-LISTED")})
+        self.assertEqual(status, 403, body)
+
+    def test_unapproved_task_record_still_blocks_memory_reads(self):
+        server = self.start()
+        status, body = self.call(server, "GET", f"/api/tasks/{fixture.UNAPPROVED_TASK}")
+        self.assertEqual(status, 403, body)
+
+    def test_dispatch_runs_when_the_task_record_binds_it(self):
+        adapter = fixture.FixtureAdapter()
+        server = self.start(adapter=adapter)
+        status, body = self.dispatch(server, fixture.RUN_EXEC_TASK, adapter)
+        self.assertEqual(status, 200, body)
+        self.assertEqual(adapter.calls, 1)
+        outcomes = [r.get("payload", r).get("outcome") for r in self.receipts()]
+        self.assertEqual(outcomes, ["SUCCESS"])
+
+    def test_dispatch_without_its_own_record_stays_blocked(self):
+        adapter = fixture.FixtureAdapter()
+        server = self.start(adapter=adapter)
+        status, body = self.dispatch(server, fixture.RUN_READ_TASK, adapter)
+        self.assertEqual(status, 403, body)
+        self.assertEqual(adapter.calls, 0)
+
+    def test_capability_affecting_dispatch_without_gate_is_blocked(self):
+        adapter = fixture.FixtureAdapter()
+        server = self.start(adapter=adapter)
+        status, body = self.dispatch(server, fixture.RUN_REQ_TASK, adapter)
+        self.assertEqual(status, 403, body)
+        self.assertEqual(adapter.calls, 0)
+        self.assertIn(("authorization.blocked", ["AUTHORITY_VALIDATION_FAILED"]), self.decisions())
+
+    def test_dispatch_naming_a_memory_resource_is_refused(self):
+        adapter = fixture.FixtureAdapter()
+        server = self.start(adapter=adapter)
+        request = {"task_ref": fixture.RUN_EXEC_TASK, "action": "WRITE",
+                   "resource": f"memory:task/{fixture.RUN_EXEC_TASK}", "scope": [fixture.DISPATCH_RESOURCE]}
+        status, body = self.call(server, "POST", "/api/dispatch",
+                                 body={"request": request, "adapter_name": "fixture", "idempotency_key": "e2e-mem"})
+        self.assertEqual(status, 403, body)
+        self.assertEqual(adapter.calls, 0)
+
+
 class ServiceProcessE2ETests(unittest.TestCase):
     """python -m runtime.service lifecycle on its own port and state directory."""
 

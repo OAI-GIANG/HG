@@ -108,6 +108,11 @@ class MemoryMAEPRecordResolver:
         candidate_ref = candidate.get("candidate_ref")
         if not isinstance(task_id, str) or not task_id or not isinstance(candidate_ref, str) or not candidate_ref:
             raise AuthorityError("canonical task and candidate refs are required for applicability lookup")
+        task_exists = getattr(self.selectors, "task_exists", None)
+        if callable(task_exists) and task_exists(task_id) is False:
+            # The canonical store, after its integrity checks, has no such task (e.g.
+            # the task is being created): there is no task-level record to apply.
+            return None
         ref = self.selectors.resolve_applicability_ref(request, candidate)
         if not isinstance(ref, str) or not ref:
             return None
@@ -256,6 +261,21 @@ class CanonicalMemoryTaskSelectors:
         if len(task_ids) != len(set(task_ids)):
             raise AuthorityError("canonical task ID source contains duplicate task identity")
         return task_ids
+
+    def task_exists(self, task_id: str) -> bool:
+        """Strict existence check; requires a store that can say a task is absent."""
+        if not isinstance(task_id, str) or not task_id.strip():
+            raise AuthorityError("canonical task ID is required")
+        has_task = getattr(self.memory_store, "has_task", None)
+        if not callable(has_task):
+            raise AuthorityError("canonical task existence check unavailable")
+        try:
+            result = has_task(task_id)
+        except Exception as exc:
+            raise AuthorityError("canonical task existence check failed") from exc
+        if not isinstance(result, bool):
+            raise AuthorityError("canonical task existence check returned invalid data")
+        return result
 
     def _task(self, task_id: str) -> dict[str, Any]:
         if not isinstance(task_id, str) or not task_id.strip():
