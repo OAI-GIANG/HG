@@ -94,9 +94,12 @@ def provision(base: str | Path, *, port: int = 0, memory_rules: bool = False) ->
     candidate_ref = candidate["candidate_ref"]
 
     config = {
-        "schema": "hg-runtime-factory-config-v1", "host": "127.0.0.1", "port": port,
+        "schema": "hg-runtime-factory-config-v2", "host": "127.0.0.1", "port": port,
         "checkout": str(checkout), "authority_dir": str(base / "authority"),
-        "policy_path": str(base / "policy.json"), "evidence_dir": str(base / "evidence"),
+        "policy_path": str(base / "policy.json"),
+        "policy_approval_path": str(base / "authority" / "policy-approval.json"),
+        "file_write_roots": {"sandbox": str(base / "write-root")},
+        "evidence_dir": str(base / "evidence"),
         "memory_db": str(base / "memory" / "hg.sqlite3"),
         "idempotency_db": str(base / "idempotency.sqlite3"), "receipts_dir": str(base / "receipts"),
     }
@@ -187,6 +190,8 @@ def provision(base: str | Path, *, port: int = 0, memory_rules: bool = False) ->
 
     session = {"session_path": str(base / "session" / "session.json"),
                "revocation_path": str(base / "session" / "revocations.json")}
+    config.update(session_record=session["session_path"], session_revocations=session["revocation_path"])
+    Path(config["file_write_roots"]["sandbox"]).mkdir(parents=True, exist_ok=True)
     issue_session(session_path=session["session_path"], token_path=base / "session" / "token",
                   revocation_path=session["revocation_path"], principal_id="STT", valid_days=1,
                   capabilities=["READ", "WRITE", DISPATCH_ACTION], resource_scopes=resources,
