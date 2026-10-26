@@ -288,7 +288,8 @@ class ToolAcceptanceLifecycleE2ETests(composition.CompositionE2ETests):
         self.assertEqual(self.dispatch(server)[0], 200)
         (self.tool_root / PATH).unlink()
         status, body = self.dispatch(server)          # same key
-        self.assertEqual(status, 403, body)
+        self.assertEqual(status, 200, body)
+        self.assertTrue(body["result"]["replayed"])
         self.assertFalse((self.tool_root / PATH).exists())
         self.assertEqual(len(self.effect_receipts()), 1)
 
@@ -325,6 +326,10 @@ class ToolAcceptanceLifecycleE2ETests(composition.CompositionE2ETests):
         thread.start()
         self.addCleanup(lambda: (server.shutdown(), thread.join(timeout=2)))
 
+        ready_status, ready_body = self.call(server, "GET", "/health/ready")
+        self.assertEqual(ready_status, 200, ready_body)
+        self.assertEqual(ready_body.get("status"), "READY")
+        self.assertEqual((ready_body.get("release"), ready_body.get("trust")), ("VERIFIED", "LOADED"))
         self.run_to_running(server)
         status, body = self.dispatch(server, key="factory-lifecycle-1")
         self.assertEqual(status, 200, body)

@@ -148,13 +148,13 @@ class LocalRuntimeProviderTests(unittest.TestCase):
         self.assertTrue(candidate["source_manifest_digest"].startswith("sha256:"))
         self.assertIn("local_observation_not_independent_provenance", candidate["verification_scope"])
 
-    def test_idempotency_is_durable_and_duplicate_key_never_reserves_twice(self):
+    def test_idempotency_distinguishes_inflight_from_completed_replay(self):
         with tempfile.TemporaryDirectory(prefix="hg-idempotency-") as temp:
             path = Path(temp) / "ledger.sqlite3"
             ledger = SQLiteIdempotencyLedger(path)
             first = ledger.claim(idempotency_key="id-1", request_digest="req:1", decision_digest="dec:1")
             self.assertEqual(first["status"], "RESERVED")
-            self.assertEqual(ledger.claim(idempotency_key="id-1", request_digest="req:1", decision_digest="dec:1")["status"], "DUPLICATE")
+            self.assertEqual(ledger.claim(idempotency_key="id-1", request_digest="req:1", decision_digest="dec:1")["status"], "IN_PROGRESS")
             self.assertEqual(ledger.claim(idempotency_key="id-1", request_digest="req:2", decision_digest="dec:1")["status"], "CONFLICT")
             ledger.record_outcome(idempotency_key="id-1", request_digest="req:1", outcome="SUCCESS", receipt={"receipt_id": "r1"})
             reopened = SQLiteIdempotencyLedger(path)
@@ -179,7 +179,7 @@ class LocalRuntimeProviderTests(unittest.TestCase):
             self.assertEqual(recovered[0]["outcome"], "UNKNOWN")
             self.assertIs(recovered[0]["effect_replayed"], False)
             self.assertEqual(ledger.inspect("crash-1")["status"], "UNKNOWN")
-            self.assertEqual(ledger.claim(idempotency_key="crash-1", request_digest="req:crash", decision_digest="dec:crash")["status"], "DUPLICATE")
+            self.assertEqual(ledger.claim(idempotency_key="crash-1", request_digest="req:crash", decision_digest="dec:crash")["status"], "UNKNOWN")
             self.assertEqual(len(sink.read_all()), 1)
             self.assertEqual(sink.read_all()[0]["recovery_event_id"], recovered[0]["recovery_event_id"])
             self.assertEqual(ledger.recover_interrupted(receipt_sink=sink), [])

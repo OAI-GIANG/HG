@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import unittest
 
 from runtime.http_server import HGHTTPServer, HTTPBoundaryError
+from brain.orchestrator import OrchestrationError
 from brain.tests.test_orchestrator import BrainTests
 
 
@@ -85,6 +86,101 @@ class HTTPServerTests(unittest.TestCase):
         conn.close()
         return status, result
 
+    def test_wp0_unauthenticated_malformed_query_is_auth_first(self):
+        status, body = self.request("GET", "/api/tasks?bad", token=False)
+        self.assertEqual(status, 401)
+        self.assertEqual(body.get("error"), "authentication_unavailable_or_denied")
+
+    def test_wp0_authorized_malformed_query_gets_validation_error(self):
+        status, body = self.request("GET", "/api/tasks?bad", token=True)
+        self.assertEqual(status, 400)
+        self.assertIn(body.get("error"), {"task_index_query_invalid", "task_index_scope_required"})
+
+    def test_wp0_unauthenticated_malformed_json_is_auth_first(self):
+        status, body = self.request(
+            "POST", "/api/dispatch", token=False, raw=b"{", content_type="application/json"
+        )
+        self.assertEqual(status, 401)
+        self.assertEqual(body.get("error"), "authentication_unavailable_or_denied")
+
+    def test_wp0_authorized_malformed_json_gets_validation_error(self):
+        status, body = self.request(
+            "POST", "/api/dispatch", token=True, raw=b"{", content_type="application/json"
+        )
+        self.assertEqual(status, 400)
+        self.assertEqual(body.get("error"), "invalid_json")
+
+    def test_wp0_unsupported_method_is_json_405_with_allow_header(self):
+        conn = http.client.HTTPConnection(self.host, self.port, timeout=2)
+        conn.request("PUT", "/api/tasks/unused")
+        response = conn.getresponse()
+        payload = json.loads(response.read().decode())
+        allow = response.getheader("Allow")
+        content_type = response.getheader("Content-Type")
+        conn.close()
+        self.assertEqual(response.status, 405)
+        self.assertEqual(payload.get("status"), "BLOCKED")
+        self.assertEqual(payload.get("error"), "METHOD_NOT_ALLOWED")
+        self.assertEqual(content_type, "application/json; charset=utf-8")
+        self.assertEqual(allow, "GET, POST")
+
+    def test_wp0_unsupported_method_with_unapproved_host_is_host_rejected(self):
+        conn = http.client.HTTPConnection(self.host, self.port, timeout=2)
+        conn.request("PUT", "/api/tasks/unused", headers={"Host": "attacker.invalid"})
+        response = conn.getresponse()
+        payload = json.loads(response.read().decode())
+        conn.close()
+        self.assertEqual(response.status, 400)
+        self.assertEqual(payload.get("error"), "host_header_invalid")
+
+    def test_wp0_wrong_host_is_rejected(self):
+        conn = http.client.HTTPConnection(self.host, self.port, timeout=2)
+        conn.request("GET", "/health", headers={"Host": "attacker.invalid"})
+        response = conn.getresponse()
+        payload = json.loads(response.read().decode())
+        conn.close()
+        self.assertEqual(response.status, 400)
+        self.assertEqual(payload.get("error"), "host_header_invalid")
+
+    def test_wp0_missing_host_is_rejected(self):
+        import socket
+        with socket.create_connection((self.host, self.port), timeout=2) as sock:
+            sock.sendall(b"GET /health HTTP/1.1\r\nConnection: close\r\n\r\n")
+            data = sock.recv(4096)
+        self.assertIn(b" 400 ", data.split(b"\r\n", 1)[0])
+        self.assertIn(b"host_header_invalid", data)
+
+    def test_wp0_duplicate_host_is_rejected(self):
+        import socket
+        with socket.create_connection((self.host, self.port), timeout=2) as sock:
+            sock.sendall(
+                b"GET /health HTTP/1.1\r\n"
+                b"Host: 127.0.0.1\r\n"
+                b"Host: attacker.invalid\r\n"
+                b"Connection: close\r\n\r\n"
+            )
+            data = sock.recv(4096)
+        self.assertIn(b" 400 ", data.split(b"\r\n", 1)[0])
+
+    def test_wp0_health_is_liveness_not_readiness(self):
+        status, body = self.request("GET", "/health")
+        self.assertEqual(status, 200)
+        self.assertEqual(body.get("status"), "LIVE")
+        status, body = self.request("GET", "/health/ready", token=False)
+        self.assertEqual(status, 401)
+        self.assertEqual(body.get("error"), "authentication_unavailable_or_denied")
+        status, body = self.request("GET", "/health/ready", token=True)
+        self.assertEqual(status, 503)
+        self.assertEqual(body.get("status"), "NOT_READY")
+        self.runtime.readiness_provider = lambda: {"release": "VERIFIED", "trust": "LOADED"}
+        status, body = self.request("GET", "/health/ready", token=True)
+        self.assertEqual(status, 200)
+        self.assertEqual(body.get("status"), "READY")
+        self.assertEqual((body.get("release"), body.get("trust")), ("VERIFIED", "LOADED"))
+        self.runtime.readiness_provider = lambda: {"release": "UNKNOWN", "trust": "LOADED"}
+        status, body = self.request("GET", "/health/ready", token=True)
+        self.assertEqual(status, 503)
+
     def test_review_and_simulate_route_fails_closed_without_critique_provider(self):
         status, body = self.request(
             "POST", "/api/tasks/HTTP-REVIEW-1/review-and-simulate",
@@ -155,6 +251,24 @@ class HTTPServerTests(unittest.TestCase):
         self.assertEqual(body["status"], "BLOCKED")
         self.assertEqual(self.fixture.adapter.calls, 0)
 
+    def test_wp0_idempotency_states_map_to_explicit_conflict_responses(self):
+        cases = (
+            ("IN_PROGRESS: concurrent request", "IN_PROGRESS", "IDEMPOTENCY_IN_PROGRESS"),
+            ("CONFLICT: request digest changed", "BLOCKED", "IDEMPOTENCY_CONFLICT"),
+            ("OUTCOME_UNKNOWN: reconcile before retry", "UNKNOWN", "IDEMPOTENCY_RECONCILIATION_REQUIRED"),
+        )
+        for message, expected_status, expected_error in cases:
+            with self.subTest(message=message):
+                def fail_dispatch(**_kwargs):
+                    raise OrchestrationError(message)
+                self.fixture.brain.dispatch = fail_dispatch
+                payload = {"request": self.fixture.request, "adapter_name": "test",
+                           "idempotency_key": "http-state-test"}
+                status, body = self.request("POST", "/api/dispatch", payload)
+                self.assertEqual(status, 409)
+                self.assertEqual(body.get("status"), expected_status)
+                self.assertEqual(body.get("error"), expected_error)
+
     def test_dispatch_uses_existing_brain_and_idempotency(self):
         payload = {"request": self.fixture.request, "adapter_name": "test", "idempotency_key": "http-allow-1"}
         status, body = self.request("POST", "/api/dispatch", payload)
@@ -162,8 +276,8 @@ class HTTPServerTests(unittest.TestCase):
         self.assertEqual(body["result"]["outcome"], "SUCCESS")
         self.assertEqual(self.fixture.adapter.calls, 1)
         status, replay = self.request("POST", "/api/dispatch", payload)
-        self.assertEqual(status, 403)
-        self.assertEqual(replay["status"], "BLOCKED")
+        self.assertEqual(status, 200, replay)
+        self.assertTrue(replay["result"]["replayed"])
         self.assertEqual(self.fixture.adapter.calls, 1)
 
     def test_unverified_candidate_denies_before_effect(self):
@@ -321,8 +435,8 @@ class HTTPServerTests(unittest.TestCase):
                 b"Content-Type: application/json\r\nContent-Length: 100\r\n\r\n{\"request\"")
         data, elapsed = self._stalled_connection_closes(head)
         self.assertLess(elapsed, 4)
-        self.assertIn(b" 408 ", data.split(b"\r\n", 1)[0])
-        self.assertIn(b"request_body_timeout", data)
+        self.assertIn(b" 400 ", data.split(b"\r\n", 1)[0])
+        self.assertIn(b"host_header_invalid", data)
         self.assertEqual(self.fixture.adapter.calls, 0)
 
     def test_request_timeout_must_be_bounded(self):

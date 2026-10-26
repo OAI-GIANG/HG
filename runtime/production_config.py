@@ -289,6 +289,27 @@ def compose_service(config: dict[str, Any], bindings: dict[str, Any]):
             raise AuthorityError("Memory candidate unavailable: checkout is not a verified HG candidate")
         return candidate["candidate_ref"]
 
+    def readiness_provider():
+        # Readiness is evidence-based and re-evaluated per request. A dirty or
+        # unverified checkout is not reported as a verified release.
+        try:
+            active_root = root_store.load_active()
+            if not isinstance(active_root, TrustRootRecord) or not active_root.verify_integrity():
+                return None
+            active_policy = policy_provider.load_active(active_root)
+            if (not isinstance(active_policy, dict) or active_policy.get("status") != "ACTIVE"
+                    or active_policy.get("provenance_verified") is not True
+                    or active_policy.get("root_generation") != active_root.generation):
+                return None
+            current_candidate = candidate_provider.inspect(checkout)
+            if (not isinstance(current_candidate, dict) or current_candidate.get("verified") is not True
+                    or current_candidate.get("repository") != "OAI-GIANG/HG"
+                    or current_candidate.get("working_tree_dirty") is not False):
+                return None
+            return {"release": "VERIFIED", "trust": "LOADED"}
+        except Exception:
+            return None
+
     try:
         runtime = build_runtime(
             root_store=root_store, principal_provider=principal_provider,
@@ -303,6 +324,7 @@ def compose_service(config: dict[str, Any], bindings: dict[str, Any]):
             acceptance_provider=acceptance_provider, adapter_registry=dict(adapters),
             idempotency_ledger=SQLiteIdempotencyLedger(config["idempotency_db"]),
             receipt_sink=LocalReceiptSink(config["receipts_dir"]),
+            readiness_provider=readiness_provider,
         )
     except AuthorityError as exc:
         raise RuntimeStartupError("production composition blocked: " + str(exc)) from exc

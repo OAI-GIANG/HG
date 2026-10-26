@@ -172,7 +172,20 @@ class HGHTTPServer:
         self.httpd.shutdown()
         self.httpd.server_close()
 
+    def _validate_host(self, headers):
+        try:
+            values = headers.get_all("Host", [])
+        except Exception as exc:
+            raise HTTPBoundaryError(400, "host_header_invalid") from exc
+        if not isinstance(values, list) or len(values) != 1:
+            raise HTTPBoundaryError(400, "host_header_invalid")
+        # Exact canonical values reject userinfo, path/query suffixes, empty ports,
+        # malformed numeric ports, trailing dots and duplicate/ambiguous host syntax.
+        if values[0] != f"127.0.0.1:{self.address[1]}":
+            raise HTTPBoundaryError(400, "host_header_invalid")
+
     def _context(self, headers):
+        self._validate_host(headers)
         try:
             context = self.authenticate_request(headers)
             current = self.runtime.authenticated_context_provider()
@@ -221,7 +234,20 @@ class HGHTTPServer:
                 # Avoid leaking request bodies, bearer material or provider details.
                 return
 
-            def _send(self, status, value):
+            def send_error(self, code, message=None, explain=None):
+                # Never expose BaseHTTPRequestHandler's default HTML error pages.
+                if code in (501, 405):
+                    try:
+                        service._validate_host(self.headers)
+                    except HTTPBoundaryError as exc:
+                        self._send(exc.status, {"status": "BLOCKED", "error": exc.code})
+                        return
+                    self._send(405, {"status": "BLOCKED", "error": "METHOD_NOT_ALLOWED"},
+                               extra_headers={"Allow": "GET, POST"})
+                    return
+                self._send(code, {"status": "BLOCKED", "error": "HTTP_REQUEST_REJECTED"})
+
+            def _send(self, status, value, extra_headers=None):
                 raw = json.dumps(value, ensure_ascii=False, sort_keys=True,
                                  separators=(",", ":"), allow_nan=False).encode("utf-8")
                 # Reads may have left a near-zero timeout on the socket; writes get the
@@ -233,6 +259,8 @@ class HGHTTPServer:
                     self.send_header("Content-Length", str(len(raw)))
                     self.send_header("Cache-Control", "no-store")
                     self.send_header("X-Content-Type-Options", "nosniff")
+                    for header_name, header_value in (extra_headers or {}).items():
+                        self.send_header(header_name, header_value)
                     self.end_headers()
                     self.wfile.write(raw)
                 except (BrokenPipeError, ConnectionResetError, TimeoutError):
@@ -275,7 +303,17 @@ class HGHTTPServer:
                     self._send(200, {"status": "OK", "result": result})
                 except HTTPBoundaryError as exc:
                     self._send(exc.status, {"status": "BLOCKED", "error": exc.code})
-                except (MAEPError, AuthorityError, OrchestrationError):
+                except OrchestrationError as exc:
+                    message = str(exc)
+                    if message.startswith("IN_PROGRESS:"):
+                        self._send(409, {"status": "IN_PROGRESS", "error": "IDEMPOTENCY_IN_PROGRESS"})
+                    elif message.startswith("CONFLICT:"):
+                        self._send(409, {"status": "BLOCKED", "error": "IDEMPOTENCY_CONFLICT"})
+                    elif message.startswith("OUTCOME_UNKNOWN:"):
+                        self._send(409, {"status": "UNKNOWN", "error": "IDEMPOTENCY_RECONCILIATION_REQUIRED"})
+                    else:
+                        self._send(403, {"status": "BLOCKED", "error": "MAEP_AUTHORIZATION_OR_CONTRACT_DENIED"})
+                except (MAEPError, AuthorityError):
                     self._send(403, {"status": "BLOCKED", "error": "MAEP_AUTHORIZATION_OR_CONTRACT_DENIED"})
                 except (KeyError, TypeError, ValueError):
                     self._send(400, {"status": "BLOCKED", "error": "INVALID_REQUEST"})
@@ -283,11 +321,31 @@ class HGHTTPServer:
                     self._send(500, {"status": "BLOCKED", "error": "RUNTIME_OPERATION_FAILED"})
 
             def do_GET(self):
+                try:
+                    service._validate_host(self.headers)
+                except HTTPBoundaryError as exc:
+                    return self._send(exc.status, {"status": "BLOCKED", "error": exc.code})
                 parsed = urlsplit(self.path)
                 if parsed.path == "/health":
-                    return self._send(200, {"status": "STARTED", "policy_version": "MAEP-1.2.0"})
+                    return self._send(200, {"status": "LIVE", "policy_version": "MAEP-1.2.0"})
+                if parsed.path == "/health/ready":
+                    try:
+                        service._context(self.headers)
+                    except HTTPBoundaryError as exc:
+                        return self._send(exc.status, {"status": "BLOCKED", "error": exc.code})
+                    provider = getattr(service.runtime, "readiness_provider", None)
+                    if not callable(provider):
+                        return self._send(503, {"status": "NOT_READY", "error": "readiness_evidence_unavailable"})
+                    try:
+                        readiness = provider()
+                    except Exception:
+                        readiness = None
+                    if not isinstance(readiness, dict) or readiness.get("release") != "VERIFIED" or readiness.get("trust") != "LOADED":
+                        return self._send(503, {"status": "NOT_READY", "error": "release_or_trust_not_ready"})
+                    return self._send(200, {"status": "READY", "release": "VERIFIED", "trust": "LOADED"})
                 if parsed.path == "/api/tasks":
                     try:
+                        service._context(self.headers)
                         query = parse_qs(parsed.query, keep_blank_values=True, strict_parsing=True)
                         if set(query) - {"index_scope_task_id", "limit", "offset"}:
                             raise HTTPBoundaryError(400, "task_index_query_fields_invalid")
@@ -308,11 +366,8 @@ class HGHTTPServer:
                     except ValueError:
                         return self._send(400, {"status": "BLOCKED", "error": "task_index_query_invalid"})
                     scope_task_id = scope_values[0]
-                    return self._run(lambda: (
-                        self._protected(),
-                        service.runtime.memory.list_tasks(
-                            index_scope_task_id=scope_task_id, limit=limit, offset=offset)
-                    )[1])
+                    return self._run(lambda: service.runtime.memory.list_tasks(
+                        index_scope_task_id=scope_task_id, limit=limit, offset=offset))
                 match = _TASK_PATH.fullmatch(parsed.path)
                 if match is None:
                     return self._send(404, {"status": "BLOCKED", "error": "NOT_FOUND"})
@@ -320,10 +375,11 @@ class HGHTTPServer:
                 return self._run(lambda: (self._protected(), service.runtime.memory.get_task(task_id))[1])
 
             def do_POST(self):
-                parsed = urlsplit(self.path)
                 try:
-                    body = self._body()
+                    service._validate_host(self.headers)
                     context = self._protected()
+                    body = self._body()
+                    parsed = urlsplit(self.path)
                     if parsed.path == "/api/dispatch":
                         if set(body) != {"request", "adapter_name", "idempotency_key"}:
                             raise HTTPBoundaryError(400, "dispatch_fields_invalid")

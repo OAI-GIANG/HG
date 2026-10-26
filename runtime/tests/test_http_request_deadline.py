@@ -70,7 +70,8 @@ class RequestDeadlineTests(unittest.TestCase):
         return sent
 
     def _post_head(self, length):
-        return (b"POST /api/no-such-route HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer test-only\r\n"
+        return (b"POST /api/no-such-route HTTP/1.1\r\nHost: 127.0.0.1:" + str(self.address[1]).encode()
+                + b"\r\nAuthorization: Bearer test-only\r\n"
                 b"Content-Type: application/json\r\nContent-Length: " + str(length).encode() + b"\r\n\r\n")
 
     def test_slow_drip_body_is_cut_at_the_total_deadline(self):
@@ -87,7 +88,8 @@ class RequestDeadlineTests(unittest.TestCase):
         self.assertEqual(self.base.fixture.adapter.calls, 0)
 
     def test_slow_drip_headers_are_cut_at_the_total_deadline(self):
-        head = (b"GET /api/tasks/T-1 HTTP/1.1\r\nHost: x\r\nX-Pad: " + b"b" * 40 + b"\r\n\r\n")
+        head = (b"GET /api/tasks/T-1 HTTP/1.1\r\nHost: 127.0.0.1:" + str(self.address[1]).encode()
+                + b"\r\nX-Pad: " + b"b" * 40 + b"\r\n\r\n")
         client = self._connect()
         started = time.monotonic()
         Thread(target=self._drip, args=(client, head), daemon=True).start()
@@ -184,7 +186,7 @@ class ConnectionCapTests(unittest.TestCase):
             client.sendall(b"GET /api/tasks/T-1 HTTP/1.1\r\n")    # incomplete: occupies a slot
         time.sleep(0.2)
         refused = self._open()
-        refused.sendall(b"GET /api/tasks/T-1 HTTP/1.1\r\nHost: x\r\n\r\n")
+        refused.sendall(b"GET /api/tasks/T-1 HTTP/1.1\r\nHost: 127.0.0.1:" + str(self.address[1]).encode() + b"\r\n\r\n")
         response = RequestDeadlineTests._drain(refused)
         self.assertIn(b" 503 ", response.split(b"\r\n", 1)[0])
         self.assertIn(b"server_busy", response)
@@ -193,7 +195,8 @@ class ConnectionCapTests(unittest.TestCase):
         time.sleep(0.2)
         body = json.dumps({"x": "y"}).encode()
         later = self._open()
-        later.sendall(b"POST /api/no-such-route HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer test-only\r\n"
+        later.sendall(b"POST /api/no-such-route HTTP/1.1\r\nHost: 127.0.0.1:" + str(self.address[1]).encode()
+                      + b"\r\nAuthorization: Bearer test-only\r\n"
                       b"Content-Type: application/json\r\nContent-Length: " + str(len(body)).encode()
                       + b"\r\n\r\n" + body)
         self.assertIn(b" 404 ", RequestDeadlineTests._drain(later).split(b"\r\n", 1)[0])
