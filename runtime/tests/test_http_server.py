@@ -381,8 +381,8 @@ class HTTPServerTests(unittest.TestCase):
     def test_wp0_missing_task_key_error_does_not_leak_fixture_detail(self):
         self.memory.get_task = lambda task_id: (_ for _ in ()).throw(KeyError(task_id))
         status, body = self.request("GET", "/api/tasks/MISSING-TASK")
-        self.assertEqual(status, 400)
-        self.assertEqual(body.get("error"), "INVALID_REQUEST")
+        self.assertEqual(status, 404)
+        self.assertEqual(body.get("error"), "NOT_FOUND")
         self.assertNotIn("MISSING-TASK", json.dumps(body))
 
     def test_wp0_task_detail_missing_task_maps_to_not_found(self):
@@ -391,9 +391,21 @@ class HTTPServerTests(unittest.TestCase):
             raise KeyError(task_id)
         self.memory.get_task = missing
         status, body = self.request("GET", "/api/tasks/MISSING-TASK")
-        self.assertEqual(status, 400)
-        self.assertEqual(body.get("error"), "INVALID_REQUEST")
+        self.assertEqual(status, 404)
+        self.assertEqual(body.get("error"), "NOT_FOUND")
         self.assertEqual(self.memory.calls, [("get_task", "MISSING-TASK")])
+
+    def test_wp0_task_detail_rejects_query_and_percent_path_after_auth(self):
+        for path in ("/api/tasks/T-1?probe=1", "/api/tasks/T%2F1", "/api/tasks/T-1#fragment"):
+            with self.subTest(path=path):
+                status, body = self.request("GET", path, token=True)
+                self.assertEqual(status, 400)
+                self.assertEqual(body.get("error"), "invalid_path")
+        self.memory.calls.clear()
+        status, body = self.request("GET", "/api/tasks/T-1?probe=1", token=False)
+        self.assertEqual(status, 401)
+        self.assertEqual(body.get("error"), "authentication_unavailable_or_denied")
+        self.assertEqual(self.memory.calls, [])
 
     def test_wp0_task_detail_authorization_failure_maps_to_403(self):
         self.runtime.memory.get_task = lambda _task_id: (_ for _ in ()).throw(AuthorityError("denied"))
