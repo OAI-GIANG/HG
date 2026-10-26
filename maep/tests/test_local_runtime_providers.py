@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import tempfile
@@ -183,6 +185,44 @@ class LocalRuntimeProviderTests(unittest.TestCase):
             self.assertEqual(len(sink.read_all()), 1)
             self.assertEqual(sink.read_all()[0]["recovery_event_id"], recovered[0]["recovery_event_id"])
             self.assertEqual(ledger.recover_interrupted(receipt_sink=sink), [])
+            self.assertEqual(len(sink.read_all()), 1)
+
+    def test_real_subprocess_crash_after_effect_keeps_outcome_unknown_without_replay(self):
+        with tempfile.TemporaryDirectory(prefix="hg-idempotency-real-crash-") as temp:
+            root = Path(temp)
+            ledger_path = root / "ledger.sqlite3"
+            effect_marker = root / "effect-applied.txt"
+            repo_root = Path(__file__).resolve().parents[2]
+            child = r'''from pathlib import Path
+import os, sys
+from maep.local_runtime_providers import SQLiteIdempotencyLedger
+ledger = SQLiteIdempotencyLedger(sys.argv[1])
+ledger.claim(idempotency_key="real-crash", request_digest="req:real-crash", decision_digest="dec:real-crash")
+Path(sys.argv[2]).write_text("effect-applied", encoding="utf-8")
+os._exit(73)
+'''
+            env = os.environ.copy()
+            env["PYTHONPATH"] = str(repo_root) + os.pathsep + env.get("PYTHONPATH", "")
+            crashed = subprocess.run(
+                [sys.executable, "-c", child, str(ledger_path), str(effect_marker)],
+                cwd=str(repo_root), env=env, timeout=10, check=False,
+            )
+            self.assertEqual(crashed.returncode, 73)
+            self.assertEqual(effect_marker.read_text(encoding="utf-8"), "effect-applied")
+
+            # The owner process has really exited; recovery must preserve uncertainty,
+            # record it durably, and never invoke or infer a replay of the external effect.
+            reopened = SQLiteIdempotencyLedger(ledger_path)
+            self.assertEqual(reopened.inspect("real-crash")["status"], "RESERVED")
+            sink = LocalReceiptSink(root / "receipts")
+            recovered = reopened.recover_interrupted(receipt_sink=sink)
+            self.assertEqual(len(recovered), 1)
+            self.assertEqual(recovered[0]["outcome"], "UNKNOWN")
+            self.assertIs(recovered[0]["effect_replayed"], False)
+            self.assertEqual(reopened.inspect("real-crash")["status"], "UNKNOWN")
+            self.assertEqual(reopened.claim(idempotency_key="real-crash", request_digest="req:real-crash",
+                                            decision_digest="dec:real-crash")["status"], "UNKNOWN")
+            self.assertEqual(effect_marker.read_text(encoding="utf-8"), "effect-applied")
             self.assertEqual(len(sink.read_all()), 1)
 
     def test_recovery_outbox_survives_receipt_sink_failure_and_retries(self):
