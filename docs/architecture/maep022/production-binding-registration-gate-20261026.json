@@ -1,0 +1,146 @@
+{
+  "gate": {
+    "decision_id": "MAEP022-PRODUCTION-BINDING-REGISTRATION-20261026",
+    "candidate_ref": "git:a10d8d2a7c23c64a7a088eeebbc0a88b5e0ec616",
+    "policy_version": "MAEP-1.2.0",
+    "scope": "runtime.service production factory binding registration for D2 policy approval, D3 session source, D4 Memory record verifier, fs.write adapter registry and read-back acceptance. Existing hg serve release/config/state are explicitly outside deployment scope and remain unchanged.",
+    "capability": "HG runtime.service production composition, fs.write effect boundary and read-back acceptance",
+    "inventory_status": "COMPLETE",
+    "inventory_evidence_refs": [
+      "EV-REG-OWNER-AUTH",
+      "EV-REG-INVENTORY"
+    ],
+    "overlap_detected": true,
+    "comparison_evidence_refs": [
+      "EV-REG-COMPARISON",
+      "EV-REG-ORIGINAL-GATE"
+    ],
+    "decision": "EXTEND_EXISTING",
+    "selected_implementation": "Extend the reviewed runtime.production_config:create_service factory with code-owned builders for LocalPolicyApprovalVerifier (D2), TokenSessionSource (D3), AuthorizedWriteRecordVerifier (D4), RootedFileWriteAdapter registry and ReadbackAcceptanceProvider; use schema-v2 owner-controlled absolute paths; do not migrate or deploy the separate hg serve runtime.",
+    "rationale": "The owner command of 2026-10-26 explicitly directed completion of D2/D3/D4, Tool Adapter/acceptance and policy-version blockers, not merely documenting them. This follow-on gate supersedes the registration exclusion of the earlier MAEP-022 implementation record for this bounded factory candidate only. It does not authorize deployment into the existing hg serve release or automatic migration of trust/policy/session/state.",
+    "superiority_basis": {
+      "correctness": "A production-factory HTTP E2E calls create_service with the real registered builders, performs task creation through authority, dispatches fs.write, independently reads back file content, and reaches CLOSED_VERIFIED only after the mandatory read-back gate passes (EV-REG-FACTORY-E2E).",
+      "security": "D2 verifies owner policy approval, D3 checks the owner-issued token and revocation file, D4 checks approved Memory/write provenance, and fs.write binds request digest, action, resource, scope and rooted path; isolated E2E tests use no patched production binding registry.",
+      "reliability": "Termux Python 3.14.6 runtime suite and subsystem suites pass; UNKNOWN remains blocking until reconciliation, and restore/rebind never automatically restores authorization. Existing negative tests cover malformed/missing evidence and denied scope.",
+      "functional_coverage": "The registered production subset is runtime.service composition with fs.write and read-back acceptance. This gate does not claim other tools (fs.read, code.*, test.run, url.read) are registered or implemented.",
+      "compatibility": "Schema-v2 is for runtime.service only. Existing hg serve config is schema-v1 and stays on release f7cfd766… from main f3dac34; no production configuration migration, session issuance, data migration or deployment occurred.",
+      "performance_resource_cost": "No production service benchmark is claimed. The full runtime unittest suite took 181.576 seconds on Termux; this is test-suite wall time, not request latency. The adapter/receipt path remains single-owner volume.",
+      "maintainability_operational_burden": "All builders are code-owned and use the existing Python standard-library runtime modules. Owner config names paths only; factory still validates the trust root, active policy, Memory DB, session and revocations before service composition."
+    },
+    "impact_analysis_refs": [
+      "EV-REG-IMPACT"
+    ],
+    "regression_test_refs": [
+      "EV-REG-FACTORY-E2E",
+      "EV-REG-RUNTIME-SUITE",
+      "EV-REG-SUBSYSTEMS"
+    ],
+    "gate_status": "PASS"
+  },
+  "evidence": [
+    {
+      "evidence_id": "EV-REG-OWNER-AUTH",
+      "evidence_type": "OWNER_INSTRUCTION",
+      "source_ref": "Owner instruction: NEXT ACTION COMMAND — HG ONLY, 2026-10-26 (active conversation)",
+      "candidate_ref": "git:a10d8d2a7c23c64a7a088eeebbc0a88b5e0ec616",
+      "collected_at": "2026-10-26T12:02:23+07:00",
+      "collector": "STT via Remote Desktop Commander on Termux",
+      "method": "Read the owner-provided scope command and map it to the requested blocker set before code integration.",
+      "result": "PASS — Owner explicitly instructed completion of N1/N10/D2/D3/D4/Tool Adapter/acceptance and policy-version/restore, and required isolated E2E plus no production-state mutation. This authorizes the scoped repository implementation and validation only; it does not authorize deploying or rewriting the existing hg serve configuration.",
+      "limitations": [
+        "Conversation authorization is not a deploy record; the owner instruction does not authorize deploying the existing hg serve runtime."
+      ]
+    },
+    {
+      "evidence_id": "EV-REG-INVENTORY",
+      "evidence_type": "INSPECTION",
+      "source_ref": "docs/architecture/MAEP022_INVENTORY_TOOLS_ACCEPTANCE_20261026.md; runtime/production_config.py",
+      "candidate_ref": "git:a10d8d2a7c23c64a7a088eeebbc0a88b5e0ec616",
+      "collected_at": "2026-10-26T12:02:23+07:00",
+      "collector": "STT via Remote Desktop Commander on Termux",
+      "method": "Recheck the MAEP-022 inventory against the current required/approved binding lists and the deployed hg serve artifact.",
+      "result": "PASS — The adapter and acceptance capabilities overlap with the existing hg serve implementation; the candidate wires a bounded subset into runtime.service using code-owned builders for all eight REQUIRED_BINDINGS. No capability retirement is proposed.",
+      "limitations": [
+        "Inventory is limited to fs.write/read-back subset and factory registration."
+      ]
+    },
+    {
+      "evidence_id": "EV-REG-COMPARISON",
+      "evidence_type": "INSPECTION",
+      "source_ref": "origin/main at 0ef9d8dd6df68e365b35f511f4ca913a8982d679; runtime candidate a10d8d2a7c23c64a7a088eeebbc0a88b5e0ec616",
+      "candidate_ref": "git:a10d8d2a7c23c64a7a088eeebbc0a88b5e0ec616",
+      "collected_at": "2026-10-26T12:02:23+07:00",
+      "collector": "STT via Remote Desktop Commander on Termux",
+      "method": "Compare the current main hg implementation and its test suite with runtime.service factory composition and tests.",
+      "result": "PASS — Main branch hg/tests passed 248 tests in 36.422 seconds; runtime branch validates its own factory/adapter contracts separately. Existing hg serve keeps its release/config while runtime.service gains explicit registered bindings.",
+      "limitations": [
+        "This is an integration comparison, not a claim that main now uses the runtime.service factory."
+      ]
+    },
+    {
+      "evidence_id": "EV-REG-ORIGINAL-GATE",
+      "evidence_type": "GOVERNANCE_RECORD",
+      "source_ref": "docs/architecture/maep022/fs-write-acceptance-gate-20261026.json",
+      "candidate_ref": "git:a10d8d2a7c23c64a7a088eeebbc0a88b5e0ec616",
+      "collected_at": "2026-10-26T12:02:23+07:00",
+      "collector": "STT via Remote Desktop Commander on Termux",
+      "method": "Review the original gate record and its recorded scope/candidate before authorizing this follow-on.",
+      "result": "PASS — The original MAEP-022 gate passed the adapter/read-back implementation at its earlier candidate and explicitly excluded production binding registration. This separate follow-on records the owner-directed registration scope and binds it to the current code candidate instead of rewriting the historical gate.",
+      "limitations": [
+        "Original gate remains historically bound to git:4fe69e1289e1b821f1c79599a0226143b0b193df."
+      ]
+    },
+    {
+      "evidence_id": "EV-REG-FACTORY-E2E",
+      "evidence_type": "TEST_RESULT",
+      "source_ref": "runtime/tests/test_tool_acceptance_e2e.py::ToolAcceptanceLifecycleE2ETests.test_registered_production_factory_full_lifecycle_without_fixture_bindings",
+      "candidate_ref": "git:a10d8d2a7c23c64a7a088eeebbc0a88b5e0ec616",
+      "collected_at": "2026-10-26T12:02:23+07:00",
+      "collector": "STT via Remote Desktop Commander on Termux",
+      "method": "On Termux Python 3.14.6, invoke unittest discovery for only the registered production factory lifecycle test using a temporary schema-v2 config/state directory.",
+      "result": "PASS — One production-factory E2E passed in 13.433 seconds: real create_service and all registered builders; real HTTP task lifecycle, fs.write under configured temp root, content bytes matched, independent read-back PASS and terminal state CLOSED_VERIFIED. No production fixture binding was patched.",
+      "limitations": [
+        "All policy/session/store inputs were provisioned inside TemporaryDirectory; test is not production deployment."
+      ]
+    },
+    {
+      "evidence_id": "EV-REG-RUNTIME-SUITE",
+      "evidence_type": "TEST_RESULT",
+      "source_ref": "~/hg-handoff/20261025/logs/registration-candidate-a10d8d2/runtime_full.log",
+      "candidate_ref": "git:a10d8d2a7c23c64a7a088eeebbc0a88b5e0ec616",
+      "collected_at": "2026-10-26T12:02:23+07:00",
+      "collector": "STT via Remote Desktop Commander on Termux",
+      "method": "Run the full runtime/tests unittest discovery suite on the Termux candidate code commit.",
+      "result": "PASS — 160 tests passed in 181.576 seconds, exit code 0.",
+      "limitations": [
+        "Termux Python 3.14.6; this is unit/integration suite evidence, not live runtime rollout evidence."
+      ]
+    },
+    {
+      "evidence_id": "EV-REG-SUBSYSTEMS",
+      "evidence_type": "TEST_RESULT",
+      "source_ref": "~/hg-handoff/20261025/logs/registration-candidate-a10d8d2/",
+      "candidate_ref": "git:a10d8d2a7c23c64a7a088eeebbc0a88b5e0ec616",
+      "collected_at": "2026-10-26T12:02:23+07:00",
+      "collector": "STT via Remote Desktop Commander on Termux",
+      "method": "Run MAEP, Memory, Brain, Creativity/Research, Tools/Automation and runtime composition test groups on Termux.",
+      "result": "PASS — MAEP 280 passed (1 existing skip); Memory 70; Brain 171; Creativity/Research 12; Tools/Automation 13; runtime.test_composition 1; all exit code 0. Production config 12 also passed.",
+      "limitations": [
+        "Each group was run on the same isolated candidate worktree and Python 3.14.6."
+      ]
+    },
+    {
+      "evidence_id": "EV-REG-IMPACT",
+      "evidence_type": "INSPECTION",
+      "source_ref": "runtime/README.md; ~/.config/hg/runtime-service.json; deployed release manifest f7cfd766d12e30eeee96f7bf16d79082799f80703cda030f8e9384db55323a40",
+      "candidate_ref": "git:a10d8d2a7c23c64a7a088eeebbc0a88b5e0ec616",
+      "collected_at": "2026-10-26T12:02:23+07:00",
+      "collector": "STT via Remote Desktop Commander on Termux",
+      "method": "Read deployment config keys and release manifest metadata without reading token/secret values; compare deployed release files with candidate factory files.",
+      "result": "PASS — The active service is still hg serve, config schema hg-runtime-service-config-v1, release f7cfd766…/commit f3dac347…; release does not include runtime/production_config.py, runtime/session_auth.py or runtime/acceptance.py. No production config/state/session was changed.",
+      "limitations": [
+        "No live endpoint behavior was altered or redeployed."
+      ]
+    }
+  ]
+}

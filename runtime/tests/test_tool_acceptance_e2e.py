@@ -12,9 +12,12 @@ evidence + independent read-back) -> CLOSED_VERIFIED, plus the refusals around i
 """
 import hashlib
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
+from threading import Thread
+from unittest.mock import patch
 
 from maep.core import POLICY_VERSION
 from maep.local_authority_store import LocalEvidenceSink
@@ -297,6 +300,44 @@ class ToolAcceptanceLifecycleE2ETests(composition.CompositionE2ETests):
         self.assertEqual(self.dispatch(server)[0], 403)     # DRAFT, not RUNNING
         self.assertFalse((self.tool_root / "out").exists())
         self.assertEqual(self.effect_receipts(), [])
+
+    def test_registered_production_factory_full_lifecycle_without_fixture_bindings(self):
+        """Exercise create_service() with every registry builder, isolated config/state and real HTTP."""
+        from runtime import production_config as pc
+
+        # The fixture is private to this test. Point all factory roots/session inputs at
+        # its temp directory and serialize the exact schema-v2 config the CLI consumes.
+        self.config["policy_approval_path"] = str(self.approval)
+        self.config["file_write_roots"] = {"fs.write": str(self.tool_root)}
+        self.config["port"] = fixture.free_port()  # production config disallows port 0
+        session_dir = self.base / "life-session"
+        self.config["session_record"] = str(session_dir / "session.json")
+        self.config["session_revocations"] = str(session_dir / "revocations.json")
+        config_path = self.base / "runtime-factory-config.json"
+        fd = os.open(config_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump(self.config, stream, sort_keys=True)
+        config_path.chmod(0o600)
+
+        with patch.dict(os.environ, {pc.CONFIG_ENV: str(config_path)}):
+            server = pc.create_service()  # no patched APPROVED_BINDINGS; all real builders
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(lambda: (server.shutdown(), thread.join(timeout=2)))
+
+        self.run_to_running(server)
+        status, body = self.dispatch(server, key="factory-lifecycle-1")
+        self.assertEqual(status, 200, body)
+        self.assertEqual((self.tool_root / PATH).read_text(encoding="utf-8"), CONTENT)
+        self.record_result(server)
+        self.transition(server, "VERIFYING")
+        self.transition(server, "ACCEPTED")
+        self.transition(server, "CLOSED_VERIFIED")
+        self.assertEqual(self.state_of(server), "CLOSED_VERIFIED")
+        closing = [event["payload"] for event in AuthorityEvidenceReader(self.config["memory_db"]).get_events(
+            TASK, limit=1000) if event["event_type"] == "task.transitioned"][-1]
+        self.assertEqual(closing["acceptance"]["closure"]["final_state"], "CLOSED_VERIFIED")
+        self.assertEqual(closing["acceptance"]["mandatory_gates"][0]["readback"]["status"], "PASS")
 
 
 if __name__ == "__main__":
