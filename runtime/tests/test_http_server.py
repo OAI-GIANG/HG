@@ -401,6 +401,16 @@ class HTTPServerTests(unittest.TestCase):
         self.assertEqual(body.get("error"), "RUNTIME_OPERATION_FAILED")
         self.assertNotIn("fixture secret", json.dumps(body))
 
+    def test_wp0_post_oversize_is_bounded_before_auth(self):
+        # API-002 explicitly permits transport-level size/framing rejection before auth.
+        raw = b"{" + b"x" * 5000 + b"}"
+        status, body = self.request(
+            "POST", "/api/dispatch", token=False, raw=raw, content_type="application/json"
+        )
+        self.assertEqual(status, 401)
+        self.assertEqual(body.get("error"), "authentication_unavailable_or_denied")
+        self.assertEqual(self.fixture.adapter.calls, 0)
+
     def test_wp0_post_rejects_non_json_content_type_after_auth(self):
         status, body = self.request(
             "POST", "/api/tasks", token=True, raw=b"{}", content_type="text/plain"
