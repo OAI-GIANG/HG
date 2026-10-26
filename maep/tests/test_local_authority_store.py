@@ -190,5 +190,38 @@ class LocalAuthorityStoreTests(unittest.TestCase):
                 store.store_active(root)
 
 
+
+class FindDecisionTests(unittest.TestCase):
+    def append(self, sink, event_type, **payload):
+        sink.append({"event_type": event_type, "payload": payload})
+
+    def test_finds_only_allow_decisions_in_an_intact_ledger(self):
+        with tempfile.TemporaryDirectory() as temp:
+            sink = LocalEvidenceSink(temp)
+            digest = "sha256:" + "a" * 64
+            self.assertIsNone(sink.find_decision(digest))            # no ledger yet
+            self.append(sink, "authorization.deny", decision="DENY", decision_digest=digest)
+            self.assertIsNone(sink.find_decision(digest))            # non-ALLOW events never match
+            self.append(sink, "authorization.decision", decision="ALLOW", decision_digest=digest)
+            self.assertEqual(sink.find_decision(digest)["decision"], "ALLOW")
+            for bad in ("", "sha256:" + "A" * 64, "md5:" + "a" * 64, None, "sha256:" + "a" * 63):
+                with self.assertRaises(AuthorityError):
+                    sink.find_decision(bad)
+
+    def test_head_mismatch_or_symlinked_ledger_blocks(self):
+        with tempfile.TemporaryDirectory() as temp:
+            sink = LocalEvidenceSink(Path(temp) / "a")
+            digest = "sha256:" + "b" * 64
+            self.append(sink, "authorization.decision", decision="ALLOW", decision_digest=digest)
+            sink.head_path.write_text(json.dumps({"last_sequence": 9, "last_event_digest": None}))
+            with self.assertRaises(AuthorityError):
+                sink.find_decision(digest)
+            other = LocalEvidenceSink(Path(temp) / "b")
+            other.directory.mkdir()
+            other.ledger_path.symlink_to(sink.ledger_path)
+            with self.assertRaises(AuthorityError):
+                other.find_decision(digest)
+
+
 if __name__ == "__main__":
     unittest.main()

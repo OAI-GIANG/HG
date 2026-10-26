@@ -98,6 +98,8 @@ class MemoryMAEPRecordResolver:
                 "created_at": stored["created_at"],
                 "evidence_digest": _digest(evidence),
                 "event_digest": matches[-1].get("event_digest"),
+                # Decision that authorized the write (D4-a verifies it in the authority ledger).
+                "authorization_id": matches[-1]["payload"].get("authorization_id"),
                 "memory_integrity": "PASS",
             },
             "_evidence_record": evidence,

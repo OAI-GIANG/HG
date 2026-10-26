@@ -37,6 +37,7 @@ RUN_EXEC_TASK = "T-E2E-RUN-EXEC"        # RUNNING; its one applicability record 
 RUN_REQ_TASK = "T-E2E-RUN-REQ"          # RUNNING; its record classifies the dispatch REQUIRED (no gate)
 DISPATCH_ACTION, DISPATCH_RESOURCE = "EXECUTE", "tool:fixture:echo"
 NEW_EVIDENCE = "EV-NEW-1"
+NEW_SUPPORT_EVIDENCE = "EV-NEW-SUP"
 MEMORY_RULES = [{"rule_id": "memory-data-plane", "actions": ["READ", "WRITE"],
                  "resource_prefix": "memory:", "classification": "NOT_REQUIRED"}]
 
@@ -166,9 +167,10 @@ def provision(base: str | Path, *, port: int = 0, memory_rules: bool = False) ->
                   "scope": [DISPATCH_RESOURCE], "effect": "ALLOW"})
     resources.append(DISPATCH_RESOURCE)
     scopes.append(DISPATCH_RESOURCE)
-    rules.append({"action": "WRITE", "resource": resource("evidence", NEW_EVIDENCE),
-                  "scope": [f"memory:task:{NEW_TASK}:evidence:write"], "effect": "ALLOW"})
-    resources.append(resource("evidence", NEW_EVIDENCE))
+    for evidence_id in (NEW_EVIDENCE, NEW_SUPPORT_EVIDENCE):
+        rules.append({"action": "WRITE", "resource": resource("evidence", evidence_id),
+                      "scope": [f"memory:task:{NEW_TASK}:evidence:write"], "effect": "ALLOW"})
+        resources.append(resource("evidence", evidence_id))
     scopes.append(f"memory:task:{NEW_TASK}:evidence:write")
     rules.append({"action": "WRITE", "resource": resource("task", NEW_TASK),
                   "scope": [f"memory:task:{NEW_TASK}:write"], "effect": "ALLOW"})
@@ -194,14 +196,15 @@ def provision(base: str | Path, *, port: int = 0, memory_rules: bool = False) ->
             "candidate_ref": candidate_ref, "resource": resource}
 
 
-def bindings(session: TokenSessionSource, config: dict, *, policy_verifier=None, adapter=None) -> dict:
+def bindings(session: TokenSessionSource, config: dict, *, policy_verifier=None, adapter=None,
+             memory_verifier=None) -> dict:
     from memory import AuthorityEvidenceReader
     return {
         "approved-policy-source-verifier": policy_verifier or FixturePolicySourceVerifier(),
         "authenticated-session-resolver": session,
         "request-authenticator": session.authenticate_request,
         "authenticated-context-provider": session.authenticated_context,
-        "approved-memory-record-verifier": FixtureMemoryRecordVerifier(),
+        "approved-memory-record-verifier": memory_verifier or FixtureMemoryRecordVerifier(),
         "maep022-record-reader": AuthorityEvidenceReader(config["memory_db"]),
         "tool-adapter-registry": {"fixture": adapter or FixtureAdapter()},
         "acceptance-provider": _fixture_acceptance,
