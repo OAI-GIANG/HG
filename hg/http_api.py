@@ -14,6 +14,7 @@ from pathlib import Path, PurePosixPath
 from urllib.parse import urlsplit
 
 from maep.core import MAEPError
+from maep.sqlite_nofollow import connect_nofollow
 
 
 # Reading one request (request line, headers, body) is bounded twice:
@@ -174,7 +175,7 @@ class IdempotencyStore:
     def __init__(self, path):
         self.path = str(path)
         self._lock = threading.Lock()
-        self._db = sqlite3.connect(self.path, timeout=5, check_same_thread=False)
+        self._db = connect_nofollow(sqlite3, self.path, timeout=5, check_same_thread=False)
         self._db.execute("PRAGMA journal_mode=WAL")
         self._db.execute("PRAGMA synchronous=FULL")
         self._db.execute("""
