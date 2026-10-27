@@ -1,0 +1,479 @@
+{
+  "note": "Positive and negative instances for the six MAEP contracts. Each case is explicit (no generator); `expect` is VALID or INVALID, and `reason` names the violation the run must report. Read by maep/tests/test_schema_fixtures.py; independent of any third-party validator.",
+  "cases": [
+    {
+      "schema": "task.schema.json",
+      "name": "minimal valid task envelope",
+      "expect": "VALID",
+      "instance": {
+        "task_id": "T-1",
+        "objective": "write a file and check its content",
+        "scope": {"include": ["out/"], "exclude": []},
+        "inputs": [],
+        "outputs": [{"name": "file", "description": "out/hello.txt"}],
+        "acceptance_criteria": [{"criterion_id": "AC-1", "description": "content matches", "mandatory": true, "evidence_types": ["TEST_RESULT"]}],
+        "evidence_requirements": ["verifier result"],
+        "risks": [{"risk_id": "R-1", "description": "partial write", "severity": "MEDIUM", "mitigation": "tmp file then replace"}],
+        "stop_conditions": ["scope exceeded"],
+        "next_action": "execute the plan",
+        "state": "DRAFT",
+        "policy_version": "MAEP-1.1.0"
+      }
+    },
+    {
+      "schema": "task.schema.json",
+      "name": "input reference resolved through $defs",
+      "expect": "VALID",
+      "instance": {
+        "task_id": "T-1", "objective": "o", "scope": {"include": ["out/"], "exclude": []},
+        "inputs": [{"ref_id": "ref-1", "kind": "COMMIT", "description": "956f06dc"}],
+        "outputs": [], "acceptance_criteria": [{"criterion_id": "AC-1", "description": "d", "mandatory": false, "evidence_types": ["OBSERVATION"]}],
+        "evidence_requirements": [], "risks": [], "stop_conditions": ["s"], "next_action": "n",
+        "state": "CLOSED_VERIFIED", "policy_version": "MAEP-1.1.0"
+      }
+    },
+    {
+      "schema": "task.schema.json",
+      "name": "missing required objective",
+      "expect": "INVALID",
+      "reason": "missing required property",
+      "instance": {
+        "task_id": "T-1", "scope": {"include": ["out/"], "exclude": []}, "inputs": [], "outputs": [],
+        "acceptance_criteria": [{"criterion_id": "AC-1", "description": "d", "mandatory": true, "evidence_types": ["TEST_RESULT"]}],
+        "evidence_requirements": [], "risks": [], "stop_conditions": ["s"], "next_action": "n",
+        "state": "DRAFT", "policy_version": "MAEP-1.1.0"
+      }
+    },
+    {
+      "schema": "task.schema.json",
+      "name": "task_id of the wrong type",
+      "expect": "INVALID",
+      "reason": "expected type",
+      "instance": {
+        "task_id": 7, "objective": "o", "scope": {"include": ["out/"], "exclude": []}, "inputs": [], "outputs": [],
+        "acceptance_criteria": [{"criterion_id": "AC-1", "description": "d", "mandatory": true, "evidence_types": ["TEST_RESULT"]}],
+        "evidence_requirements": [], "risks": [], "stop_conditions": ["s"], "next_action": "n",
+        "state": "DRAFT", "policy_version": "MAEP-1.1.0"
+      }
+    },
+    {
+      "schema": "task.schema.json",
+      "name": "state outside the canonical vocabulary",
+      "expect": "INVALID",
+      "reason": "is not one of",
+      "instance": {
+        "task_id": "T-1", "objective": "o", "scope": {"include": ["out/"], "exclude": []}, "inputs": [], "outputs": [],
+        "acceptance_criteria": [{"criterion_id": "AC-1", "description": "d", "mandatory": true, "evidence_types": ["TEST_RESULT"]}],
+        "evidence_requirements": [], "risks": [], "stop_conditions": ["s"], "next_action": "n",
+        "state": "PRODUCTION_VERIFIED", "policy_version": "MAEP-1.1.0"
+      }
+    },
+    {
+      "schema": "task.schema.json",
+      "name": "risk severity outside the enum",
+      "expect": "INVALID",
+      "reason": "is not one of",
+      "instance": {
+        "task_id": "T-1", "objective": "o", "scope": {"include": ["out/"], "exclude": []}, "inputs": [], "outputs": [],
+        "acceptance_criteria": [{"criterion_id": "AC-1", "description": "d", "mandatory": true, "evidence_types": ["TEST_RESULT"]}],
+        "evidence_requirements": [], "risks": [{"risk_id": "R-1", "description": "d", "severity": "SEVERE", "mitigation": "m"}],
+        "stop_conditions": ["s"], "next_action": "n", "state": "DRAFT", "policy_version": "MAEP-1.1.0"
+      }
+    },
+    {
+      "schema": "task.schema.json",
+      "name": "property the contract does not define",
+      "expect": "INVALID",
+      "reason": "unexpected property",
+      "instance": {
+        "task_id": "T-1", "objective": "o", "scope": {"include": ["out/"], "exclude": []}, "inputs": [], "outputs": [],
+        "acceptance_criteria": [{"criterion_id": "AC-1", "description": "d", "mandatory": true, "evidence_types": ["TEST_RESULT"]}],
+        "evidence_requirements": [], "risks": [], "stop_conditions": ["s"], "next_action": "n",
+        "state": "DRAFT", "policy_version": "MAEP-1.1.0", "approved_by_caller": true
+      }
+    },
+    {
+      "schema": "task.schema.json",
+      "name": "no acceptance criterion at all",
+      "expect": "INVALID",
+      "reason": "at least",
+      "instance": {
+        "task_id": "T-1", "objective": "o", "scope": {"include": ["out/"], "exclude": []}, "inputs": [], "outputs": [],
+        "acceptance_criteria": [], "evidence_requirements": [], "risks": [], "stop_conditions": ["s"],
+        "next_action": "n", "state": "DRAFT", "policy_version": "MAEP-1.1.0"
+      }
+    },
+    {
+      "schema": "task.schema.json",
+      "name": "empty objective",
+      "expect": "INVALID",
+      "reason": "minLength",
+      "instance": {
+        "task_id": "T-1", "objective": "", "scope": {"include": ["out/"], "exclude": []}, "inputs": [], "outputs": [],
+        "acceptance_criteria": [{"criterion_id": "AC-1", "description": "d", "mandatory": true, "evidence_types": ["TEST_RESULT"]}],
+        "evidence_requirements": [], "risks": [], "stop_conditions": ["s"], "next_action": "n",
+        "state": "DRAFT", "policy_version": "MAEP-1.1.0"
+      }
+    },
+    {
+      "schema": "task.schema.json",
+      "name": "input reference kind outside the enum behind $ref",
+      "expect": "INVALID",
+      "reason": "is not one of",
+      "instance": {
+        "task_id": "T-1", "objective": "o", "scope": {"include": ["out/"], "exclude": []},
+        "inputs": [{"ref_id": "ref-1", "kind": "DEVICE"}], "outputs": [],
+        "acceptance_criteria": [{"criterion_id": "AC-1", "description": "d", "mandatory": true, "evidence_types": ["TEST_RESULT"]}],
+        "evidence_requirements": [], "risks": [], "stop_conditions": ["s"], "next_action": "n",
+        "state": "DRAFT", "policy_version": "MAEP-1.1.0"
+      }
+    },
+    {
+      "schema": "authorization.schema.json",
+      "name": "valid grant with a null expiry",
+      "expect": "VALID",
+      "instance": {
+        "authorization_id": "AUTH-1", "principal": "STT", "action": "WRITE", "resource": "file:out/hello.txt",
+        "scope": ["out/"], "conditions": [], "task_id": "T-1", "policy_version": "MAEP-1.1.0",
+        "decision": "ALLOW", "issued_at": "2026-10-28T00:00:00Z", "expires_at": null
+      }
+    },
+    {
+      "schema": "authorization.schema.json",
+      "name": "valid denial with an offset timestamp",
+      "expect": "VALID",
+      "instance": {
+        "authorization_id": "AUTH-2", "principal": "STT", "action": "DEPLOY", "resource": "repo:OAI-GIANG/HG",
+        "scope": ["repo:OAI-GIANG/HG"], "conditions": ["owner approved"], "task_id": "T-1",
+        "policy_version": "MAEP-1.1.0", "decision": "DENY", "issued_at": "2026-10-28T07:00:00.123+07:00",
+        "expires_at": "2026-10-28T08:00:00+07:00", "reason": "no owner approval recorded"
+      }
+    },
+    {
+      "schema": "authorization.schema.json",
+      "name": "decision missing",
+      "expect": "INVALID",
+      "reason": "missing required property",
+      "instance": {
+        "authorization_id": "AUTH-1", "principal": "STT", "action": "WRITE", "resource": "file:out/hello.txt",
+        "scope": ["out/"], "conditions": [], "task_id": "T-1", "policy_version": "MAEP-1.1.0",
+        "issued_at": "2026-10-28T00:00:00Z", "expires_at": null
+      }
+    },
+    {
+      "schema": "authorization.schema.json",
+      "name": "action outside the enum",
+      "expect": "INVALID",
+      "reason": "is not one of",
+      "instance": {
+        "authorization_id": "AUTH-1", "principal": "STT", "action": "READX", "resource": "file:out/hello.txt",
+        "scope": ["out/"], "conditions": [], "task_id": "T-1", "policy_version": "MAEP-1.1.0",
+        "decision": "ALLOW", "issued_at": "2026-10-28T00:00:00Z", "expires_at": null
+      }
+    },
+    {
+      "schema": "authorization.schema.json",
+      "name": "scope given as a string instead of a list",
+      "expect": "INVALID",
+      "reason": "expected type",
+      "instance": {
+        "authorization_id": "AUTH-1", "principal": "STT", "action": "WRITE", "resource": "file:out/hello.txt",
+        "scope": "out/", "conditions": [], "task_id": "T-1", "policy_version": "MAEP-1.1.0",
+        "decision": "ALLOW", "issued_at": "2026-10-28T00:00:00Z", "expires_at": null
+      }
+    },
+    {
+      "schema": "authorization.schema.json",
+      "name": "expiry that is not a date-time",
+      "expect": "INVALID",
+      "reason": "date-time",
+      "instance": {
+        "authorization_id": "AUTH-1", "principal": "STT", "action": "WRITE", "resource": "file:out/hello.txt",
+        "scope": ["out/"], "conditions": [], "task_id": "T-1", "policy_version": "MAEP-1.1.0",
+        "decision": "ALLOW", "issued_at": "2026-10-28T00:00:00Z", "expires_at": "2026-10-28"
+      }
+    },
+    {
+      "schema": "authorization.schema.json",
+      "name": "grant carrying a property the contract does not define",
+      "expect": "INVALID",
+      "reason": "unexpected property",
+      "instance": {
+        "authorization_id": "AUTH-1", "principal": "STT", "action": "WRITE", "resource": "file:out/hello.txt",
+        "scope": ["out/"], "conditions": [], "task_id": "T-1", "policy_version": "MAEP-1.1.0",
+        "decision": "ALLOW", "issued_at": "2026-10-28T00:00:00Z", "expires_at": null, "self_approval": true
+      }
+    },
+    {
+      "schema": "state-transition.schema.json",
+      "name": "valid transition record",
+      "expect": "VALID",
+      "instance": {
+        "transition_id": "TR-1", "task_id": "T-1", "from_state": "DRAFT", "to_state": "READY",
+        "trigger": "task intake", "guard_results": [{"guard_id": "task_valid", "passed": true, "detail": "envelope complete"}],
+        "decision": "ALLOW", "timestamp": "2026-10-28T00:00:00Z"
+      }
+    },
+    {
+      "schema": "state-transition.schema.json",
+      "name": "no guard result recorded",
+      "expect": "INVALID",
+      "reason": "at least",
+      "instance": {
+        "transition_id": "TR-1", "task_id": "T-1", "from_state": "DRAFT", "to_state": "READY",
+        "trigger": "task intake", "guard_results": [], "decision": "ALLOW", "timestamp": "2026-10-28T00:00:00Z"
+      }
+    },
+    {
+      "schema": "state-transition.schema.json",
+      "name": "guard passed is not a boolean",
+      "expect": "INVALID",
+      "reason": "expected type",
+      "instance": {
+        "transition_id": "TR-1", "task_id": "T-1", "from_state": "DRAFT", "to_state": "READY",
+        "trigger": "task intake", "guard_results": [{"guard_id": "task_valid", "passed": "yes", "detail": "d"}],
+        "decision": "ALLOW", "timestamp": "2026-10-28T00:00:00Z"
+      }
+    },
+    {
+      "schema": "state-transition.schema.json",
+      "name": "nested guard property the contract does not define",
+      "expect": "INVALID",
+      "reason": "unexpected property",
+      "instance": {
+        "transition_id": "TR-1", "task_id": "T-1", "from_state": "DRAFT", "to_state": "READY",
+        "trigger": "task intake", "guard_results": [{"guard_id": "task_valid", "passed": true, "detail": "d", "waived": true}],
+        "decision": "ALLOW", "timestamp": "2026-10-28T00:00:00Z"
+      }
+    },
+    {
+      "schema": "state-transition.schema.json",
+      "name": "impossible calendar timestamp",
+      "expect": "INVALID",
+      "reason": "date-time",
+      "instance": {
+        "transition_id": "TR-1", "task_id": "T-1", "from_state": "DRAFT", "to_state": "READY",
+        "trigger": "task intake", "guard_results": [{"guard_id": "task_valid", "passed": true, "detail": "d"}],
+        "decision": "ALLOW", "timestamp": "2026-13-01T00:00:00Z"
+      }
+    },
+    {
+      "schema": "state-transition.schema.json",
+      "name": "missing trigger",
+      "expect": "INVALID",
+      "reason": "missing required property",
+      "instance": {
+        "transition_id": "TR-1", "task_id": "T-1", "from_state": "DRAFT", "to_state": "READY",
+        "guard_results": [{"guard_id": "task_valid", "passed": true, "detail": "d"}],
+        "decision": "ALLOW", "timestamp": "2026-10-28T00:00:00Z"
+      }
+    },
+    {
+      "schema": "evidence.schema.json",
+      "name": "valid evidence with mixed scalar integrity metadata",
+      "expect": "VALID",
+      "instance": {
+        "evidence_id": "EV-1", "evidence_type": "TEST_RESULT", "source_ref": "ci://40562175910",
+        "candidate_ref": "956f06dcf16fec1bb51966bc4eff42fd1fbb191c", "collected_at": "2026-10-28T01:00:00Z",
+        "collector": "dsh-agent", "method": "python -m unittest discover -s maep/tests",
+        "result": "293 tests OK", "limitations": ["in-process only"],
+        "integrity_metadata": {"sha256": "abc", "count": 3, "ok": true, "note": null},
+        "test_ids": ["T-058"]
+      }
+    },
+    {
+      "schema": "evidence.schema.json",
+      "name": "evidence without a method",
+      "expect": "INVALID",
+      "reason": "missing required property",
+      "instance": {
+        "evidence_id": "EV-1", "evidence_type": "OBSERVATION", "source_ref": "s", "candidate_ref": "c",
+        "collected_at": "2026-10-28T01:00:00Z", "collector": "dsh-agent", "result": "r", "limitations": []
+      }
+    },
+    {
+      "schema": "evidence.schema.json",
+      "name": "evidence type outside the enum",
+      "expect": "INVALID",
+      "reason": "is not one of",
+      "instance": {
+        "evidence_id": "EV-1", "evidence_type": "GUESS", "source_ref": "s", "candidate_ref": "c",
+        "collected_at": "2026-10-28T01:00:00Z", "collector": "dsh-agent", "method": "m", "result": "r",
+        "limitations": []
+      }
+    },
+    {
+      "schema": "evidence.schema.json",
+      "name": "integrity metadata value that is a nested object",
+      "expect": "INVALID",
+      "reason": "expected type",
+      "instance": {
+        "evidence_id": "EV-1", "evidence_type": "OBSERVATION", "source_ref": "s", "candidate_ref": "c",
+        "collected_at": "2026-10-28T01:00:00Z", "collector": "dsh-agent", "method": "m", "result": "r",
+        "limitations": [], "integrity_metadata": {"nested": {"depth": 1}}
+      }
+    },
+    {
+      "schema": "evidence.schema.json",
+      "name": "collection timestamp without a time",
+      "expect": "INVALID",
+      "reason": "date-time",
+      "instance": {
+        "evidence_id": "EV-1", "evidence_type": "OBSERVATION", "source_ref": "s", "candidate_ref": "c",
+        "collected_at": "2026-10-28", "collector": "dsh-agent", "method": "m", "result": "r", "limitations": []
+      }
+    },
+    {
+      "schema": "evidence.schema.json",
+      "name": "limitations given as a string",
+      "expect": "INVALID",
+      "reason": "expected type",
+      "instance": {
+        "evidence_id": "EV-1", "evidence_type": "OBSERVATION", "source_ref": "s", "candidate_ref": "c",
+        "collected_at": "2026-10-28T01:00:00Z", "collector": "dsh-agent", "method": "m", "result": "r",
+        "limitations": "none"
+      }
+    },
+    {
+      "schema": "evidence.schema.json",
+      "name": "evidence property the contract does not define",
+      "expect": "INVALID",
+      "reason": "unexpected property",
+      "instance": {
+        "evidence_id": "EV-1", "evidence_type": "OBSERVATION", "source_ref": "s", "candidate_ref": "c",
+        "collected_at": "2026-10-28T01:00:00Z", "collector": "dsh-agent", "method": "m", "result": "r",
+        "limitations": [], "verified": true
+      }
+    },
+    {
+      "schema": "acceptance-gate.schema.json",
+      "name": "valid required gate",
+      "expect": "VALID",
+      "instance": {
+        "gate_id": "G-1", "task_id": "T-1", "candidate_ref": "956f06dc", "required": true, "status": "PASS",
+        "criteria_refs": ["AC-1"], "evidence_refs": ["EV-1"]
+      }
+    },
+    {
+      "schema": "acceptance-gate.schema.json",
+      "name": "not-applicable gate with a reason",
+      "expect": "VALID",
+      "instance": {
+        "gate_id": "G-2", "task_id": "T-1", "candidate_ref": "956f06dc", "required": false,
+        "status": "NOT_APPLICABLE", "criteria_refs": ["AC-2"], "evidence_refs": [],
+        "not_applicable_reason": "no network access is part of this task"
+      }
+    },
+    {
+      "schema": "acceptance-gate.schema.json",
+      "name": "gate status outside the vocabulary",
+      "expect": "INVALID",
+      "reason": "is not one of",
+      "instance": {
+        "gate_id": "G-1", "task_id": "T-1", "candidate_ref": "956f06dc", "required": true, "status": "GREEN",
+        "criteria_refs": ["AC-1"], "evidence_refs": ["EV-1"]
+      }
+    },
+    {
+      "schema": "acceptance-gate.schema.json",
+      "name": "required flag given as a string",
+      "expect": "INVALID",
+      "reason": "expected type",
+      "instance": {
+        "gate_id": "G-1", "task_id": "T-1", "candidate_ref": "956f06dc", "required": "yes", "status": "PASS",
+        "criteria_refs": ["AC-1"], "evidence_refs": ["EV-1"]
+      }
+    },
+    {
+      "schema": "acceptance-gate.schema.json",
+      "name": "gate with no criterion reference",
+      "expect": "INVALID",
+      "reason": "at least",
+      "instance": {
+        "gate_id": "G-1", "task_id": "T-1", "candidate_ref": "956f06dc", "required": true, "status": "PASS",
+        "criteria_refs": [], "evidence_refs": []
+      }
+    },
+    {
+      "schema": "acceptance-gate.schema.json",
+      "name": "gate without the candidate it was evaluated against",
+      "expect": "INVALID",
+      "reason": "missing required property",
+      "instance": {
+        "gate_id": "G-1", "task_id": "T-1", "required": true, "status": "PASS",
+        "criteria_refs": ["AC-1"], "evidence_refs": ["EV-1"]
+      }
+    },
+    {
+      "schema": "closure.schema.json",
+      "name": "valid closure",
+      "expect": "VALID",
+      "instance": {
+        "closure_id": "C-1", "task_id": "T-1", "final_state": "CLOSED_VERIFIED",
+        "candidate_ref": "956f06dc", "policy_version": "MAEP-1.1.0",
+        "criteria_results": [{"criterion_id": "AC-1", "status": "PASS", "evidence_refs": ["EV-1"]}],
+        "gate_refs": ["G-1"], "evidence_refs": ["EV-1"], "limitations": ["in-process only"],
+        "closed_at": "2026-10-28T02:00:00Z"
+      }
+    },
+    {
+      "schema": "closure.schema.json",
+      "name": "closure claiming a state outside the vocabulary",
+      "expect": "INVALID",
+      "reason": "is not one of",
+      "instance": {
+        "closure_id": "C-1", "task_id": "T-1", "final_state": "DONE", "candidate_ref": "956f06dc",
+        "policy_version": "MAEP-1.1.0",
+        "criteria_results": [{"criterion_id": "AC-1", "status": "PASS", "evidence_refs": ["EV-1"]}],
+        "gate_refs": ["G-1"], "evidence_refs": ["EV-1"], "limitations": [], "closed_at": "2026-10-28T02:00:00Z"
+      }
+    },
+    {
+      "schema": "closure.schema.json",
+      "name": "criterion result status outside the gate vocabulary",
+      "expect": "INVALID",
+      "reason": "is not one of",
+      "instance": {
+        "closure_id": "C-1", "task_id": "T-1", "final_state": "CLOSED_VERIFIED", "candidate_ref": "956f06dc",
+        "policy_version": "MAEP-1.1.0",
+        "criteria_results": [{"criterion_id": "AC-1", "status": "OK", "evidence_refs": ["EV-1"]}],
+        "gate_refs": ["G-1"], "evidence_refs": ["EV-1"], "limitations": [], "closed_at": "2026-10-28T02:00:00Z"
+      }
+    },
+    {
+      "schema": "closure.schema.json",
+      "name": "closure with no criterion result",
+      "expect": "INVALID",
+      "reason": "at least",
+      "instance": {
+        "closure_id": "C-1", "task_id": "T-1", "final_state": "CLOSED_VERIFIED", "candidate_ref": "956f06dc",
+        "policy_version": "MAEP-1.1.0", "criteria_results": [], "gate_refs": ["G-1"],
+        "evidence_refs": ["EV-1"], "limitations": [], "closed_at": "2026-10-28T02:00:00Z"
+      }
+    },
+    {
+      "schema": "closure.schema.json",
+      "name": "closure without a closing time",
+      "expect": "INVALID",
+      "reason": "missing required property",
+      "instance": {
+        "closure_id": "C-1", "task_id": "T-1", "final_state": "CLOSED_VERIFIED", "candidate_ref": "956f06dc",
+        "policy_version": "MAEP-1.1.0",
+        "criteria_results": [{"criterion_id": "AC-1", "status": "PASS", "evidence_refs": ["EV-1"]}],
+        "gate_refs": ["G-1"], "evidence_refs": ["EV-1"], "limitations": []
+      }
+    },
+    {
+      "schema": "closure.schema.json",
+      "name": "closing time without a UTC offset",
+      "expect": "INVALID",
+      "reason": "date-time",
+      "instance": {
+        "closure_id": "C-1", "task_id": "T-1", "final_state": "CLOSED_VERIFIED", "candidate_ref": "956f06dc",
+        "policy_version": "MAEP-1.1.0",
+        "criteria_results": [{"criterion_id": "AC-1", "status": "PASS", "evidence_refs": ["EV-1"]}],
+        "gate_refs": ["G-1"], "evidence_refs": ["EV-1"], "limitations": [], "closed_at": "2026-10-28T02:00:00"
+      }
+    }
+  ]
+}

@@ -3,9 +3,9 @@
 | ID | Criterion | Status | Evidence / gap |
 |---|---|---|---|
 | AC-01 | Every rule has ID and normative level | PASS-DESIGN | Constitution MAEP-001..028 |
-| AC-02 | Rule-to-mechanism/test/evidence traceability | PARTIAL | Traceability matrix and catalogue exist; some runtime integrations pending |
-| AC-03 | Six typed JSON Schema contracts exist and parse | PASS-LOCAL | 6 JSON files parsed by Python stdlib tests |
-| AC-04 | JSON Schema 2020-12 schema checks and representative instances | PASS-LOCAL | Draft202012Validator 4.17.3 checked all six schemas; positive and missing-required-field negative samples passed/rejected as expected; see SCHEMA_VALIDATION_REPORT_V1.md |
+| AC-02 | Rule-to-mechanism/test/evidence traceability | PASS-CI | Traceability matrix and catalogue exist; rule coverage and anchor resolution are now enforced by `maep/tests/test_conformance_catalogue.py` (T-058..T-061) |
+| AC-03 | Six typed JSON Schema contracts exist and parse | PASS-CI | 6 JSON files parsed by Python stdlib tests, and their bytes are pinned in `maep/schemas/SHA256SUMS` |
+| AC-04 | JSON Schema 2020-12 schema checks and representative instances | PASS-CI for the enforced subset; PASS-LOCAL for the full meta-schema | Draft202012Validator 4.17.3 checked all six schemas once (not reproducible in CI, not a dependency); the subset the contracts use is now validated on every push against 42 hand-written positive/negative fixtures (`maep/schema_check.py`, `maep/tests/test_schema_fixtures.py`); see SCHEMA_VALIDATION_REPORT_V1.md |
 | AC-05 | Fail-closed authorization primitive | PASS-UNIT | authorization negative/positive tests |
 | AC-06 | State-transition guard and terminal states | PASS-UNIT | transition tests |
 | AC-07 | Acceptance/closure gate and candidate checks | PASS-UNIT | closure and gate tests |

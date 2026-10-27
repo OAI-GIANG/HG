@@ -66,10 +66,12 @@ Run: `python -m unittest discover -s maep/tests -v`. Test names are stable ancho
 | T-057 | hg/tests/test_bypass.py DirectAdapterCallTests; hg/tests/test_gateway.py SerializedEffectTests, AuthorityRecheckTests | MAEP-003, 018 | authority is re-read immediately before the effect and withdrawal stops it; concurrent effects never overlap and the ledger still loads |
 | T-058 | maep/tests/test_conformance_catalogue.py ConformanceCatalogueTests | MAEP-020, 021, 024 | every rule MAEP-001..028 maps to a test that exists; no catalogue row cites a test the suite no longer has |
 | T-059 | maep/tests/test_conformance_catalogue.py StateTableParityTests | MAEP-007, 026 | the spec table and the implementation declare the same states and the same allowed edges |
+| T-060 | maep/tests/test_schema_fixtures.py SchemaSubsetValidatorTests, SchemaFixtureTests | MAEP-005, 010 | every contract uses only keywords that are enforced; 42 hand-written positive/negative instances reach their expected verdict and violation |
+| T-061 | maep/tests/test_schema_fixtures.py SchemaProvenanceTests | MAEP-010, 011, 015 | contract and fixture bytes match recorded SHA-256 digests; canonical serialization is deterministic and changes when the data changes |
 
 ## Test layers and limits
 - Unit tests: executable local invariants in `core.py`.
-- Schema-file tests: JSON syntax, dialect marker, required/property declaration only.
+- Schema-file tests: JSON syntax, dialect marker, required/property declaration, **and instance validation for the subset of Draft 2020-12 the contracts actually use** (`maep/schema_check.py`) against hand-written positive and negative fixtures, plus byte digests in `maep/schemas/SHA256SUMS`. Amended 2026-10-28: this bullet previously said "declaration only".
 - NOT RUN: full JSON Schema Draft 2020-12 meta-schema validation because no standards-complete validator is available in the checked Termux environment.
 - RUN (in-process): BrainOrchestrator integration, local-filesystem tool adapters, ledger-based restart recovery — `python -m unittest discover -s hg/tests -t . -v`.
 - RUN (in-process): trust-root-anchored grants (RT-06) against a fake canonical source, plus the live `main` read in `python -m hg authority-check`; T-046..T-050. Amended 2026-10-28: this section previously listed RT-06 as NOT RUN.
