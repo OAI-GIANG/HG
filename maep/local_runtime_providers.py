@@ -302,7 +302,18 @@ class SQLiteIdempotencyLedger:
 
     def _connect(self, *, init: bool = False):
         from maep.sqlite_nofollow import connect_nofollow
-        conn = connect_nofollow(self._sqlite3, self.path, timeout=5.0, isolation_level=None)
+        try:
+            conn = connect_nofollow(self._sqlite3, self.path, private=True, timeout=5.0, isolation_level=None)
+        except OSError as exc:
+            raise AuthorityError("idempotency database could not be opened safely") from exc
+        try:
+            self._prepare(conn, init=init)
+        except BaseException:
+            conn.close()
+            raise
+        return conn
+
+    def _prepare(self, conn: Any, *, init: bool) -> None:
         conn.execute("PRAGMA busy_timeout=5000")
         conn.execute("PRAGMA synchronous=FULL")
         conn.execute("PRAGMA foreign_keys=ON")
@@ -315,8 +326,14 @@ class SQLiteIdempotencyLedger:
             if "owner_start_token" not in columns:
                 conn.execute("ALTER TABLE idempotency ADD COLUMN owner_start_token TEXT")
             conn.execute("CREATE TABLE IF NOT EXISTS recovery_outbox (event_id TEXT PRIMARY KEY, idempotency_key TEXT NOT NULL, payload_json TEXT NOT NULL, delivered INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)")
-        os.chmod(self.path, 0o600)
-        return conn
+            conn.verify_binding()  # schema DDL autocommits; prove it reached the bound file
+
+    @staticmethod
+    def _commit(conn: Any) -> None:
+        try:
+            conn.commit()  # re-verifies the database path binding before and after COMMIT
+        except OSError as exc:
+            raise AuthorityError("idempotency database moved; write not acknowledged") from exc
 
     @staticmethod
     def _process_start_token(pid: int) -> str | None:
@@ -384,7 +401,7 @@ class SQLiteIdempotencyLedger:
                 conn.execute("INSERT OR IGNORE INTO recovery_outbox(event_id,idempotency_key,payload_json) VALUES(?,?,?)",
                              (event_id, key, _canonical(payload).decode("utf-8")))
                 recovered.append(payload)
-            conn.commit()
+            self._commit(conn)
         except Exception:
             conn.rollback()
             raise
@@ -408,7 +425,7 @@ class SQLiteIdempotencyLedger:
             try:
                 conn.execute("BEGIN IMMEDIATE")
                 conn.execute("UPDATE recovery_outbox SET delivered=1 WHERE event_id=?", (event_id,))
-                conn.commit()
+                self._commit(conn)
             except Exception:
                 conn.rollback()
                 raise
@@ -464,7 +481,7 @@ class SQLiteIdempotencyLedger:
                 raise AuthorityError("cannot reserve idempotency key without process identity provenance")
             conn.execute("INSERT INTO idempotency(key,request_digest,decision_digest,status,owner_pid,owner_start_token) VALUES(?,?,?,'RESERVED',?,?)",
                          (idempotency_key, request_digest, decision_digest, os.getpid(), start_token))
-            conn.commit()
+            self._commit(conn)
             return {"status": "RESERVED"}
         except Exception:
             conn.rollback()
@@ -483,7 +500,7 @@ class SQLiteIdempotencyLedger:
             if row is None or row[0] != request_digest or row[1] != "RESERVED":
                 raise AuthorityError("idempotency reservation is missing, conflicting, or already finalized")
             conn.execute("UPDATE idempotency SET status=?,outcome=?,receipt_json=?,updated_at=CURRENT_TIMESTAMP WHERE key=?", (outcome, outcome, _canonical(receipt).decode("utf-8"), idempotency_key))
-            conn.commit()
+            self._commit(conn)
         except Exception:
             conn.rollback()
             raise

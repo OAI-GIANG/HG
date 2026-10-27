@@ -24,7 +24,7 @@ class SQLiteRoutingBudgetLedgerTests(unittest.TestCase):
 
             def race_connect(database, *args, **kwargs):
                 nonlocal swapped
-                if not swapped and str(database).startswith("file:/proc/self/fd/"):
+                if not swapped and str(database).startswith("file:"):
                     target.unlink()
                     target.symlink_to(external)
                     swapped = True
@@ -40,6 +40,46 @@ class SQLiteRoutingBudgetLedgerTests(unittest.TestCase):
             tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             self.assertEqual(tables, {"sentinel"})
             conn.close()
+
+    def test_reservation_not_acknowledged_when_database_replaced_mid_transaction(self):
+        import os
+        import sqlite3
+        from unittest.mock import patch
+        import brain.routing_budget as module
+        with tempfile.TemporaryDirectory(prefix="hg-routing-commit-race-") as directory:
+            target = Path(directory) / "budget.sqlite3"
+            displaced = Path(directory) / "displaced.sqlite3"
+            ledger = SQLiteRoutingBudgetLedger(target)
+            real_open = module.connect_nofollow
+
+            class SwapOnInsert:
+                def __init__(self, conn):
+                    object.__setattr__(self, "_conn", conn)
+
+                def __getattr__(self, name):
+                    return getattr(self._conn, name)
+
+                def __setattr__(self, name, value):
+                    setattr(self._conn, name, value)
+
+                def execute(self, sql, *params):
+                    result = self._conn.execute(sql, *params)
+                    if sql.startswith("INSERT INTO routing_budget_reservations"):
+                        os.replace(target, displaced)
+                        SQLiteRoutingBudgetLedger(target)  # a fresh, empty ledger at the path
+                    return result
+
+            def open_then_swap_on_insert(*args, **kwargs):
+                return SwapOnInsert(real_open(*args, **kwargs))
+
+            with patch.object(module, "connect_nofollow", side_effect=open_then_swap_on_insert):
+                with self.assertRaises(RoutingBudgetError):
+                    ledger.reserve_bound(task_ref="t", candidate_ref="c", policy_version="p",
+                                         route="r", category="reasoning", call_id="call-1", limit=3)
+            for path in (target, displaced):
+                conn = sqlite3.connect(path)
+                self.assertEqual(conn.execute("SELECT count(*) FROM routing_budget_reservations").fetchone()[0], 0)
+                conn.close()
 
     def test_reservations_are_durable_after_reopen(self):
         with tempfile.TemporaryDirectory() as directory:

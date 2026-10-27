@@ -30,7 +30,7 @@ class SQLiteRoutingBudgetLedger:
         self.path = Path(path)
         self.timeout = float(timeout)
         self._lock = threading.RLock()
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         with self._connection() as connection:
             connection.execute("PRAGMA journal_mode=WAL")
             connection.execute("PRAGMA synchronous=FULL")
@@ -53,6 +53,10 @@ class SQLiteRoutingBudgetLedger:
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            try:
+                connection.verify_binding()
+            except OSError as exc:
+                raise RoutingBudgetError("durable budget database moved during initialization") from exc
 
     @contextmanager
     def _connection(self):
@@ -157,9 +161,9 @@ class SQLiteRoutingBudgetLedger:
                     "(call_id,task_ref,candidate_ref,policy_version,route,category) VALUES(?,?,?,?,?,?)",
                     (call_id, task_ref, candidate_ref, policy_version, route, category),
                 )
-                connection.execute("COMMIT")
+                connection.commit()  # re-verifies the path binding
                 return True
-        except sqlite3.Error as exc:
+        except (OSError, sqlite3.Error) as exc:
             raise RoutingBudgetError("identity-bound budget reservation failed closed") from exc
 
     def reserve(self, task_ref: str, category: str, limit: int) -> bool:
@@ -191,7 +195,7 @@ class SQLiteRoutingBudgetLedger:
                     if connection.execute("SELECT changes()").fetchone()[0] != 1:
                         connection.execute("ROLLBACK")
                         return False
-                connection.execute("COMMIT")
+                connection.commit()  # re-verifies the path binding
                 return True
-        except sqlite3.Error as exc:
+        except (OSError, sqlite3.Error) as exc:
             raise RoutingBudgetError("durable budget reservation failed closed") from exc

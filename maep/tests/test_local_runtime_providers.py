@@ -67,7 +67,7 @@ class LocalRuntimeProviderTests(unittest.TestCase):
 
             def race_connect(database, *args, **kwargs):
                 nonlocal swapped
-                if not swapped and str(database).startswith("file:/proc/self/fd/"):
+                if not swapped and str(database).startswith("file:"):
                     target.unlink()
                     target.symlink_to(external)
                     swapped = True
@@ -82,6 +82,30 @@ class LocalRuntimeProviderTests(unittest.TestCase):
             self.assertEqual(conn.execute("SELECT value FROM sentinel").fetchone()[0], "untouched")
             tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             self.assertEqual(tables, {"sentinel"})
+            conn.close()
+
+    def test_idempotency_claim_not_acknowledged_when_database_replaced_mid_transaction(self):
+        import sqlite3
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory(prefix="hg-idempotency-commit-race-") as temp:
+            root = Path(temp)
+            target = root / "ledger.sqlite3"
+            displaced = root / "displaced.sqlite3"
+            ledger = SQLiteIdempotencyLedger(target)
+            real_token = SQLiteIdempotencyLedger._process_start_token
+
+            def swap_then_token(pid):
+                # claim() calls this inside BEGIN IMMEDIATE, before INSERT and COMMIT.
+                os.replace(target, displaced)
+                SQLiteIdempotencyLedger(target)  # fresh, empty ledger at the canonical path
+                return real_token(pid)
+
+            with patch.object(SQLiteIdempotencyLedger, "_process_start_token", side_effect=swap_then_token):
+                with self.assertRaises(AuthorityError):
+                    ledger.claim(idempotency_key="k-1", request_digest="r", decision_digest="d")
+            self.assertIsNone(SQLiteIdempotencyLedger(target).inspect("k-1"))
+            conn = sqlite3.connect(displaced)
+            self.assertEqual(conn.execute("SELECT count(*) FROM idempotency").fetchone()[0], 0)
             conn.close()
 
     def test_policy_provider_requires_injected_source_provenance(self):
