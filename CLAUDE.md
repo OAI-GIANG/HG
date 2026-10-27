@@ -85,6 +85,6 @@ End each task with: objective, scope, changes (commit SHAs), tests run (command,
 
 - In place: CI workflow running the MAEP, HG runtime and guard suites, `python -m hg selfcheck` and `python -m hg bench` on every push and pull request.
 - In place: GitHub ruleset `main-maep` (id 25706034) on the default branch: no deletion, no force push, changes only through a pull request (0 approvals), and `unittest (3.13)` and `unittest (3.14)` must pass. Bypass list empty. Owner-created on 2026-10-23 after the repository was made public.
-- Proposed:
-  - A test asserting every rule MAEP-001..028 is mapped in `maep/spec/MAEP_CONFORMANCE_TEST_CATALOGUE_V1.md`.
+- Done: a test asserts every rule MAEP-001..028 is mapped in `maep/spec/MAEP_CONFORMANCE_TEST_CATALOGUE_V1.md`, that every catalogue row names a test the suite still has, and that the state table and `maep/core.py` declare the same edges (`maep/tests/test_conformance_catalogue.py`, 2026-10-28).
 - Done (runtime path): a test fails if task state is mutated without the claimed writer (`maep/tests/test_task_store_restore.py`, `hg/tests/test_orchestrator.py`), and if a side effect runs without a PolicyEvaluator ALLOW (`hg/tests/test_gateway.py`).
+- Done (runtime path): no public API can bind a tool adapter or mint a permit, and authority is re-read immediately before the effect (`hg/tests/test_bypass.py`, `hg/tests/test_gateway.py`; AC-26).

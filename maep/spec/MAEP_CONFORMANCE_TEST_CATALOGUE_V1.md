@@ -62,11 +62,16 @@ Run: `python -m unittest discover -s maep/tests -v`. Test names are stable ancho
 | T-053 | hg/tests/test_memory.py | MAEP-009, 010, 015, 019 | FACT needs evidence; contradictions refused unless superseded; history preserved; tampering reported on restore; memory never grants authority; constraints never dropped from context |
 | T-054 | hg/tests/test_tools_research.py | MAEP-003, 005, 009, 018, 020 | code/URL tools only through the gateway; EXECUTE needs an EXECUTE grant; interrupted test runs stay UNKNOWN; research claims cite sources; fake citations discarded |
 | T-055 | hg/tests/test_learning_ops.py | MAEP-008, 014, 015, 024 | recurring failures become lessons and guard cases; benchmark fails on unauthorized effects, false closures, failed cases or regressions; health flags pending actions and corrupt ledgers |
+| T-056 | hg/tests/test_bypass.py DirectAdapterCallTests | MAEP-005, 017, 019 | no public API can bind an adapter to a caller-chosen key or mint a permit; an unbound or foreign-bound adapter performs no effect |
+| T-057 | hg/tests/test_bypass.py DirectAdapterCallTests; hg/tests/test_gateway.py SerializedEffectTests, AuthorityRecheckTests | MAEP-003, 018 | authority is re-read immediately before the effect and withdrawal stops it; concurrent effects never overlap and the ledger still loads |
+| T-058 | maep/tests/test_conformance_catalogue.py ConformanceCatalogueTests | MAEP-020, 021, 024 | every rule MAEP-001..028 maps to a test that exists; no catalogue row cites a test the suite no longer has |
+| T-059 | maep/tests/test_conformance_catalogue.py StateTableParityTests | MAEP-007, 026 | the spec table and the implementation declare the same states and the same allowed edges |
 
 ## Test layers and limits
 - Unit tests: executable local invariants in `core.py`.
 - Schema-file tests: JSON syntax, dialect marker, required/property declaration only.
 - NOT RUN: full JSON Schema Draft 2020-12 meta-schema validation because no standards-complete validator is available in the checked Termux environment.
 - RUN (in-process): BrainOrchestrator integration, local-filesystem tool adapters, ledger-based restart recovery — `python -m unittest discover -s hg/tests -t . -v`.
-- NOT RUN: production deployment, OS-level isolation, trust-root-anchored grants (RT-06), Android crash recovery, GitHub permissions, deploy/migration integration.
+- RUN (in-process): trust-root-anchored grants (RT-06) against a fake canonical source, plus the live `main` read in `python -m hg authority-check`; T-046..T-050. Amended 2026-10-28: this section previously listed RT-06 as NOT RUN.
+- NOT RUN: production deployment, OS-level isolation, Android crash recovery, GitHub permissions, deploy/migration integration.
 - Internal review only; no independent review is claimed.
