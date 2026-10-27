@@ -51,6 +51,45 @@ class IdempotencySQLiteSecurityTests(unittest.TestCase):
         finally:
             store.close()
 
+    def test_reopen_after_replacement_keeps_each_receipt_in_its_own_database(self):
+        """The displaced store's WAL frames must never be replayed into the database now at the path."""
+        displaced = self.root / "displaced.sqlite3"
+        store = IdempotencyStore(self.db)
+        try:
+            store.begin("key-A", "digest-A")  # committed frames now live in "<db>-wal"
+            os.replace(self.db, displaced)
+            staging = self.root / "staging.sqlite3"
+            replacement = sqlite3.connect(staging)
+            replacement.execute("CREATE TABLE marker(v TEXT)")
+            replacement.execute("INSERT INTO marker VALUES('B')")
+            replacement.commit()
+            replacement.close()
+            os.chmod(staging, 0o600)
+            os.replace(staging, self.db)
+        finally:
+            store.close()
+
+        def file_tables(path):
+            inspect = self.root / f"inspect-{path.name}"
+            inspect.mkdir(mode=0o700)
+            copy = inspect / "copy.sqlite3"
+            copy.write_bytes(path.read_bytes())
+            conn = sqlite3.connect(copy)
+            try:
+                tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+                keys = [r[0] for r in conn.execute("SELECT idem_key FROM requests")] if "requests" in tables else None
+                return tables, keys
+            finally:
+                conn.close()
+
+        self.assertEqual(file_tables(displaced), ({"requests"}, ["key-A"]))
+        self.assertEqual(file_tables(self.db), ({"marker"}, None))
+        reopened = IdempotencyStore(self.db)
+        try:
+            self.assertEqual(reopened.begin("key-A", "digest-A"), ("NEW", None))
+        finally:
+            reopened.close()
+
 
 if __name__ == "__main__":
     unittest.main()
