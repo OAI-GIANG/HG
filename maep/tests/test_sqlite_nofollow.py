@@ -17,6 +17,9 @@ from unittest.mock import patch
 
 from maep import sqlite_nofollow as sn
 
+# Android (Termux) Python has no os.link: apps cannot create hard links there.
+_HAS_LINK = hasattr(os, "link")
+
 _LOCK_PROBE = r"""
 import sqlite3, sys
 c = sqlite3.connect(sys.argv[1], timeout=0, isolation_level=None)
@@ -55,6 +58,7 @@ class SQLiteNoFollowTests(unittest.TestCase):
     def tearDown(self):
         self._tmp.cleanup()
 
+    @unittest.skipUnless(_HAS_LINK, "platform cannot create hard links")
     def test_procfs_deleted_alias_cannot_redirect_open(self):
         """SQLite resolves /proc/self/fd/N by readlink; '<path> (deleted)' must not win."""
         _make_db(self.target, "canonical")
@@ -138,7 +142,7 @@ class SQLiteNoFollowTests(unittest.TestCase):
     def test_rejects_symlinked_or_hardlinked_sidecars_without_touching_target(self):
         victim = self.root / "victim.bin"
         for suffix in ("-journal", "-wal", "-shm"):
-            for kind in ("symlink", "hardlink"):
+            for kind in ("symlink", "hardlink") if _HAS_LINK else ("symlink",):
                 with self.subTest(suffix=suffix, kind=kind):
                     victim.write_bytes(b"VICTIM-DATA" * 64)
                     if not self.target.exists():
@@ -162,6 +166,7 @@ class SQLiteNoFollowTests(unittest.TestCase):
                     finally:
                         side.unlink(missing_ok=True)
 
+    @unittest.skipUnless(_HAS_LINK, "platform cannot create hard links")
     def test_rejects_hardlinked_database(self):
         _make_db(self.target, "t")
         os.link(self.target, self.root / "alias.sqlite3")
