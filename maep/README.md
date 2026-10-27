@@ -1,6 +1,6 @@
 # MAEP — HG Operating Governance
 
-Policy version: MAEP-1.1.0 (supersedes MAEP-1.0.0; see `spec/MAEP_OWNER_DELEGATION_V1.md`). Status: implemented and locally tested foundation; runtime integration remains deferred.
+Policy version: MAEP-1.1.0 (supersedes MAEP-1.0.0; see `spec/MAEP_OWNER_DELEGATION_V1.md`). Status: implemented, unit tested, and INTEGRATION_TESTED in-process on the HG runtime path (`hg/`), with the RT-06 trust anchor read live from `main`. No production deployment exists.
 
 MAEP is a cross-cutting governance layer for task intake, authority, state transitions, evidence, acceptance, recovery and closure. It is not a sixth HG domain. BrainOrchestrator remains the sole task coordinator.
 
@@ -24,7 +24,9 @@ python -m unittest discover -s maep/tests -v
 Important limits:
 - `core.py` is the business-policy layer, not a JSON Schema validator.
 - The six schemas were checked with JSON Schema Draft 2020-12 validator `jsonschema==4.17.3` installed temporarily for development; that validator is not a runtime dependency.
-- Runtime integration with BrainOrchestrator is not yet demonstrated by end-to-end tests.
+- Runtime integration with BrainOrchestrator **is** exercised in-process (`hg/tests/test_orchestrator.py`, `hg/tests/test_anchored_runtime.py`, `python -m hg selfcheck` in CI). Those runs are not production evidence: nothing is deployed, and every boundary is application-level inside one process.
+- Enforced in-process only: code in the same interpreter that reaches module-private attributes can still mint a permit or an evaluator. Containment needs a separate UID or process.
+- The request principal is an unauthenticated string, so the trust anchor binds the *grant*, not the caller's identity (finding T-1).
 - This package has not undergone independent review or certification.
 
 References:
