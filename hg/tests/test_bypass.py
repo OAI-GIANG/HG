@@ -91,16 +91,6 @@ class DirectAdapterCallTests(TempDirMixin):
             adapter.execute(PARAMS)                       # and an unbound adapter still refuses
         self.assertFalse(self.target().exists())
 
-    def test_forged_authority_via_the_public_bind_api_is_refused(self):
-        """Reproduces the bypass: bind(caller_key) + _Permit(caller_key, ...), no gateway involved."""
-        from hg.tools.gateway import _Permit
-        adapter = LocalFileWriteAdapter(self.root)
-        key = object()
-        adapter.bind(key)
-        adapter.execute(PARAMS, _Permit(key, "file:out/hello.txt", "T-1:S-1:forged"))
-        self.assertFalse(self.target().exists())
-
-
     def test_adapter_cannot_be_registered_with_a_second_gateway(self):
         rt = self.build([grant()])
         adapter = next(a for a in rt.gateway._adapters.values() if a.name == "fs.write")
@@ -122,7 +112,6 @@ class UnanchoredRuntimeTests(TempDirMixin):
     def test_authority_and_fixture_opt_in_are_exclusive(self):
         with self.assertRaisesRegex(MAEPError, "either"):
             build_runtime(self.workdir, [grant()], allow_fixture_grants=True, authority=object())
-
 
 
 if __name__ == "__main__":

@@ -238,6 +238,15 @@ class HTTPAPITests(TempDirMixin):
         status, body = self.request("DELETE", "/v1/tasks")
         self.assertEqual((status, body["error"]), (405, "method_not_allowed"))
 
+    def test_unsupported_methods_authenticate_before_answering(self):
+        """HG_SERVICE_V1 §5: every route requires the token, including a route that only refuses."""
+        for method in ("PUT", "DELETE", "PATCH", "OPTIONS"):
+            with self.subTest(method=method):
+                status, body = self.request(method, "/v1/tasks", token=False)
+                self.assertEqual((status, body["error"]), (401, "unauthorized"))
+                status, body = self.request(method, "/v1/tasks")
+                self.assertEqual((status, body["error"]), (405, "method_not_allowed"))
+
 
 if __name__ == "__main__":
     unittest.main()

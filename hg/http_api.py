@@ -515,19 +515,34 @@ class HGHTTPServer(http.server.ThreadingHTTPServer):
                 except Exception:
                     self._send(500, {"error": "internal_error"})
 
-            def do_PUT(self):
+            def _unsupported_method(self):
+                """Every route requires the bearer token, including a route that only refuses.
+
+                HG_SERVICE_V1 §5: "All routes require Authorization: Bearer token". Answering 405
+                before authenticating would tell an unauthenticated caller which methods exist.
+                """
+                try:
+                    self._authenticate()
+                except HTTPBoundaryError as exc:
+                    self._fail(exc)
+                    return
                 self._send(405, {"error": "method_not_allowed"})
+
+            def do_PUT(self):
+                self._unsupported_method()
 
             def do_DELETE(self):
-                self._send(405, {"error": "method_not_allowed"})
+                self._unsupported_method()
 
             def do_PATCH(self):
-                self._send(405, {"error": "method_not_allowed"})
+                self._unsupported_method()
 
             def do_OPTIONS(self):
-                self._send(405, {"error": "method_not_allowed"})
+                self._unsupported_method()
 
             def send_error(self, code, message=None, explain=None):
+                # Protocol-level parse errors (malformed request line, unsupported HTTP version)
+                # are answered before any header can be authenticated; they never perform work.
                 self._send(code, {"error": "method_not_allowed" if code in (400, 405, 501) else "http_error"})
 
         return Handler
