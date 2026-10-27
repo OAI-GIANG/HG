@@ -18,6 +18,8 @@ import concurrent.futures
 import hashlib
 import os
 import tempfile
+import threading
+import uuid
 from pathlib import Path, PurePosixPath
 
 from maep.core import MAEPError, POLICY_VERSION, enforce_execution_mode, recovery_decision
@@ -40,18 +42,57 @@ class AdapterRefused(AdapterFailure):
     """The adapter refused to act: no valid permit from its gateway. Nothing was attempted."""
 
 
+_KEY_SEAL = object()
+_PERMIT_SEAL = object()
+
+
+class _GatewayKey:
+    """Registration capability that only ActionGateway mints.
+
+    An adapter acts only for the gateway whose key it was registered with, and a permit carries
+    authority only when it was minted with that key. Both constructors take a module-private
+    seal, so no *public* API can mint effect authority: registration needs a key, a key needs
+    ``_KEY_SEAL``, and a permit needs ``_PERMIT_SEAL``.
+
+    Residual in-process limit: Python cannot hide module attributes from code in the same
+    interpreter, so code that imports this module and reads ``_KEY_SEAL``/``_PERMIT_SEAL`` can
+    still mint one. A real boundary needs a separate UID or process
+    (docs/architecture/HG_SERVICE_V1.md §1).
+    """
+    __slots__ = ()
+
+    def __init__(self, seal):
+        if seal is not _KEY_SEAL:
+            raise MAEPError("a gateway key is minted by ActionGateway")
+
+
 class _Permit:
     """Single-use authority for one effect, minted only by ActionGateway after ALLOW (RT-06).
 
-    Bound to the minting gateway's key and to the exact resource. An adapter performs an
-    effect only with a matching, unused permit, so calling an adapter directly -- outside
-    the gateway's checks -- does nothing. In-process limit: code that reaches private
-    attributes could still mint one.
-    """
-    __slots__ = ("_key", "resource", "action_id", "_used")
+    Bound to the minting gateway's key and to the exact resource, and single-use. An adapter
+    performs an effect only with a matching, unused permit, so no public API can cause an
+    effect outside the gateway's checks (see _GatewayKey for the residual in-process limit).
 
-    def __init__(self, key, resource, action_id):
-        self._key, self.resource, self.action_id, self._used = key, resource, action_id, False
+    The permit also carries the gateway's re-check (MAEP-003): the adapter asks again
+    immediately before the effect, so authority withdrawn between the gateway's decision and
+    the write stops the write.
+    """
+    __slots__ = ("_key", "resource", "action_id", "_recheck", "_used")
+
+    def __init__(self, seal, key, resource, action_id, recheck):
+        if seal is not _PERMIT_SEAL:
+            raise MAEPError("a permit is minted by ActionGateway")
+        self._key, self.resource, self.action_id = key, resource, action_id
+        self._recheck, self._used = recheck, False
+
+    @classmethod
+    def _mint(cls, key, resource, action_id, recheck):
+        return cls(_PERMIT_SEAL, key, resource, action_id, recheck)
+
+    def _authorize(self):
+        """Re-ask authority at the moment of the effect; anything but a fresh True refuses."""
+        if self._recheck is None or self._recheck() is not True:
+            raise AdapterRefused("authority for this effect is no longer valid")
 
 
 def _sha256(data):
@@ -72,7 +113,10 @@ class ToolAdapter:
     ledger_exclude = {"content"}   # bulky or sensitive observed fields kept out of the ledger
     _gateway_key = None      # set once by the ActionGateway the adapter is registered with
 
-    def bind(self, key):
+    def _bind(self, key):
+        """Registration is private: only ActionGateway holds a _GatewayKey to pass."""
+        if not isinstance(key, _GatewayKey):
+            raise MAEPError("tool registration requires a key minted by ActionGateway")
         if self._gateway_key is not None and self._gateway_key is not key:
             raise MAEPError(f"tool {self.name} is already registered with another gateway")
         self._gateway_key = key
@@ -85,6 +129,7 @@ class ToolAdapter:
         if permit._used or permit.resource != self.resource_for(params):
             raise AdapterRefused("permit already used or issued for another resource")
         permit._used = True
+        permit._authorize()      # MAEP-003: authority is re-read immediately before the effect
         return self._perform(params)
 
     def describe(self):
@@ -247,14 +292,15 @@ class ActionGateway:
         self._log = event_log
         self._mode = mode
         self._policy_version = policy_version
-        self._key = object()
+        self._key = _GatewayKey(_KEY_SEAL)
+        self._effect_lock = threading.RLock()   # one effect at a time: see execute()
         self._adapters = {}
         for adapter in adapters:
             if adapter.name in self._adapters:
                 raise MAEPError("duplicate tool name in registry")
             self._adapters[adapter.name] = adapter
         for adapter in self._adapters.values():
-            adapter.bind(self._key)
+            adapter._bind(self._key)
         self._pending = self._rebuild_pending()
 
     # ---------- registry / introspection ----------
@@ -273,7 +319,9 @@ class ActionGateway:
         return sorted(self._adapters)
 
     def pending_actions(self, task_id=None):
-        return [dict(p) for p in self._pending.values() if task_id is None or p["task_id"] == task_id]
+        with self._effect_lock:
+            return [dict(p) for p in self._pending.values()
+                    if task_id is None or p["task_id"] == task_id]
 
     def _rebuild_pending(self):
         return pending_from_events(self._log.events())
@@ -304,6 +352,17 @@ class ActionGateway:
         return outcome
 
     def execute(self, task_id, step_id):
+        """Run one planned step's effect, serialized with every other effect in this process.
+
+        The pending check, the action id, the ACTION_STARTED append, the effect and the
+        ACTION_COMPLETED append must be one critical section: two concurrent calls would
+        otherwise pass the pending check together, mint the same sequence number twice and
+        leave a ledger that no longer loads (EventLog refuses a non-contiguous sequence).
+        """
+        with self._effect_lock:
+            return self._execute(task_id, step_id)
+
+    def _execute(self, task_id, step_id):
         try:
             snapshot = self._snapshot(task_id)
         except MAEPError as exc:
@@ -353,7 +412,8 @@ class ActionGateway:
         self._pending[action_id] = {"action_id": action_id, "task_id": task_id, "step_id": step_id,
                                     "tool": adapter.name, "intent": intent}
 
-        status, reason, observed = self._run(adapter, params, _Permit(self._key, resource, action_id))
+        status, reason, observed = self._run(adapter, params,
+                                            self._permit(resource, action_id, request))
         record = {"action_id": action_id, "step_id": step_id, "status": status, "reason": reason,
                   "observed": {k: v for k, v in observed.items() if k not in adapter.ledger_exclude}}
         try:
@@ -366,6 +426,23 @@ class ActionGateway:
             self._pending.pop(action_id, None)
         return self._outcome(task_id, step_id, status, reason, action_id=action_id,
                              observed=observed, decision=decision)
+
+    def _permit(self, resource, action_id, request=None):
+        """Mint the single-use permit for one effect. Private: authority comes from evaluate()."""
+        recheck = None if request is None else (lambda: self._authorized_now(request))
+        return _Permit._mint(self._key, resource, action_id, recheck)
+
+    def _authorized_now(self, request):
+        """MAEP-003 re-check: is this exact request still allowed right now?
+
+        Asked from inside the adapter, immediately before the effect. Any failure (exception,
+        BLOCKED, expiry, revocation) is not-ALLOW and therefore refuses the effect.
+        """
+        try:
+            decision = self._evaluator.evaluate(request, now=self._log.now())
+        except Exception:
+            return False
+        return decision.get("decision") == "ALLOW"
 
     @staticmethod
     def _run(adapter, params, permit):
@@ -396,6 +473,10 @@ class ActionGateway:
 
     def reconcile(self, action_id):
         """Inspect live state for a pending action (MAEP-018). Never replays it."""
+        with self._effect_lock:
+            return self._reconcile(action_id)
+
+    def _reconcile(self, action_id):
         pending = self._pending.get(action_id)
         if pending is None:
             raise MAEPError("no pending action with that id")

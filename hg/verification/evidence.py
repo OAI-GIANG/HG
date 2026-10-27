@@ -10,6 +10,7 @@ EventLog is the single writer for the tool-action ledger (separate from the task
 It inherits maep/ledger.py's limits: append-only through this API, not tamper-proof.
 """
 import copy
+import threading
 import uuid
 from datetime import datetime, timezone
 
@@ -27,6 +28,7 @@ class EventLog:
     def __init__(self, path, *, clock=utcnow):
         self._path = path
         self._clock = clock
+        self._lock = threading.RLock()   # seq assignment and the file append are one step
         self._events = ledger.read_events(path)
         for event in self._events:
             if not isinstance(event.get("kind"), str) or not isinstance(event.get("seq"), int):
@@ -42,21 +44,29 @@ class EventLog:
         return self._clock()
 
     def next_seq(self):
-        return len(self._events) + 1
+        with self._lock:
+            return len(self._events) + 1
 
     def events(self, kind=None):
-        selected = self._events if kind is None else [e for e in self._events if e["kind"] == kind]
-        return copy.deepcopy(selected)
+        with self._lock:
+            selected = self._events if kind is None else [e for e in self._events if e["kind"] == kind]
+            return copy.deepcopy(selected)
 
     def append(self, kind, task_id, payload):
-        """Write one event to disk before it becomes visible in memory."""
+        """Write one event to disk before it becomes visible in memory.
+
+        Two writers that assign the same sequence number would leave a ledger that no longer
+        loads (the constructor refuses a non-contiguous sequence), so the number and the
+        append happen under one lock.
+        """
         if not _nonempty_string(kind):
             raise MAEPError("event kind must be non-empty")
-        event = {"event_id": uuid.uuid4().hex, "seq": len(self._events) + 1, "kind": kind,
-                 "task_id": task_id, "at": self._clock().isoformat(), "payload": copy.deepcopy(payload)}
-        ledger.append_event(self._path, event)
-        self._events.append(event)
-        return copy.deepcopy(event)
+        with self._lock:
+            event = {"event_id": uuid.uuid4().hex, "seq": len(self._events) + 1, "kind": kind,
+                     "task_id": task_id, "at": self._clock().isoformat(), "payload": copy.deepcopy(payload)}
+            ledger.append_event(self._path, event)
+            self._events.append(event)
+            return copy.deepcopy(event)
 
 
 class AcceptanceGate:

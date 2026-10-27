@@ -68,14 +68,27 @@ class DirectAdapterCallTests(TempDirMixin):
         self.assertFalse((self.root / "out/other.txt").exists())
 
     def test_unused_permit_for_another_resource_refused(self):
-        # Isolates the resource binding from the single-use check (uses the gateway's key
-        # directly, as only in-process code reaching private state could).
-        from hg.tools.gateway import _Permit
+        # Isolates the resource binding from the single-use check. Minting a permit needs the
+        # gateway's private key and mint path, i.e. in-process code reaching private state.
         rt = self.build([grant()])
         adapter = next(a for a in rt.gateway._adapters.values() if a.name == "fs.write")
-        permit = _Permit(rt.gateway._key, "file:out/other.txt", "T-1:S-1:99")
+        permit = rt.gateway._permit("file:out/other.txt", "T-1:S-1:99")
         with self.assertRaises(AdapterFailure):
             adapter.execute(PARAMS, permit)
+        self.assertFalse(self.target().exists())
+
+    def test_public_adapter_api_cannot_mint_effect_authority(self):
+        """The bypass this replaces: adapter.bind(caller_key) + _Permit(caller_key, ...).
+
+        Both half-steps are no longer reachable through public names: registration takes a key
+        only ActionGateway mints, and a permit can only be minted through that key.
+        """
+        adapter = LocalFileWriteAdapter(self.root)
+        self.assertFalse(hasattr(adapter, "bind"))
+        with self.assertRaises(MAEPError):
+            adapter._bind(object())                       # a caller-chosen key is not a key
+        with self.assertRaises(AdapterFailure):
+            adapter.execute(PARAMS)                       # and an unbound adapter still refuses
         self.assertFalse(self.target().exists())
 
     def test_adapter_cannot_be_registered_with_a_second_gateway(self):

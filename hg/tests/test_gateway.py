@@ -4,6 +4,7 @@ The effect target is the real local filesystem under a temporary root, not a fak
 The task is driven to RUNNING through the real orchestrator and canonical TaskStore.
 """
 import threading
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -56,6 +57,29 @@ class KnownFailure(LocalFileWriteAdapter):
         raise AdapterFailure("refused by target before any change")
 
 
+class ConcurrencyProbe(LocalFileWriteAdapter):
+    """Records how many effects were in flight at once, and holds each one briefly."""
+
+    name = "probe.write"
+
+    def __init__(self, root):
+        super().__init__(root)
+        self.guard = threading.Lock()
+        self.in_flight = 0
+        self.max_in_flight = 0
+
+    def _perform(self, params):
+        with self.guard:
+            self.in_flight += 1
+            self.max_in_flight = max(self.max_in_flight, self.in_flight)
+        try:
+            time.sleep(0.05)
+            return super()._perform(params)
+        finally:
+            with self.guard:
+                self.in_flight -= 1
+
+
 class GatewayFixture(TempDirMixin):
     def setUp(self):
         super().setUp()
@@ -67,8 +91,8 @@ class GatewayFixture(TempDirMixin):
         self.release.set()
         super().tearDown()
 
-    def running(self, steps, grants=(grant(),), mode="AUTHORIZED_EXECUTION"):
-        self.rt = self.build(grants, mode=mode, extra_adapters=self.extra)
+    def running(self, steps, grants=(grant(),), mode="AUTHORIZED_EXECUTION", extra_adapters=()):
+        self.rt = self.build(grants, mode=mode, extra_adapters=list(self.extra) + list(extra_adapters))
         orch = self.rt.orch
         orch.submit_task(make_task())
         orch.assess("T-1")
@@ -172,6 +196,57 @@ class DeniedEffectTests(GatewayFixture):
 
         with mock.patch.object(self.rt.actions, "append", side_effect=failing):
             self.assertNoEffect(gw.execute("T-1", "S-1"), "BLOCKED", "evidence capture failed")
+
+
+class SerializedEffectTests(GatewayFixture):
+    def test_two_concurrent_effects_never_overlap_and_keep_the_ledger_loadable(self):
+        probe = ConcurrencyProbe(self.root)
+        gw = self.running([write_step(tool="probe.write")], extra_adapters=[probe])
+        outcomes, errors = [], []
+
+        def call():
+            try:
+                outcomes.append(gw.execute("T-1", "S-1"))
+            except Exception as exc:                      # a raised error is a failed assertion
+                errors.append(exc)
+
+        threads = [threading.Thread(target=call) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(10)
+        self.assertEqual(errors, [])
+        self.assertEqual(probe.max_in_flight, 1)           # one effect at a time in this process
+        self.assertEqual([o["status"] for o in outcomes], ["SUCCEEDED", "SUCCEEDED"])
+        started = self.rt.actions.events("ACTION_STARTED")
+        self.assertEqual(len(started), 2)
+        self.assertEqual(len({e["payload"]["action_id"] for e in started}), 2)
+        reopened = EventLog(self.rt.actions.path)          # the race would duplicate a sequence number
+        self.assertEqual([e["seq"] for e in reopened.events()], list(range(1, len(self.rt.actions.events()) + 1)))
+        self.assertEqual(gw.pending_actions(), [])
+
+
+class AuthorityRecheckTests(GatewayFixture):
+    def test_authority_withdrawn_between_decision_and_effect_stops_the_write(self):
+        """MAEP-003: the permit re-asks the evaluator immediately before the effect."""
+        gw = self.running([write_step()])
+        real = gw._evaluator
+        calls = []
+
+        class WithdrawnAfterTheDecision:
+            def evaluate(self, request, *, now=None):
+                calls.append(request["resource"])
+                if len(calls) == 1:
+                    return real.evaluate(request, now=now)
+                return {"decision": "DENY", "reason": "authority withdrawn after the decision"}
+
+        gw._evaluator = WithdrawnAfterTheDecision()
+        outcome = gw.execute("T-1", "S-1")
+        self.assertEqual(len(calls), 2)                     # decision, then the pre-effect re-check
+        self.assertEqual(outcome["status"], "FAILED")
+        self.assertIn("no longer valid", outcome["reason"])
+        self.assertFalse(self.target_file().exists())
+        self.assertEqual(gw.pending_actions(), [])          # nothing happened, nothing left pending
 
 
 class OutcomeTaxonomyTests(GatewayFixture):
