@@ -295,10 +295,14 @@ class SQLiteIdempotencyLedger:
         if self.path.exists() and stat.S_IMODE(self.path.stat().st_mode) & 0o077:
             raise AuthorityError("idempotency database permissions must exclude group/other access")
         self._sqlite3 = sqlite3
-        self._connect(init=True).close()
+        try:
+            self._connect(init=True).close()
+        except (OSError, sqlite3.Error) as exc:
+            raise AuthorityError("idempotency database could not be opened safely") from exc
 
     def _connect(self, *, init: bool = False):
-        conn = self._sqlite3.connect(str(self.path), timeout=5.0, isolation_level=None)
+        from maep.sqlite_nofollow import connect_nofollow
+        conn = connect_nofollow(self._sqlite3, self.path, timeout=5.0, isolation_level=None)
         conn.execute("PRAGMA busy_timeout=5000")
         conn.execute("PRAGMA synchronous=FULL")
         conn.execute("PRAGMA foreign_keys=ON")

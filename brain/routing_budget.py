@@ -12,6 +12,8 @@ import sqlite3
 import threading
 from typing import Any
 
+from maep.sqlite_nofollow import connect_nofollow
+
 
 class RoutingBudgetError(RuntimeError):
     pass
@@ -54,7 +56,12 @@ class SQLiteRoutingBudgetLedger:
 
     @contextmanager
     def _connection(self):
-        connection = sqlite3.connect(self.path, timeout=self.timeout, isolation_level=None)
+        try:
+            connection = connect_nofollow(
+                sqlite3, self.path, timeout=self.timeout, isolation_level=None
+            )
+        except (OSError, sqlite3.Error) as exc:
+            raise RoutingBudgetError("durable budget database could not be opened safely") from exc
         try:
             connection.row_factory = sqlite3.Row
             connection.execute("PRAGMA busy_timeout = " + str(int(self.timeout * 1000)))

@@ -8,6 +8,39 @@ from brain.routing_budget import RoutingBudgetError, SQLiteRoutingBudgetLedger
 
 
 class SQLiteRoutingBudgetLedgerTests(unittest.TestCase):
+    def test_rejects_path_swap_at_sqlite_open_boundary(self):
+        import sqlite3
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory(prefix="hg-routing-open-race-") as directory:
+            target = Path(directory) / "budget.sqlite3"
+            external = Path(directory) / "external.sqlite3"
+            conn = sqlite3.connect(external)
+            conn.execute("CREATE TABLE sentinel(value TEXT)")
+            conn.execute("INSERT INTO sentinel VALUES('untouched')")
+            conn.commit()
+            conn.close()
+            original_connect = sqlite3.connect
+            swapped = False
+
+            def race_connect(database, *args, **kwargs):
+                nonlocal swapped
+                if not swapped and str(database).startswith("file:/proc/self/fd/"):
+                    target.unlink()
+                    target.symlink_to(external)
+                    swapped = True
+                return original_connect(database, *args, **kwargs)
+
+            with patch("sqlite3.connect", side_effect=race_connect):
+                with self.assertRaises(RoutingBudgetError):
+                    SQLiteRoutingBudgetLedger(target)
+            self.assertTrue(swapped)
+            self.assertTrue(target.is_symlink())
+            conn = original_connect(external)
+            self.assertEqual(conn.execute("SELECT value FROM sentinel").fetchone()[0], "untouched")
+            tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            self.assertEqual(tables, {"sentinel"})
+            conn.close()
+
     def test_reservations_are_durable_after_reopen(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "budget.sqlite3"

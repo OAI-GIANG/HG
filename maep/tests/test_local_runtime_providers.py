@@ -50,6 +50,40 @@ class LocalRuntimeProviderTests(unittest.TestCase):
             policy_change_rule_ref="fixture://policy-rule", evidence_ref="fixture://evidence",
         )
 
+    def test_idempotency_ledger_rejects_path_swap_at_sqlite_open_boundary(self):
+        import sqlite3
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory(prefix="hg-idempotency-open-race-") as temp:
+            root = Path(temp)
+            target = root / "ledger.sqlite3"
+            external = root / "external.sqlite3"
+            conn = sqlite3.connect(external)
+            conn.execute("CREATE TABLE sentinel(value TEXT)")
+            conn.execute("INSERT INTO sentinel VALUES('untouched')")
+            conn.commit()
+            conn.close()
+            original_connect = sqlite3.connect
+            swapped = False
+
+            def race_connect(database, *args, **kwargs):
+                nonlocal swapped
+                if not swapped and str(database).startswith("file:/proc/self/fd/"):
+                    target.unlink()
+                    target.symlink_to(external)
+                    swapped = True
+                return original_connect(database, *args, **kwargs)
+
+            with patch("sqlite3.connect", side_effect=race_connect):
+                with self.assertRaises(AuthorityError):
+                    SQLiteIdempotencyLedger(target)
+            self.assertTrue(swapped)
+            self.assertTrue(target.is_symlink())
+            conn = original_connect(external)
+            self.assertEqual(conn.execute("SELECT value FROM sentinel").fetchone()[0], "untouched")
+            tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            self.assertEqual(tables, {"sentinel"})
+            conn.close()
+
     def test_policy_provider_requires_injected_source_provenance(self):
         with tempfile.TemporaryDirectory(prefix="hg-policy-provider-") as temp:
             path = Path(temp) / "policy.json"
