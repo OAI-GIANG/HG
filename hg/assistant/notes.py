@@ -26,6 +26,7 @@ from hg.assistant import textvi
 from hg.assistant.home import ensure_home, locked, private_file
 from hg.memory.index import Index
 from hg.memory.store import MemoryStore
+from hg.verification.evidence import EventLog
 
 MAX_NOTE_CHARS = 4000
 ORIGINS = {"tty", "pipe", "prompt", "test"}
@@ -45,13 +46,21 @@ class NoteConflict(MAEPError):
                          f"dùng --replaces {existing['memory_id']} để thay thế")
 
 
+# Bidirectional overrides/isolates reorder what the terminal shows ("Trojan Source"); refused.
+BIDI_CONTROLS = frozenset("\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069\u200e\u200f\u061c")
+# Invisible characters with no meaning in a Vietnamese note; removed. (ZWJ/ZWNJ are kept: emoji.)
+INVISIBLE = dict.fromkeys(map(ord, "\u200b\u2060\ufeff\u00ad\u180e"), None)
+
+
 def clean_text(text, *, limit=MAX_NOTE_CHARS):
-    """NFC, no control characters except newline/tab, trimmed, bounded."""
+    """NFC, no control or bidi characters, invisible characters removed, trimmed, bounded."""
     if not isinstance(text, str):
         raise NoteError("note text must be a string")
-    text = unicodedata.normalize("NFC", text).replace("\r\n", "\n")
+    text = unicodedata.normalize("NFC", text).replace("\r\n", "\n").translate(INVISIBLE)
     if any(unicodedata.category(c) == "Cc" and c not in "\n\t" for c in text):
         raise NoteError("note text contains control characters")
+    if any(c in BIDI_CONTROLS for c in text):
+        raise NoteError("note text contains bidirectional control characters")
     text = text.strip()
     if not text:
         raise NoteError("note text is empty")
@@ -116,6 +125,21 @@ class Notebook:
                                     source="USER", source_ref=f"cli:{origin}",
                                     supersedes=previous["memory_id"] if previous else None)
             return record, True
+
+    def trust(self, memory_id, *, reason="owner reviewed this note and lifted the AI-directive quarantine"):
+        """Owner override for one note flagged by hg.assistant.guard; recorded, never silent."""
+        with locked(self.home, exclusive=True, wait_s=self._wait):
+            store = self._store()
+            if not any(r["memory_id"] == memory_id for r in store.active(kind="NOTE")):
+                raise NoteError(f"no active note {memory_id}")
+            return EventLog(self.path, clock=self._clock).append("NOTE_TRUST", None,
+                                                                  {"memory_id": memory_id, "reason": reason})
+
+    def trusted_ids(self):
+        with locked(self.home, exclusive=False, wait_s=self._wait):
+            if not self.path.exists():
+                return set()
+            return {e["payload"]["memory_id"] for e in EventLog(self.path).events("NOTE_TRUST")}
 
     def forget(self, memory_id, *, reason="owner asked to forget"):
         with locked(self.home, exclusive=True, wait_s=self._wait):

@@ -14,11 +14,13 @@ git -C repo fetch -q --depth 1 origin "$C"
 git -C repo checkout -q --detach FETCH_HEAD
 test "$(git -C repo rev-parse HEAD)" = "$C"
 cd repo
-python3 -I -B -m hg.release build --repo . --commit "$C" --archive "$B/one.tar.gz" --manifest "$B/one.json" > "$B/build-one.json"
-python3 -I -B -m hg.release build --repo . --commit "$C" --archive "$B/two.tar.gz" --manifest "$B/two.json" > "$B/build-two.json"
+# -I keeps PYTHONPATH/user site out; the release module is loaded from this verified checkout only.
+rel() { python3 -I -B -c 'import sys; sys.path.insert(0, "."); from hg.release import main; sys.exit(main(sys.argv[1:]))' "$@"; }
+rel build --repo . --commit "$C" --archive "$B/one.tar.gz" --manifest "$B/one.json" > "$B/build-one.json"
+rel build --repo . --commit "$C" --archive "$B/two.tar.gz" --manifest "$B/two.json" > "$B/build-two.json"
 cmp "$B/one.tar.gz" "$B/two.tar.gz"
 cmp "$B/one.json" "$B/two.json"
-python3 -I -B -m hg.release verify --repo . --archive "$B/one.tar.gz" --manifest "$B/one.json" > "$B/verify.json"
+rel verify --repo . --archive "$B/one.tar.gz" --manifest "$B/one.json" > "$B/verify.json"
 cat "$B/build-one.json"
 cat "$B/verify.json"
 # Provenance across machines: compare tree + per-file manifest (archive bytes may differ by platform zlib).

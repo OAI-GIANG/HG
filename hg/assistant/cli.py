@@ -36,10 +36,12 @@ def add_parsers(sub):
     lst.add_argument("--limit", type=int, default=20)
     show = nsub.add_parser("show", help="a note and every version of its subject")
     show.add_argument("id")
+    trust = nsub.add_parser("trust", help="lift the AI-directive quarantine for one note you have read")
+    trust.add_argument("id")
     forget = nsub.add_parser("forget", help="retract a note (kept in history, not erased)")
     forget.add_argument("id")
     forget.add_argument("--reason", default="owner asked to forget")
-    for p in (add, search, lst, show, forget):
+    for p in (add, search, lst, show, forget, trust):
         p.add_argument("--json", action="store_true")
 
     ask = sub.add_parser("ask", help="answer from your notes with the local model; HG labels every sentence")
@@ -184,6 +186,10 @@ def _dispatch(args, stdin, out):
                     out(f"v{r['version']} {r['memory_id']} {r['created_at'][:16]} {r['status']} "
                         f"nguồn={r['source_ref']}\n    {safe(r['content'])}")
             return EXIT_OK
+        if sub == "trust":
+            nb.trust(args.id)
+            out(f"Đã đánh dấu {args.id} là an toàn: HG sẽ gửi ghi chú này cho model (ghi lại trong sổ cái).")
+            return EXIT_OK
         if sub == "forget":
             record = nb.forget(args.id, reason=args.reason)
             out(f"Đã thu hồi {record['memory_id']} (vẫn còn trong lịch sử: hg note show {record['memory_id']}).")
@@ -199,6 +205,9 @@ def _dispatch(args, stdin, out):
         if args.json:
             _print_json(result, out)
         else:
+            if result["directives_in_text"]:
+                out("⚠ Văn bản này chứa câu lệnh nhắm vào AI (" + ", ".join(result["directives_in_text"])
+                    + ") — có thể là tin nhắn lừa đảo.")
             for r in result["sentences"]:
                 tag = LABELS_VI[r["label"]]
                 out(f"[{tag}] {safe(r['sentence'])}" if tag else safe(r["sentence"]))
@@ -292,6 +301,9 @@ def _summarize(args, stdin, out):
             except ProviderError as exc:
                 out(f"Model lỗi ({exc}); dùng tóm tắt trích xuất.")
                 items, mode = sm.extractive(text, max_sentences=args.max_sentences), "extractive"
+            except sm.DirectiveInput:
+                out("⚠ Văn bản chứa câu lệnh nhắm vào AI — HG không gửi cho model; dùng tóm tắt trích xuất.")
+                items, mode = sm.extractive(text, max_sentences=args.max_sentences), "extractive-quarantined"
     else:
         items, mode = sm.extractive(text, max_sentences=args.max_sentences), "extractive"
     rec = sm.receipt(info, mode, items, dropped, response)

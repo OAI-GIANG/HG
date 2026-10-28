@@ -22,7 +22,7 @@ import time
 import unicodedata
 from datetime import datetime, timezone
 
-from hg.assistant import grounding
+from hg.assistant import grounding, guard
 from hg.assistant.home import locked, private_file
 from hg.brain.providers import ProviderError
 from hg.verification.evidence import EventLog
@@ -51,12 +51,36 @@ def is_personal(question):
     words = textvi.words(question)
     return any(w in _PERSONAL or (w in _PERSONAL_UNACCENTED and w == textvi.fold(w)) for w in words)
 EXIT = {"ANSWERED": 0, "MEMORY_ONLY": 3, "NO_DATA": 5}
-_CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+_CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f\u200b\u200e\u200f\u202a-\u202e\u2060\u2066-\u2069\ufeff]")
 
 
 def safe(text):
-    """Remove terminal control characters (ESC, OSC 52, ...) before printing anything."""
+    """Remove terminal control, bidi and zero-width characters (ESC, OSC 52, RLO...) before printing."""
     return _CONTROL.sub("", unicodedata.normalize("NFC", text or ""))
+
+
+def select_notes(question, notebook, *, limit=5):
+    """Split the owner's notes for one question.
+
+    usable      notes a model may see and a NOTE label may cite: no AI directive (or trusted by
+                the owner), found by search, and anchored to the question's topic
+    quarantined notes that match the question but address an AI (shown, never sent)
+    off_topic   search hits that share words but not the asked-about topic (not shown, recorded)
+    Quarantine happens BEFORE ranking, so a keyword-stuffed injected note cannot push real
+    notes out of the top results.
+    """
+    records = notebook.active()
+    trusted = notebook.trusted_ids()
+    flags = {r["memory_id"]: guard.directives(r["content"]) for r in records if r["memory_id"] not in trusted}
+    flags = {k: v for k, v in flags.items() if v}
+    clean = [r for r in records if r["memory_id"] not in flags]
+    usable, off_topic = [], []
+    for hit in notebook.search(question, limit=limit, records=clean):
+        missing = grounding.anchored(question, hit["content"])
+        (off_topic if missing else usable).append(dict(hit, missing_topic=missing) if missing else hit)
+    quarantined = [dict(h, directives=flags[h["memory_id"]])
+                   for h in notebook.search(question, limit=2, records=[r for r in records if r["memory_id"] in flags])]
+    return usable, quarantined, off_topic
 
 
 def note_refs(hits):
@@ -162,30 +186,39 @@ def ask(question, *, notebook, router_factory, listener=None, model_check=None, 
     question = safe(question).strip()
     if not question:
         raise ValueError("question is empty")
-    records = notebook.active()
-    hits = notebook.search(question, limit=5, records=records)
+    hits, quarantined, off_topic = select_notes(question, notebook)
     refs = note_refs(hits)
+    usable = refs
     notes_hash = ledger_hash(notebook.path)
     timings = {"notes_shown_s": None, "first_sentence_s": None}
-    if refs:
+    if refs or quarantined:
         out("Ghi chú liên quan:")
         for ref, r in refs.items():
             line = " ".join(r["content"].split())
             out(f"  {ref} ({_date(r)}) {safe(line[:90])}{'…' if len(line) > 90 else ''}")
-    receipt = {"question": question, "notes": [{"ref": ref, "memory_id": r["memory_id"], "score": r["score"],
-                                                "sha256": hashlib.sha256(r["content"].encode("utf-8")).hexdigest()}
-                                               for ref, r in refs.items()],
+        for r in quarantined:
+            line = " ".join(r["content"].split())
+            out(f"  ⚠ {r['memory_id']} ({_date(r)}) {safe(line[:90])}{'…' if len(line) > 90 else ''}")
+            out("    ↳ chứa câu lệnh nhắm vào AI — HG không gửi cho model (nếu an toàn: hg note trust "
+                f"{r['memory_id']})")
+    receipt = {"question": question,
+               "notes": [{"ref": ref, "memory_id": r["memory_id"], "score": r["score"],
+                          "sha256": hashlib.sha256(r["content"].encode("utf-8")).hexdigest()}
+                         for ref, r in refs.items()],
+               "quarantined": [{"memory_id": r["memory_id"], "directives": r["directives"]} for r in quarantined],
+               "off_topic": [{"memory_id": r["memory_id"], "missing_topic": r["missing_topic"]} for r in off_topic],
                "notes_ledger": notes_hash, "listener": listener, "model_check": model_check, "release": release,
                "timings": timings}
     timings["notes_shown_s"] = round(monotonic() - started, 3)
-    notes_text = {ref: r["content"] for ref, r in refs.items()}
+    # Only notes that do not address an AI are sent to the model or used as a source (OWASP LLM01).
+    notes_text = {ref: r["content"] for ref, r in usable.items()}
     conflicts = grounding.note_conflicts(notes_text)
     for c in conflicts:
         out(f"⚠ {c['notes'][0]} và {c['notes'][1]} nói khác nhau: " + safe("; ".join(c["reasons"]))
             + " — kiểm tra lại, có thể cần `hg note add --replaces`.")
     receipt["note_conflicts"] = conflicts
     answer, labelled, error, response = "", [], unavailable_reason, None
-    if not refs and is_personal(question):
+    if not usable and is_personal(question):
         # HG's own gate: a question about the owner's life with no matching note is answered by HG
         # itself ("not in the notes"); asking a model would only invite a guess.
         out(ABSTAIN_TEXT)
@@ -201,10 +234,10 @@ def ask(question, *, notebook, router_factory, listener=None, model_check=None, 
         def on_sentence(s):
             if timings["first_sentence_s"] is None:
                 timings["first_sentence_s"] = round(monotonic() - started, 3)
-            _show(s, notes_text, refs, labelled, out, color)
+            _show(s, notes_text, refs, labelled, out, color, question)
         stream = SentenceStream(on_sentence)
         try:
-            response = router.complete(build_request(question, refs, max_tokens=max_tokens),
+            response = router.complete(build_request(question, usable, max_tokens=max_tokens),
                                        kind="assistant", on_delta=stream.feed)
             stream.flush()
             answer = response["text"]
@@ -220,7 +253,7 @@ def ask(question, *, notebook, router_factory, listener=None, model_check=None, 
                        grounded_ratio=summary["grounded_ratio"], abstained=summary["abstained"],
                        method=summary["method"], provider=response["provider"], model=response["model"],
                        usage=response.get("usage"), request_digest=response.get("request_digest"))
-    elif refs:
+    elif refs or quarantined:
         outcome = "MEMORY_ONLY"
         out("— Không có model" + (f" ({safe(error)[:240]})" if error else " (--notes-only)")
             + ": HG chỉ đưa nguyên văn ghi chú ở trên, không tự viết câu trả lời.")
@@ -233,8 +266,8 @@ def ask(question, *, notebook, router_factory, listener=None, model_check=None, 
     return EXIT[outcome], receipt
 
 
-def _show(sentence, notes_text, refs, labelled, out, color):
-    record = grounding.check_sentence(sentence, notes_text)
+def _show(sentence, notes_text, refs, labelled, out, color, question=None):
+    record = grounding.check_sentence(sentence, notes_text, question=question)
     labelled.append(record)
     mark = marker(record, refs, color)
     out(safe(record["sentence"]) + (f" {mark}" if mark else ""))

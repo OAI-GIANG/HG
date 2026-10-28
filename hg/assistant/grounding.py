@@ -5,7 +5,9 @@ text alone, which note (if any) supports it:
 
     NOTE      a retrieved note supports the sentence: enough of its content words appear in
               the note AND every number, date, proper name and negation the sentence asserts
-              is consistent with that note
+              is consistent with that note; and, when the question is known, the note is about
+              what was asked (anchored) and contains what the sentence adds beyond the question
+              (new_information_gap)
     CONFLICT  the sentence is close to a note but asserts a different number/date/name or
               flips a negation -- the most dangerous error in personal notes ("3 giờ" vs "5 giờ")
     BADCITE   the model cited a note that does not exist or does not support the sentence,
@@ -144,19 +146,68 @@ def compare(sentence, note_text):
     return overlap, problems
 
 
-def check_sentence(sentence, notes):
-    """notes: {ref: text}. Returns one labelled record."""
+def anchored(question, note_text):
+    """Is the note about what was asked? (None if yes, else the missing topic word.)
+
+    Vietnamese topic words are mostly two syllables ("mật khẩu", "tiết kiệm"). After question
+    and modal words are removed, every adjacent pair of the question's topic syllables must
+    have at least one syllable in the note; a note that has neither syllable of an asked-about
+    word is not about it, however many other words match. A one-word topic must be present.
+    """
+    topic = textvi.topic_keys(question or "")
+    if not topic:
+        return None
+    note_keys = set(textvi.document_keys(note_text))
+    if len(topic) == 1:
+        return None if topic[0] in note_keys else topic[0].lstrip("~")
+    for a, b in zip(topic, topic[1:]):
+        if a not in note_keys and b not in note_keys:
+            return f"{a.lstrip('~')} {b.lstrip('~')}"
+    return None
+
+
+NEW_INFO_RATIO = 0.6        # share of the answer's new words (not in the question) the note must contain
+
+
+def new_information_gap(sentence, question, note_text):
+    """Words the sentence adds beyond the question that the note does not contain, if too many.
+
+    An answer may only add what its source note says: with two or fewer new words all must be
+    in the note, otherwise at least NEW_INFO_RATIO of them ("Họp lúc 20 giờ ở quán cà phê" is
+    not supported by a note that never mentions a café).
+    """
+    if not question:
+        return []
+    asked = {textvi.fold(k.lstrip("~")) for k in textvi.query_keys(question)}
+    new = [k for k in _claim_words(sentence) if textvi.fold(k.lstrip("~")) not in asked]
+    if not new:
+        return []
+    note_keys = set(textvi.document_keys(note_text))
+    missing = [k.lstrip("~") for k in new if k not in note_keys]
+    if (len(new) <= 2 and missing) or (len(new) > 2 and (len(new) - len(missing)) / len(new) < NEW_INFO_RATIO):
+        return sorted(missing)
+    return []
+
+
+def check_sentence(sentence, notes, *, question=None):
+    """notes: {ref: text}; question: what was asked (enables the topic check). One labelled record."""
     text = strip_citations(sentence)
     cited = citations(sentence)
     if is_abstention(text):
         return {"sentence": text, "label": "ABSTAIN", "note": None, "cited": cited, "reasons": []}
     if not _claim_words(text):
         return {"sentence": text, "label": "NONE", "note": None, "cited": cited, "reasons": []}
-    scored = []
+    scored, off_topic = [], {}
     for ref, note_text in notes.items():
         overlap, problems = compare(text, note_text)
+        topic = anchored(question, note_text) if question else None
+        added = new_information_gap(text, question, note_text) if question else []
+        if topic:
+            off_topic[ref] = f"{ref} không nói về: {topic}"
+        elif added:
+            off_topic[ref] = f"{ref} không có: {', '.join(added)}"
         scored.append((ref, overlap, problems))
-    supported = sorted(((r, o) for r, o, p in scored if o >= SUPPORT_THRESHOLD and not p),
+    supported = sorted(((r, o) for r, o, p in scored if o >= SUPPORT_THRESHOLD and not p and r not in off_topic),
                        key=lambda x: (-x[1], x[0]))
     cited_ok = [r for r, _o in supported if r in cited]
     if cited_ok or supported:
@@ -170,12 +221,13 @@ def check_sentence(sentence, notes):
     if near:
         ref, _o, problems = near[0]
         return {"sentence": text, "label": "CONFLICT", "note": ref, "cited": cited, "reasons": problems}
+    topic = [off_topic[ref] for ref in sorted(off_topic)]
     if cited:
         unknown = [c for c in cited if c not in notes]
         reasons = (["ghi chú không tồn tại: " + ", ".join(unknown)] if unknown else []) + \
-                  (["ghi chú được trích không hỗ trợ câu này"] if len(unknown) < len(cited) else [])
+                  (["ghi chú được trích không hỗ trợ câu này"] if len(unknown) < len(cited) else []) + topic
         return {"sentence": text, "label": "BADCITE", "note": None, "cited": cited, "reasons": reasons}
-    return {"sentence": text, "label": "MODEL", "note": None, "cited": cited, "reasons": []}
+    return {"sentence": text, "label": "MODEL", "note": None, "cited": cited, "reasons": topic}
 
 
 def summarize(records):
@@ -191,9 +243,9 @@ def summarize(records):
             "method": "lexical overlap + exact numbers, names and negations (not semantic entailment)"}
 
 
-def check_text(text, notes):
+def check_text(text, notes, *, question=None):
     """Label every sentence of `text` against `notes` ({ref: text})."""
-    return summarize([check_sentence(s, notes) for s in split_sentences(text)])
+    return summarize([check_sentence(s, notes, question=question) for s in split_sentences(text)])
 
 
 def note_conflicts(notes, *, threshold=SUPPORT_THRESHOLD):
