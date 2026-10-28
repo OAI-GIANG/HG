@@ -18,6 +18,7 @@ import tempfile
 from typing import Any
 
 from maep.native_authority import AuthorityError, TrustRootRecord, load_json_strict
+from maep.policy_templates import POLICY_SCHEMA_V2, PolicyTemplateError, validate_policy_source_v2
 from maep.trust_source_contracts import require_trust_source_contract
 
 
@@ -105,6 +106,14 @@ class LocalPolicyProvider:
         claimed = raw.get("policy_digest")
         if not isinstance(policy, dict) or claimed != _digest(policy):
             raise AuthorityError("local policy digest mismatch")
+        schema_version = policy.get("schema_version")
+        if schema_version == POLICY_SCHEMA_V2:
+            try:
+                validate_policy_source_v2(policy, expected_root_generation=root.generation)
+            except PolicyTemplateError as exc:
+                raise AuthorityError("policy v2 schema validation failed") from exc
+        elif schema_version not in (None, "hg.policy.v1"):
+            raise AuthorityError("unsupported local policy schema version")
         try:
             provenance_ok = self.provenance_verifier.verify_policy_source(
                 raw, root=root, policy=policy)
