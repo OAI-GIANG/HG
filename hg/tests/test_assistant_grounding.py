@@ -50,6 +50,10 @@ class SentenceCheckTests(unittest.TestCase):
     def test_hg_finds_support_even_without_model_citation(self):
         self.assertEqual(label("Họp nhóm HG vào thứ Năm lúc 20 giờ qua Google Meet.")["label"], "NOTE")
 
+    def test_names_that_are_also_function_words_are_found(self):
+        notes = {"N1": "Lớp tiếng Anh tối thứ Hai và thứ Tư lúc 19 giờ ở trung tâm ILA Quận 3."}
+        self.assertEqual(label("Lớp tiếng Anh học vào thứ Hai và thứ Tư.", notes)["label"], "NOTE")
+
     def test_unsupported_sentence_is_model(self):
         self.assertEqual(label("Paris là thủ đô của nước Pháp.")["label"], "MODEL")
 

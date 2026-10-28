@@ -76,6 +76,11 @@ class NotebookTests(HomeBase):
         self.assertEqual(self.nb.search("thủ đô nước Pháp là gì"), [])
         self.assertEqual(self.nb.search("là của và có"), [])
 
+    def test_one_shared_common_word_is_not_a_match(self):
+        self.nb.add("Lớp tiếng Anh tối thứ Hai và thứ Tư lúc 19 giờ.", origin="test")
+        self.assertEqual(self.nb.search("con toi hoc lop may"), [])
+        self.assertEqual(len(self.nb.search("lop tieng anh")), 1)
+
     def test_same_subject_different_text_is_a_conflict(self):
         first, _ = self.nb.add("Thay dầu xe ngày 2026-09-15.", subject="xe", origin="test")
         with self.assertRaises(NoteConflict) as ctx:
