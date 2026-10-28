@@ -1,0 +1,17 @@
+test_claim_cannot_reference_unknown_source (test_creativity_research_contracts.ResearchContractTests.test_claim_cannot_reference_unknown_source) ... ok
+test_duplicate_source_identifiers_rejected (test_creativity_research_contracts.ResearchContractTests.test_duplicate_source_identifiers_rejected) ... ok
+test_evidence_refs_must_be_nonempty_unique_strings (test_creativity_research_contracts.ResearchContractTests.test_evidence_refs_must_be_nonempty_unique_strings) ... ok
+test_fact_requires_evidence_reference (test_creativity_research_contracts.ResearchContractTests.test_fact_requires_evidence_reference) ... ok
+test_hypothesis_without_limitations_rejected (test_creativity_research_contracts.ResearchContractTests.test_hypothesis_without_limitations_rejected) ... ok
+test_missing_fields_rejected (test_creativity_research_contracts.ResearchContractTests.test_missing_fields_rejected) ... ok
+test_missing_source_provider_is_blocked (test_creativity_research_contracts.ResearchContractTests.test_missing_source_provider_is_blocked) ... ok
+test_service_does_not_expose_dispatch_or_memory_mutation (test_creativity_research_contracts.ResearchContractTests.test_service_does_not_expose_dispatch_or_memory_mutation) ... ok
+test_service_returns_source_linked_unverified_record (test_creativity_research_contracts.ResearchContractTests.test_service_returns_source_linked_unverified_record) ... ok
+test_source_limit_bounds_and_rejects_booleans (test_creativity_research_contracts.ResearchContractTests.test_source_limit_bounds_and_rejects_booleans) ... ok
+test_unknown_contract_or_stale_policy_rejected (test_creativity_research_contracts.ResearchContractTests.test_unknown_contract_or_stale_policy_rejected) ... ok
+test_valid_request_is_bounded_and_policy_versioned (test_creativity_research_contracts.ResearchContractTests.test_valid_request_is_bounded_and_policy_versioned) ... ok
+
+----------------------------------------------------------------------
+Ran 12 tests in 0.001s
+
+OK

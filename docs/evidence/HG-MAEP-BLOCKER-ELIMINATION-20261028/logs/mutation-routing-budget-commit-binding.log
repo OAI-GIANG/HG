@@ -1,0 +1,24 @@
+# tree: 3ec6a2a with commit-time _check_binding calls removed from maep/sqlite_nofollow.py (mutation)
+test_concurrent_reservations_never_exceed_limit (test_routing_budget.SQLiteRoutingBudgetLedgerTests.test_concurrent_reservations_never_exceed_limit) ... ok
+test_identity_bound_reservation_fails_closed_for_missing_binding_or_zero_limit (test_routing_budget.SQLiteRoutingBudgetLedgerTests.test_identity_bound_reservation_fails_closed_for_missing_binding_or_zero_limit) ... ok
+test_identity_bound_reservation_is_unique_and_durable (test_routing_budget.SQLiteRoutingBudgetLedgerTests.test_identity_bound_reservation_is_unique_and_durable) ... ok
+test_invalid_inputs_fail_closed (test_routing_budget.SQLiteRoutingBudgetLedgerTests.test_invalid_inputs_fail_closed) ... ok
+test_rejects_path_swap_at_sqlite_open_boundary (test_routing_budget.SQLiteRoutingBudgetLedgerTests.test_rejects_path_swap_at_sqlite_open_boundary) ... ok
+test_reservation_not_acknowledged_when_database_replaced_mid_transaction (test_routing_budget.SQLiteRoutingBudgetLedgerTests.test_reservation_not_acknowledged_when_database_replaced_mid_transaction) ... FAIL
+test_reservations_are_durable_after_reopen (test_routing_budget.SQLiteRoutingBudgetLedgerTests.test_reservations_are_durable_after_reopen) ... ok
+test_task_counters_are_isolated (test_routing_budget.SQLiteRoutingBudgetLedgerTests.test_task_counters_are_isolated) ... ok
+
+======================================================================
+FAIL: test_reservation_not_acknowledged_when_database_replaced_mid_transaction (test_routing_budget.SQLiteRoutingBudgetLedgerTests.test_reservation_not_acknowledged_when_database_replaced_mid_transaction)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/claude-0/-home-claude/f0a3fe4f-bf7d-5d61-9abb-cceacda4e432/scratchpad/mut/brain/tests/test_routing_budget.py", line 81, in test_reservation_not_acknowledged_when_database_replaced_mid_transaction
+    with self.assertRaises(RoutingBudgetError):
+         ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+AssertionError: RoutingBudgetError not raised
+
+----------------------------------------------------------------------
+Ran 8 tests in 0.106s
+
+FAILED (failures=1)
+exit=1

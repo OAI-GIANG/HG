@@ -1,0 +1,18 @@
+test_adapter_does_not_treat_arbitrary_truthy_idempotency_as_boolean (test_contracts.ToolsAutomationContractTests.test_adapter_does_not_treat_arbitrary_truthy_idempotency_as_boolean) ... ok
+test_empty_or_duplicate_scope_is_rejected (test_contracts.ToolsAutomationContractTests.test_empty_or_duplicate_scope_is_rejected) ... ok
+test_invalid_idempotency_key_is_rejected (test_contracts.ToolsAutomationContractTests.test_invalid_idempotency_key_is_rejected) ... ok
+test_malformed_or_ambiguous_result_is_rejected (test_contracts.ToolsAutomationContractTests.test_malformed_or_ambiguous_result_is_rejected) ... ok
+test_missing_action_is_rejected (test_contracts.ToolsAutomationContractTests.test_missing_action_is_rejected) ... ok
+test_success_failure_and_unknown_are_explicit (test_contracts.ToolsAutomationContractTests.test_success_failure_and_unknown_are_explicit) ... ok
+test_unsupported_contract_version_is_rejected (test_contracts.ToolsAutomationContractTests.test_unsupported_contract_version_is_rejected) ... ok
+test_valid_request_is_normalized_without_granting_authority (test_contracts.ToolsAutomationContractTests.test_valid_request_is_normalized_without_granting_authority) ... ok
+test_authorization_must_bind_this_exact_request (test_file_write_adapter.FileWriteAdapterTests.test_authorization_must_bind_this_exact_request) ... ok
+test_authorized_write_is_atomic_verified_and_idempotent (test_file_write_adapter.FileWriteAdapterTests.test_authorized_write_is_atomic_verified_and_idempotent) ... ok
+test_failure_after_the_write_started_is_not_reported_as_success (test_file_write_adapter.FileWriteAdapterTests.test_failure_after_the_write_started_is_not_reported_as_success) ... ok
+test_inputs_outside_the_planned_effect_are_refused_without_effect (test_file_write_adapter.FileWriteAdapterTests.test_inputs_outside_the_planned_effect_are_refused_without_effect) ... ok
+test_symlink_escape_and_bad_root_are_refused (test_file_write_adapter.FileWriteAdapterTests.test_symlink_escape_and_bad_root_are_refused) ... ok
+
+----------------------------------------------------------------------
+Ran 13 tests in 0.029s
+
+OK
