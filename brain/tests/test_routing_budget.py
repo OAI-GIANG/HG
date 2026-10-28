@@ -49,7 +49,12 @@ class SQLiteRoutingBudgetLedgerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="hg-routing-commit-race-") as directory:
             target = Path(directory) / "budget.sqlite3"
             displaced = Path(directory) / "displaced.sqlite3"
+            fresh = Path(directory) / "fresh.sqlite3"
             ledger = SQLiteRoutingBudgetLedger(target)
+            # A fresh, empty ledger prepared beforehand and swapped in from outside. The opener
+            # refuses to open a second database at a path that a live connection in this process
+            # still holds, so the replacement must not be created through it mid-transaction.
+            SQLiteRoutingBudgetLedger(fresh)
             real_open = module.connect_nofollow
 
             class SwapOnInsert:
@@ -66,7 +71,7 @@ class SQLiteRoutingBudgetLedgerTests(unittest.TestCase):
                     result = self._conn.execute(sql, *params)
                     if sql.startswith("INSERT INTO routing_budget_reservations"):
                         os.replace(target, displaced)
-                        SQLiteRoutingBudgetLedger(target)  # a fresh, empty ledger at the path
+                        os.replace(fresh, target)  # a fresh, empty ledger at the path
                     return result
 
             def open_then_swap_on_insert(*args, **kwargs):

@@ -91,13 +91,17 @@ class LocalRuntimeProviderTests(unittest.TestCase):
             root = Path(temp)
             target = root / "ledger.sqlite3"
             displaced = root / "displaced.sqlite3"
+            fresh = root / "fresh.sqlite3"
             ledger = SQLiteIdempotencyLedger(target)
+            # Prepared beforehand and swapped in from outside: the opener refuses to open a
+            # second database at a path that a live connection in this process still holds.
+            SQLiteIdempotencyLedger(fresh)
             real_token = SQLiteIdempotencyLedger._process_start_token
 
             def swap_then_token(pid):
                 # claim() calls this inside BEGIN IMMEDIATE, before INSERT and COMMIT.
                 os.replace(target, displaced)
-                SQLiteIdempotencyLedger(target)  # fresh, empty ledger at the canonical path
+                os.replace(fresh, target)  # fresh, empty ledger at the canonical path
                 return real_token(pid)
 
             with patch.object(SQLiteIdempotencyLedger, "_process_start_token", side_effect=swap_then_token):
@@ -107,6 +111,66 @@ class LocalRuntimeProviderTests(unittest.TestCase):
             conn = sqlite3.connect(displaced)
             self.assertEqual(conn.execute("SELECT count(*) FROM idempotency").fetchone()[0], 0)
             conn.close()
+
+    def test_crash_wal_of_displaced_ledger_is_not_replayed_into_replacement(self):
+        """Committed WAL frames left by a crash belong to the ledger that wrote them.
+
+        SQLite pairs ``-wal`` with a database by name only. If the ledger file is moved
+        away (restore, operator swap) while its committed frames are still in the WAL,
+        opening the path must not replay those frames into the database now there.
+        """
+        import sqlite3
+        with tempfile.TemporaryDirectory(prefix="hg-idempotency-wal-replay-") as temp:
+            root = Path(temp)
+            ledger_path = root / "ledger.sqlite3"
+            displaced = root / "displaced.sqlite3"
+            repo_root = Path(__file__).resolve().parents[2]
+            # A second connection keeps SQLite from checkpointing when the ledger's own
+            # connection closes; os._exit then leaves the committed frames in the WAL.
+            child = r'''import os, sqlite3, sys
+from maep.local_runtime_providers import SQLiteIdempotencyLedger
+ledger = SQLiteIdempotencyLedger(sys.argv[1])
+holder = sqlite3.connect(sys.argv[1])
+holder.execute("SELECT count(*) FROM idempotency").fetchone()
+ledger.claim(idempotency_key="key-A", request_digest="req:A", decision_digest="dec:A")
+os._exit(0)
+'''
+            env = os.environ.copy()
+            env["PYTHONPATH"] = str(repo_root) + os.pathsep + env.get("PYTHONPATH", "")
+            crashed = subprocess.run([sys.executable, "-c", child, str(ledger_path)],
+                                     cwd=str(repo_root), env=env, timeout=20, check=False)
+            self.assertEqual(crashed.returncode, 0)
+            wal = Path(str(ledger_path) + "-wal")
+            self.assertGreater(wal.stat().st_size, 0, "precondition: committed frames remain in the WAL")
+            wal_bytes = wal.read_bytes()
+
+            os.replace(ledger_path, displaced)
+            staging = root / "staging.sqlite3"
+            replacement = sqlite3.connect(staging)
+            replacement.execute("CREATE TABLE marker(v TEXT)")
+            replacement.execute("INSERT INTO marker VALUES('B')")
+            replacement.commit()
+            replacement.close()
+            os.chmod(staging, 0o600)
+            os.replace(staging, ledger_path)
+            replacement_bytes = ledger_path.read_bytes()
+
+            with self.assertRaises(AuthorityError):
+                SQLiteIdempotencyLedger(ledger_path)
+            # Nothing was replayed or discarded: the replacement is byte-identical and the
+            # foreign WAL is left untouched for operator recovery (adopt_sidecars).
+            self.assertEqual(ledger_path.read_bytes(), replacement_bytes)
+            self.assertEqual(wal.read_bytes(), wal_bytes)
+            inspect_dir = root / "inspect"
+            inspect_dir.mkdir(mode=0o700)
+            copy = inspect_dir / "copy.sqlite3"
+            copy.write_bytes(replacement_bytes)
+            conn = sqlite3.connect(copy)
+            try:
+                tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            finally:
+                conn.close()
+            self.assertEqual(tables, {"marker"})
 
     def test_policy_provider_requires_injected_source_provenance(self):
         with tempfile.TemporaryDirectory(prefix="hg-policy-provider-") as temp:
