@@ -41,6 +41,12 @@ remote session cannot cut them short:
    its hashes (the replaced copy is kept). On failure the trap returns to the release that was running.
    Roll forward by running step 4 again.
 
+`python3 -I -B eval_resumable.py <release_root> <spec.json> <workdir> <out.json>` runs the fixed
+evaluation with the release's own `ask()` and `evaluate.score()`, appending each receipt to
+`<workdir>/receipts.jsonl` as soon as it exists, so a run killed by Android (F-D2) is started again with
+the same arguments and continues at the first unanswered question. Notes go to `<workdir>/home`, never
+the owner's notes. `hg/tests/test_eval_resumable.py` checks it scores like `hg eval`.
+
 `state_precheck.py <release_root> <state copy>` loads a COPY of the state with a release's own loaders
 (tasks, actions, memory, idempotency); never point it at the live directory.
 

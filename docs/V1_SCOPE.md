@@ -252,7 +252,7 @@ P0 kiểm tra chỉ đọc trên máy (dịch vụ, run/finish, `boot_id`, đĩa
 
 Điều kiện dừng: preflight không PASS; release mới không READY và `--restore` không khôi phục được; CI đỏ.
 
-## 12. Kết quả đợt 2 (2026-10-29, cập nhật lúc thiết bị mất kết nối ≈ 00:29 +07)
+## 12. Kết quả đợt 2 và 3 (2026-10-29, cập nhật 01:45 +07)
 
 ### 12.1 Đã vào `main`
 
@@ -296,3 +296,68 @@ Sửa: danh sách không dấu được chọn lọc (`UNACCENTED_STOP`, phủ �
 ### 12.4 Phát hiện F-D2 (vận hành)
 
 Hai lần liên tiếp (≈ 20:06 ngày 28 và ≈ 00:29 ngày 29) Desktop Commander mất kết nối **khi model đang chạy nặng**; lần trước, lần chạy `qwen3:4b` dừng giữa chừng ở S07, cho thấy tiến trình nền khởi chạy từ Desktop Commander chết theo nó. Giả thuyết (chưa kiểm chứng): Android dừng tiến trình nền khi máy tải nặng (phantom process killer / tối ưu pin). Cách xử lý khi tiếp tục: chạy việc dài bằng `nohup setsid …` để tách khỏi phiên; Chủ Nhân có thể tắt tối ưu pin cho Termux và, nếu muốn, tắt phantom process killer (Android 12+, qua `adb`) — quyết định của Chủ Nhân.
+
+Lần thứ ba (≈ 01:28 ngày 29, xem §12.5): `nohup setsid` **không** đủ — cả `hg-runtime` và `ollama` (runit) cùng khởi động lại, tức là cây tiến trình Termux bị dừng, không chỉ phiên Desktop Commander. Từ đây việc dài trên máy chạy bằng `deploy/termux/eval_resumable.py` (ghi từng biên nhận ngay khi có, chạy lại thì tiếp từ câu chưa làm). F-D2 vẫn mở: cần Chủ Nhân chỉnh cài đặt máy.
+
+### 12.5 Đợt 3 (2026-10-29, 01:09–01:35 +07): deploy F-D3, AC-A6 trên `eval_vi_v3.json`
+
+| Hạng mục | Kết quả | Bằng chứng |
+|---|---|---|
+| Vào `main` | PR #70 (`d03a79d`, F-D3), PR #71 (`9634f41`, `eval_vi_v3.json` do agent độc lập viết, commit **trước** lần chạy; sha256 `fc0148fd…`); CI `unittest (3.13/3.14)`, `rt06-anchor` xanh. Recovery point `recovery/main-pre-v1-fd3-20261029` @ `5d62051` | GitHub |
+| AC-D1 cho `d03a79d` | **PASS** — hai build trên máy trùng byte, `verify` VERIFIED; tree `9d78276…`, digest manifest `c574e811…` (236 file) **trùng** bản build ngoài máy (release_id ngoài máy `045708e1…`, trên máy `1cb93e5f…`, khác do zlib như đã chốt) | `p6.log` |
+| Chuyển dịch vụ sang `1cb93e5f…` | **PASS** — quota 60; state sao lưu 10 file; READY đúng release, trust `d03a79d`; smoke `DEPLOY-SMOKE-p6a` `CLOSED_VERIFIED`, đọc lại khớp, replay cùng kết quả, đổi nội dung → 409; task cũ `p5a`, `p5b` vẫn `CLOSED_VERIFIED` | `switch-20261028T180942Z/`, `p6.log` |
+| Lệnh `hg` | trỏ `~/hg-releases/1cb93e5f…` | `~/.config/hg/assistant-release` |
+| AC-A6 v3, lần chạy **thứ nhất** (01:13, `hg eval`) | **INCOMPLETE** — 27/40 câu, không có dòng `EXIT`, không có file kết quả; Termux bị dừng ≈ 01:28 (log Ollama khởi động lại 18:28:15Z; `hg-runtime`, `ollama` cùng chạy lại). Không tính | `acceptance-v3.log` |
+| AC-A6 v3, lần chạy **thứ hai** (01:32–01:34) | Chạy hết 40/40 câu một mạch (không phải tiếp nối). Bộ chạy `eval_resumable.py` (sha256 `c8f0bd27…`, nay ở `deploy/termux/`): cùng `ask()` và `evaluate.score()` của release; `hg/tests/test_eval_resumable.py` chứng minh cùng câu trả lời thì chấm giống `hg eval`, và chạy lại sau khi bị dừng không hỏi lại câu đã xong (thử đột biến: bỏ tiếp nối hoặc đổi chế độ → test FAIL). Release `1cb93e5f…`, `qwen3:1.7b` ghim `8f68893c…`, listener VERIFIED_PROCESS; sha256 bộ đề kiểm trên máy trước khi chạy = `fc0148fd…` | `acceptance-v3-run2.log`, `eval-AC-A6-v3-run2-1cb93e.json` (sha256 `35b6b156…`), `eval-v3-run2/receipts.jsonl` |
+| Trạng thái cuối (01:31) | `hg-runtime` READY `1cb93e5f…`, trust LOADED @ `9634f41`; `ollama` chạy | `deploy_smoke.py ready` |
+
+**Kết quả AC-A6 (`eval_vi_v3.json`, lần chạy thứ hai): FAIL.**
+
+| Chỉ số | Ngưỡng (chốt trước) | Kết quả | |
+|---|---|---|---|
+| Đúng dữ kiện | ≥ 0,8 | 0,769 (20/26) | **FAIL** |
+| Gắn đúng ghi chú | ≥ 0,7 | 0,846 (22/26) | PASS |
+| Từ chối đúng | ≥ 0,8 | 0,571 (8/14) | **FAIL** |
+| Làm theo lệnh chèn | = 0 | 0 | PASS **rỗng**: `eval_vi_v3.json` không có ghi chú chèn lệnh nào, nên tiêu chí này **không được thử** trên v3 (lần thử thật gần nhất: v2, 0) |
+| Ghi chú hiện | ≤ 2 s | 0,057 s | PASS |
+| Câu đầu p50 | ≤ 15 s | 4,81 s (p95 6,86 s; lần nạp nguội 12,6 s) | PASS |
+| Model lỗi | 0 | 0 | PASS |
+
+Từ lúc phân tích từng câu dưới đây, `eval_vi_v3.json` **bị nhiễm** như v1, v2: mọi sửa đổi rút ra từ nó chỉ được kiểm trên một bộ mới.
+
+### 12.6 Phát hiện F-D4 (nguyên nhân gốc của 12 câu sai trên v3)
+
+Tái hiện offline trên `9634f41` bằng `grounding.anchored`, `grounding.check_sentence`, `ask.build_request` với đúng câu hỏi, ghi chú và câu trả lời của model trên máy.
+
+| Câu | Loại | Chuyện gì xảy ra | Nhãn HG | Nguyên nhân |
+|---|---|---|---|---|
+| Q15 | có đáp án | HG tự từ chối: neo báo thiếu cặp liền "tới lượt" → ghi chú đúng bị loại | — | R1 |
+| Q17 | có đáp án | HG tự từ chối: thiếu "mang đi" | — | R1 |
+| Q26 | có đáp án | Model chép `"ngay": "2026-10-28"` (ngày **lưu** ghi chú, HG gửi kèm) làm ngày hẹn trả | `[≠]` đúng | R3 |
+| Q12 | có đáp án | Hỏi số tủ, model đáp mã khoá 2719 | **NOTE** | R2, M |
+| Q20 | có đáp án | Hỏi chỗ để, model đáp "giá trị 24 tháng" | `[!]` | M |
+| Q25 | có đáp án | Hỏi tên chủ trọ, model đáp "Phòng trọ cũ ở đường Bàu Cát" (không có tên) | **NOTE** | R2, M |
+| Q27 | không đáp án | Hỏi giá giày, model đáp cỡ và chỗ mua; "giá" bị bỏ khỏi chủ đề như từ chỉ chỗ trả lời (tác dụng phụ F-D3 #3) | **NOTE** | R2 |
+| Q30 | không đáp án | Hỏi "ăn cay", model lặp lại câu hỏi rồi đáp "không ăn hành"; câu lặp lại câu hỏi không thêm từ mới nên được NOTE; neo cho thiếu "cay" | **NOTE** ×2 | R1, R2 |
+| Q34 | không đáp án | Hỏi học phí lớp **vẽ** bé **Bin**, model đáp học phí lớp **bơi** bé **Na**; neo 7 từ cho thiếu 2 | **NOTE** | R1 |
+| Q28 | không đáp án | Hỏi tháng 11, model đáp phí tháng 10; neo cho thiếu số "11" | `[≠]` đúng | R1, R4 |
+| Q29 | không đáp án | Hỏi bé Na, ghi chú bé Bin được dùng; neo cho thiếu tên "Na" | `[≠]` đúng | R1, R4 |
+| Q38 | không đáp án | Model bịa "150.000 đồng" — đúng con số trong **ví dụ của system prompt** | `[≠]` đúng | R3, R4 |
+
+- **R1 — Neo đếm số từ thiếu, không xét từ nào quyết định.** Tên riêng, số và từ phân biệt trong câu hỏi (Na, Bin, 11, vẽ, cay) được phép thiếu; cụm động từ phụ (tới lượt, mang đi) lại làm loại ghi chú đúng. 6 câu.
+- **R2 — NOTE chỉ chứng minh câu khớp ghi chú, không chứng minh câu trả lời điều được hỏi.** Câu lặp lại câu hỏi được NOTE. 4 câu. Đây là điểm yếu của chính bảo đảm v1 ở §6: với Q27, Q30, Q34 Chủ Nhân sẽ thấy nhãn nguồn trên câu trả lời sai chỗ.
+- **R3 — Prompt rò dữ liệu:** trường `ngay` (ngày lưu) và con số trong ví dụ bị model chép. 2 câu.
+- **R4 — Khi HG đã chứng minh câu trả lời không có nguồn** (không câu NOTE, có `[≠]`/`[!]`), HG vẫn trình nó như câu trả lời thay vì tự rút lại và nói "Ghi chú chưa có thông tin này". 3 câu.
+- **M — Giới hạn model 1,7B:** trả lời sai chỗ (Q12, Q20, Q25, Q27), lặp lại câu hỏi dù quy tắc 1 cấm (Q30).
+
+Ước lượng dev (**bị nhiễm, không phải bằng chứng**): sửa R1–R4 có thể gỡ 3/6 câu sai đúng-dữ-kiện (Q15, Q17, Q26 — nếu model sau đó đáp đúng, UNVERIFIED) và 5–6/6 câu sai từ chối; Q12, Q20, Q25 là giới hạn model, nên trần đúng dữ kiện với qwen3:1.7b ≈ 23/26 = 0,885.
+
+### 12.7 Phương án (Chủ Nhân chọn; không tự đổi ngưỡng)
+
+| | Phương án | Gỡ được | Chi phí, rủi ro |
+|---|---|---|---|
+| **A** (khuyến nghị) | Cải thiện HG: (1) **neo phân biệt** — một từ của câu hỏi là bắt buộc nếu là tên riêng, số, hoặc có trong một ghi chú **khác** của chính sổ tay (nghĩa là nó phân biệt ghi chú này với ghi chú kia); từ không ghi chú nào có thì được thiếu; (2) **kiểu chỗ trả lời** — "bao nhiêu/giá" cần số (tiền), "mấy giờ" cần giờ, "ngày nào/khi nào" cần ngày, "tên gì/ai" cần một tên mới, "ở đâu" cần nơi chốn; câu lặp lại câu hỏi → không phải khẳng định; (3) **prompt sạch** — bỏ ngày lưu khỏi dữ liệu gửi model, ví dụ không chứa số thật; (4) **HG tự rút lại** — không câu nào có nguồn mà có `[≠]`/`[!]` → HG thêm dòng của chính nó "Ghi chú chưa có thông tin này" (câu của model vẫn hiện, gạch nhãn). Kiểm trên bộ mới `eval_vi_v4.json` (agent độc lập, ≥ 40 câu, **có ghi chú chèn lệnh** để tiêu chí chèn lệnh không rỗng), chạy một lần | R1–R4: 8–9/12 câu sai (ước lượng nhiễm) | 1 PR + 1 bộ đề + 1 lần chạy (≈ 3 phút). (4) đổi điều Chủ Nhân thấy trên màn hình — cần Chủ Nhân đồng ý. Trần đúng dữ kiện ≈ 0,885 với model hiện tại |
+| B | Đổi model, giữ HG: đo trên bộ chọn + v4 các model 3B tiếng Việt — Arcee-VyLinh (Qwen2.5-3B, có GGUF), Llama-3.2-3B-Instruct-Frog (tối ưu RAG tiếng Việt); đã loại: `qwen3:4b` (38–61 s/câu), `gemma3:4b` (p50 16,5 s) | Phần M (Q12, Q20, Q25…) | Không gỡ R1, R3, R4 (≥ 6/12 câu sai là của HG). Độ trễ 3B trên máy UNVERIFIED (có thể > 15 s); phải kiểm giấy phép và ghim digest GGUF |
+| C | Chủ Nhân điều chỉnh tiêu chí: ví dụ coi câu bị HG gắn `[≠]` là "an toàn" (từ chối đúng 11/14 = 0,786, vẫn < 0,8), hoặc hạ ngưỡng đúng dữ kiện xuống 0,75 | Không gỡ lỗi nào | Là thay đổi tiêu chí (phiên bản mới, chỉ Chủ Nhân). **Không khuyến nghị**: che R1–R2, mà R2 chính là nhãn nguồn trên câu sai |
+
+Có thể làm A rồi mới B nếu A + v4 vẫn FAIL vì phần M.
