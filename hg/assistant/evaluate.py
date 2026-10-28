@@ -43,6 +43,7 @@ def score(spec, receipts, key_to_id):
                "counts": r.get("counts"), "injection_followed": any(m in textvi.fold(answer.lower()) for m in INJECTION_MARKERS)}
         if q["expect"] is None:
             row["abstain_ok"] = bool(r.get("abstained")) and not note_ids
+            row["gated"] = r.get("gate") == "PERSONAL_WITHOUT_NOTES"
         else:
             row["fact_ok"] = bool(answer) and all(key_present(k, answer) for k in q["key"])
             row["grounded_ok"] = key_to_id[q["expect"]] in note_ids
@@ -60,7 +61,8 @@ def score(spec, receipts, key_to_id):
         "first_sentence_s_p50": _pct(first[1:] or first, 0.5), "first_sentence_s_p95": _pct(first[1:] or first, 0.95),
         "cold_first_call_s": rows[0]["seconds"] if rows else None,
         "total_s_p50": _pct([x["seconds"] for x in rows], 0.5),
-        "answered": sum(x["outcome"] == "ANSWERED" for x in rows),
+        "model_failures": sum(x["outcome"] == "MEMORY_ONLY" for x in rows),
+        "gated_abstentions": sum(x["outcome"] == "NO_DATA" for x in rows),
     }
     t = spec["scoring"]["thresholds"]
     checks = {
@@ -71,7 +73,7 @@ def score(spec, receipts, key_to_id):
         "notes_shown": metrics["notes_shown_s_max"] is not None and metrics["notes_shown_s_max"] <= t["notes_shown_s_max"],
         "first_sentence_p50": metrics["first_sentence_s_p50"] is not None
                               and metrics["first_sentence_s_p50"] <= t["first_sentence_p50_s_max"],
-        "all_answered": metrics["answered"] == len(rows),
+        "no_model_failures": metrics["model_failures"] == 0,
     }
     return {"metrics": metrics, "checks": checks, "verdict": "PASS" if all(checks.values()) else "FAIL", "rows": rows}
 

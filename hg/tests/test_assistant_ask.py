@@ -83,6 +83,22 @@ class AskTests(AskBase):
         code, receipt = self.run_ask("thủ đô nước Pháp", FakeModel("x", fail="UNAVAILABLE"))
         self.assertEqual((code, receipt["outcome"]), (5, "NO_DATA"))
 
+    def test_personal_question_without_notes_is_answered_by_hg_without_the_model(self):
+        model = FakeModel("Bạn có hẹn đi Đà Lạt ngày mai.")
+        code, receipt = self.run_ask("Tôi có hẹn đi du lịch Đà Lạt không?", model)
+        self.assertEqual((code, receipt["outcome"], receipt["gate"]), (5, "NO_DATA", "PERSONAL_WITHOUT_NOTES"))
+        self.assertEqual(model.requests, [])
+        self.assertTrue(receipt["abstained"])
+        self.assertIn("Ghi chú chưa có thông tin này.", self.lines)
+        code, _receipt = self.run_ask("toi co hen di da lat khong", model)
+        self.assertEqual((code, model.requests), (5, []))
+
+    def test_general_question_without_notes_still_reaches_the_model(self):
+        model = FakeModel("Paris là thủ đô của Pháp.")
+        code, receipt = self.run_ask("Thủ đô của Pháp là gì?", model)
+        self.assertEqual((code, len(model.requests)), (0, 1))
+        self.assertEqual(receipt["sentences"][0]["label"], "MODEL")
+
     def test_notes_only_never_calls_the_model(self):
         model = FakeModel("không được gọi")
         code, _receipt = self.run_ask("thay dầu xe", model, notes_only=True)

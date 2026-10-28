@@ -10,8 +10,9 @@ Guarantees, each with a test:
 - Same explicit subject, different text -> refused (NoteConflict) unless the owner names
   the note being replaced. Same text again -> the existing note is returned, not duplicated.
 - Search is Vietnamese-aware (hg.assistant.textvi): function syllables ignored, adjacent
-  syllables indexed as pairs, text typed without diacritics matches accented notes. A query
-  whose content words appear in no note returns nothing, which is what lets `ask` abstain.
+  syllables indexed as pairs, text typed without diacritics matches accented notes. A note
+  is returned only if it contains at least half of the query's content words, so one shared
+  common word ("lớp", "xe") is not enough; that is what lets `ask` abstain.
 - Every note keeps how it arrived (`origin`: typed in a terminal, piped from another
   program, or entered in the interactive prompt) so a later reader can tell them apart.
 """
@@ -159,9 +160,10 @@ class Notebook:
             index.add(r["memory_id"], f"{r['content']}")
             by_id[r["memory_id"]] = r
         hits = []
+        need = max(1, -(-len(unigrams) // 2))      # at least half of the query's content words
         for mid, score in index.search(query, limit=limit * 3):
             matched = unigrams & set(textvi.document_keys(by_id[mid]["content"]))
-            if matched:
+            if len(matched) >= need:
                 hits.append(dict(by_id[mid], score=round(score, 4), matched=sorted(matched)))
         if hits:
             top = hits[0]["score"]

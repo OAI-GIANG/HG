@@ -128,10 +128,11 @@ def compare(sentence, note_text):
     missing_numbers = textvi.numbers(sentence) - textvi.numbers(note_text)
     if missing_numbers:
         problems.append("số/ngày không có trong ghi chú: " + ", ".join(sorted(missing_numbers)))
-    missing_units = _units(sentence) - note_words
+    note_all = {textvi.fold(t) for t in textvi.words(note_text)}     # names may be function words ("tiếng Anh")
+    missing_units = _units(sentence) - note_all
     if missing_units:
         problems.append("đơn vị không có trong ghi chú: " + ", ".join(sorted(missing_units)))
-    missing_names = _names(sentence) - note_words
+    missing_names = _names(sentence) - note_all
     if missing_names:
         problems.append("tên không có trong ghi chú: " + ", ".join(sorted(missing_names)))
     sentence_neg, note_neg = _negated_clauses(sentence), _negated_clauses(note_text)
