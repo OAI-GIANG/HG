@@ -1,0 +1,62 @@
+#!/data/data/com.termux/files/usr/bin/sh
+# hg-runtime ./finish — count short failed runs, hold the service down after too many. Returns at once.
+#
+# runsv(8) calls ./finish with ./run's exit code (-1 if it did not exit normally) and the low byte
+# of the wait status, and restarts ./run only after ./finish exits; a long sleep here would block
+# `sv down/up` (runsv does not signal ./finish). So ./finish never waits: the wait before a retry
+# lives at the top of ./run (hg-runtime.run.in), where `sv down` interrupts it with TERM.
+#
+# Counted: a run that ended in < 300 s with a non-zero exit — exit 78 (fail-closed start: trust
+# root unreachable, bad config, unverified release), a crash, or a kill by Android (SIGKILL).
+# Not counted: exit 0, a deliberate stop/restart (SIGTERM from sv), a run that lasted >= 300 s.
+# The count is tied to the boot (boot_id), so a reboot starts fresh. After HG_FINISH_MAX (5)
+# counted runs the service is held down: log line, marker file, Android notification if
+# termux-api is installed. Recovery: fix the cause, then `sv up hg-runtime`.
+set -u
+exit_code="${1:-0}"
+status_low="${2:-0}"
+state_dir="${HG_FINISH_STATE_DIR:-$HOME/.local/state/hg}"
+boot_file="${HG_BOOT_ID_FILE:-/proc/sys/kernel/random/boot_id}"
+max="${HG_FINISH_MAX:-5}"
+count_file="$state_dir/hg-runtime-finish.count"
+started_file="$state_dir/hg-runtime.started"
+held_file="$state_dir/hg-runtime.HELD"
+now="$(date +%s)"
+boot="$(cat "$boot_file" 2>/dev/null || echo unknown)"
+mkdir -p "$state_dir" 2>/dev/null || true
+
+reset() { rm -f "$count_file" "$held_file"; }
+
+if [ "$exit_code" = "0" ]; then reset; exit 0; fi
+if [ "$exit_code" = "-1" ] && [ "$status_low" = "15" ]; then exit 0; fi     # sv down / sv restart
+
+started=0
+if [ -f "$started_file" ]; then
+  read -r sboot started < "$started_file" 2>/dev/null || true
+  [ "${sboot:-}" = "$boot" ] || started=0
+  case "$started" in ''|*[!0-9]*) started=0 ;; esac
+fi
+if [ "$started" -gt 0 ] && [ $((now - started)) -ge 300 ]; then reset; exit 0; fi
+
+count=0
+if [ -f "$count_file" ]; then
+  read -r cboot count _last < "$count_file" 2>/dev/null || true
+  [ "${cboot:-}" = "$boot" ] || count=0
+  case "$count" in ''|*[!0-9]*) count=0 ;; esac
+fi
+count=$((count + 1))
+printf '%s %s %s\n' "$boot" "$count" "$now" > "$count_file.tmp" && mv "$count_file.tmp" "$count_file"
+
+if [ "$count" -gt "$max" ]; then
+  msg="HG_BLOCKED: hg-runtime failed $((count - 1)) short runs in a row (last exit $exit_code); held down. Fix the cause, then: sv up hg-runtime"
+  echo "$msg"
+  printf '%s %s\n' "$now" "$msg" > "$held_file"
+  if command -v termux-notification > /dev/null 2>&1; then
+    (timeout 10 termux-notification --id hg-runtime --title "HG đã dừng" \
+      --content "hg-runtime lỗi khởi động nhiều lần; xem log rồi chạy: sv up hg-runtime" > /dev/null 2>&1 &)
+  fi
+  printf d > supervise/control 2>/dev/null || "${HG_FINISH_SV:-sv}" down "$(pwd)"
+  exit 0
+fi
+echo "HG_RUNTIME_SHORT_EXIT exit=$exit_code status=$status_low count=$count/$max"
+exit 0
