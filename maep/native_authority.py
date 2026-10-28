@@ -16,6 +16,10 @@ import re
 from typing import Any, Protocol
 
 from maep.core import MAEPError, validate_capability_evolution_decision
+from maep.policy_templates import (
+    POLICY_SCHEMA_V2, PolicyTemplateError, policy_rule_matches_v2,
+    resource_grant_matches, scope_grants_cover, validate_effective_policy_v2,
+)
 
 # True while NativePolicyEngine.authorize() is evaluating in the current execution
 # context (thread / asyncio task). A decision cannot depend on another decision of
@@ -361,6 +365,15 @@ class NativePolicyEngine:
             policy = self.policy_provider.load_active(root)
             if not isinstance(policy, dict) or policy.get("status") != "ACTIVE":
                 return self._blocked("POLICY_UNVERIFIED", request=request, root=root, principal=principal, candidate=candidate)
+            policy_schema = policy.get("schema_version")
+            if policy_schema not in (None, "hg.policy.v1", POLICY_SCHEMA_V2):
+                return self._blocked("POLICY_SCHEMA_UNSUPPORTED", request=request, root=root, principal=principal, candidate=candidate, policy=policy)
+            policy_v2 = policy_schema == POLICY_SCHEMA_V2
+            if policy_v2:
+                try:
+                    validate_effective_policy_v2(policy, expected_root_generation=root.generation)
+                except PolicyTemplateError:
+                    return self._blocked("POLICY_SCHEMA_INVALID", request=request, root=root, principal=principal, candidate=candidate, policy=policy)
             policy_version = policy.get("version")
             if not _nonempty(policy_version):
                 return self._blocked("POLICY_VERSION_MISSING", request=request, root=root, principal=principal, candidate=candidate)
@@ -419,20 +432,35 @@ class NativePolicyEngine:
             resource_scopes = principal.get("resource_scopes")
             requested_scopes = request.get("scope")
             principal_scopes = principal.get("allowed_scopes")
+            request_scopes_valid = (isinstance(requested_scopes, list) and bool(requested_scopes)
+                                    and all(_nonempty(item) for item in requested_scopes))
+            if policy_v2:
+                resource_scope_allowed = resource_grant_matches(
+                    resource_scopes, resource, task_ref, templates_allowed=True)
+                principal_scope_allowed = scope_grants_cover(
+                    requested_scopes, principal_scopes, task_ref, templates_allowed=True)
+            else:
+                resource_scope_allowed = isinstance(resource_scopes, list) and resource in resource_scopes
+                principal_scope_allowed = (isinstance(principal_scopes, list) and request_scopes_valid
+                                           and set(requested_scopes).issubset(set(principal_scopes)))
             if (not isinstance(capabilities, list) or action not in capabilities
-                    or not isinstance(resource_scopes, list) or resource not in resource_scopes
-                    or not isinstance(requested_scopes, list) or not requested_scopes
-                    or not all(_nonempty(item) for item in requested_scopes)
-                    or not isinstance(principal_scopes, list)
-                    or not set(requested_scopes).issubset(set(principal_scopes))):
+                    or not resource_scope_allowed or not request_scopes_valid
+                    or not principal_scope_allowed):
                 return self._deny("PRINCIPAL_SCOPE_DENIED", request, root, principal, candidate, policy, applicability, gate)
             rules = policy.get("rules")
-            matching_rules = [
-                rule for rule in rules if isinstance(rule, dict)
-                and rule.get("action") == action and rule.get("resource") == resource
-                and isinstance(rule.get("scope"), list)
-                and set(requested_scopes).issubset(set(rule.get("scope", [])))
-            ] if isinstance(rules, list) else []
+            if policy_v2:
+                matching_rules = [
+                    rule for rule in rules if policy_rule_matches_v2(
+                        rule, action=action, resource=resource, requested_scopes=requested_scopes,
+                        task_ref=task_ref)
+                ] if isinstance(rules, list) else []
+            else:
+                matching_rules = [
+                    rule for rule in rules if isinstance(rule, dict)
+                    and rule.get("action") == action and rule.get("resource") == resource
+                    and isinstance(rule.get("scope"), list)
+                    and set(requested_scopes).issubset(set(rule.get("scope", [])))
+                ] if isinstance(rules, list) else []
             # Explicit DENY takes precedence over any overlapping ALLOW rule.
             if (not matching_rules
                     or any(rule.get("effect") == "DENY" for rule in matching_rules)

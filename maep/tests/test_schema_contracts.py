@@ -11,12 +11,13 @@ EXPECTED = {
     "evidence.schema.json": {"evidence_id", "source_ref", "candidate_ref", "method", "result"},
     "acceptance-gate.schema.json": {"gate_id", "task_id", "status", "criteria_refs", "evidence_refs"},
     "closure.schema.json": {"closure_id", "task_id", "final_state", "candidate_ref", "criteria_results", "gate_refs"},
-    "native-authority-v1.schema.json": {"schema_version", "root_id", "generation", "status", "bootstrap_authorization_ref", "record_digest", "evidence_ref"}
+    "native-authority-v1.schema.json": {"schema_version", "root_id", "generation", "status", "bootstrap_authorization_ref", "record_digest", "evidence_ref"},
+    "runtime-policy-v2.schema.json": {"policy", "policy_digest"}
 }
 
 
 class SchemaFileTests(unittest.TestCase):
-    def test_all_seven_contracts_exist_and_parse(self):
+    def test_all_eight_contracts_exist_and_parse(self):
         self.assertEqual({p.name for p in SCHEMA_DIR.glob("*.schema.json")}, set(EXPECTED))
         for name in EXPECTED:
             with self.subTest(schema=name):

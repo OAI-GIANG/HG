@@ -36,6 +36,7 @@ from typing import Any
 from maep.local_authority_store import LocalEvidenceSink, LocalRootStore
 from maep.local_runtime_providers import _digest, _read_private_json, _write_new_json
 from maep.native_authority import AuthorityError, TrustRootRecord
+from maep.policy_templates import POLICY_SCHEMA_V2, PolicyTemplateError, validate_policy_source_v2
 
 REPOSITORY = "OAI-GIANG/HG"
 APPROVAL_SCHEMA = "hg-runtime-policy-approval-v1"
@@ -125,6 +126,13 @@ def approve_policy(*, policy_path: str | Path, authority_dir: str | Path, approv
     root = LocalRootStore(_absolute(authority_dir, "authority dir")).load_active()
     if not isinstance(root, TrustRootRecord) or not root.verify_integrity():
         raise AuthorityError("active trust root unavailable")
+    if policy.get("schema_version") == POLICY_SCHEMA_V2:
+        try:
+            validate_policy_source_v2(policy, expected_root_generation=root.generation)
+        except PolicyTemplateError as exc:
+            raise AuthorityError("policy v2 schema validation failed") from exc
+    elif policy.get("schema_version") not in (None, "hg.policy.v1"):
+        raise AuthorityError("unsupported local policy schema version")
     if policy.get("root_generation") != root.generation:
         raise AuthorityError("policy does not bind the active root generation")
     record = {
