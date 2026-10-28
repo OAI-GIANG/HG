@@ -251,3 +251,32 @@ Bản v0.1 bị phê bình nặng: S1 ("neo từ ghép mà câu trả lời lặ
 P0 kiểm tra chỉ đọc trên máy (dịch vụ, run/finish, `boot_id`, đĩa, quota, READY). P1 sửa S1–S4 + test → PR → CI → merge. P1b thử `finish` thật trên máy bằng một dịch vụ runit tạm `hg-finish-probe` có `./run` luôn exit 78 (không tốn quota, không đụng `hg-runtime`), rồi xoá. P2 build trên điện thoại từ commit merge, so tree + digest với bản build ngoài máy (AC-D1); cài (shim, pointer); `hg` từ `~/HG` (AC-D2). P3 chạy lại bộ chọn model với release mới (qwen3:1.7b, gemma3:4b), chọn, `hg model use … --service-dir`. P4 AC-A6 trên `eval_vi_v2.json` (và `eval_vi.json` ghi là bị nhiễm). P5 chỉ khi quota ≥ 30: `--install-finish`; `switch_service.sh`; smoke; restart; `--restore` (release cũ READY trên state mới, GET task mới); chuyển lại; GET hai task (AC-D3…D5). P6 hướng dẫn (AC-G1). P7 cập nhật §10, kiểm tra cuối bởi agent riêng, báo cáo.
 
 Điều kiện dừng: preflight không PASS; release mới không READY và `--restore` không khôi phục được; CI đỏ.
+
+## 12. Kết quả đợt 2 (2026-10-29, cập nhật lúc thiết bị mất kết nối ≈ 00:29 +07)
+
+### 12.1 Đã vào `main`
+
+| PR | Merge | Nội dung | CI |
+|---|---|---|---|
+| #68 | `af8b6fd` | F-D1 (neo câu hỏi, thông tin mới, cách ly ghi chú nhắm vào AI, bidi), `finish`/`run` mới, `switch_service.sh` an toàn hơn | `unittest (3.13/3.14)`, `rt06-anchor` xanh |
+
+Recovery point: `recovery/main-pre-v1-deploy-fixes-20261029` @ `927d018`.
+
+### 12.2 Bằng chứng trên điện thoại
+
+| Hạng mục | Kết quả | Bằng chứng |
+|---|---|---|
+| P0 chỉ đọc | `hg-runtime` READY (release `f7cfd766…`, trust LOADED @ `927d018`), `ollama` chạy; `boot_id` đọc được; `sh` = dash; termux-api chưa cài; quota GitHub 60/60 | lệnh `sv status`, `deploy_smoke.py ready`, `/rate_limit` |
+| P1b `finish` thật (dịch vụ tạm `hg-finish-probe`, `./run` luôn exit 78, không gọi GitHub) | Giữ dừng sau 6 lần chạy (đếm 6 > 5) trong ≈ 6 s, ghi file `HELD`; `sv up` → thử đúng 1 lần (đếm 7) rồi giữ dừng lại; dịch vụ tạm đã xoá; `hg-runtime` không đổi pid | `~/hg-v1-evidence/probe/state/` |
+| AC-D1 | **PASS** — build hai lần trùng byte, `verify` VERIFIED; tree `11f05d0…`, digest manifest `ae9ef41…` (235 file) **trùng** bản build ngoài máy; archive/`release_id` khác nền tảng như dự kiến (máy `ed0df5ab…`, ngoài `c1878d83…`) | `~/hg-v1-evidence/build-af8b6fd….log` |
+| Cài release + lệnh `hg` | `~/hg-releases/ed0df5ab…`, `verify-root` VERIFIED, pointer + shim | `install-af8b6fd….log` |
+| AC-D2 | **PASS** — chạy `hg` trong `~/HG`: traceback trỏ vào `~/hg-releases/ed0df5…/hg/…`, không phải checkout | `ac-d2.log` |
+| Dương tính giả held-out (77 ghi chú vô hại mới, agent độc lập) | **PASS 0,013 (1/77)** ≤ 0,05 (ngưỡng chốt trước); ca nhận nhầm là system prompt Chủ Nhân tự lưu → `hg note trust` | `hg/tests/fixtures/guard_heldout/ordinary_v3.json` |
+| Recall held-out bộ phát hiện đã sửa | **UNVERIFIED** (không có dữ liệu mới, xem §11) | — |
+| Chọn model (`eval_vi_select.json`, release mới) | qwen3:1.7b **PASS** (đúng dữ kiện 1,0; gắn nguồn 0,8; từ chối đúng 1,0; câu đầu p50 4,6 s); gemma3:4b **FAIL** (gắn nguồn 0,6; p50 16,5 s > 15) → chọn **qwen3:1.7b**, ghim digest `8f68893c…`, listener VERIFIED_PROCESS | `select3.log`, `model-use.log` |
+| AC-A6 (`eval_vi_v2.json`, lần chạy đầu) | **NOT_RUN/UNVERIFIED** — đã khởi chạy 00:27, thiết bị mất kết nối trước khi đọc được kết quả; có thể đã bị dừng cùng tiến trình Desktop Commander | `acceptance.log` (chưa đọc) |
+| AC-D3…D5, AC-G1 | **NOT_RUN** — BLOCKED_EXTERNAL (thiết bị offline) | — |
+
+### 12.3 Phát hiện F-D2 (vận hành)
+
+Hai lần liên tiếp (≈ 20:06 ngày 28 và ≈ 00:29 ngày 29) Desktop Commander mất kết nối **khi model đang chạy nặng**; lần trước, lần chạy `qwen3:4b` dừng giữa chừng ở S07, cho thấy tiến trình nền khởi chạy từ Desktop Commander chết theo nó. Giả thuyết (chưa kiểm chứng): Android dừng tiến trình nền khi máy tải nặng (phantom process killer / tối ưu pin). Cách xử lý khi tiếp tục: chạy việc dài bằng `nohup setsid …` để tách khỏi phiên; Chủ Nhân có thể tắt tối ưu pin cho Termux và, nếu muốn, tắt phantom process killer (Android 12+, qua `adb`) — quyết định của Chủ Nhân.

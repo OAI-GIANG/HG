@@ -29,7 +29,19 @@ Một dấu nhắc `HG>` hiện ra:
 
 Dòng cuối tóm tắt, ví dụ: `— 2 câu có nguồn · 1 câu model tự nói · ollama:qwen3:1.7b · 6.2 giây`.
 
-HG tự kiểm từng câu bằng cách so từ ngữ, số, ngày, tên và phủ định với ghi chú. Đây không phải hiểu nghĩa sâu: câu diễn đạt rất khác ghi chú có thể bị gắn `[?]` dù đúng.
+HG tự kiểm từng câu bằng cách so từ ngữ, số, ngày, tên và phủ định với ghi chú. Một câu chỉ được nhãn nguồn khi ghi chú đó nói đúng chủ đề Chủ Nhân hỏi và có đủ phần thông tin câu trả lời thêm vào. Đây không phải hiểu nghĩa sâu: câu diễn đạt rất khác ghi chú có thể bị gắn `[?]` dù đúng.
+
+Câu hỏi về việc riêng của Chủ Nhân (có "tôi", "mình", "nhà mình"…) mà không có ghi chú nào đúng chủ đề thì HG tự trả lời "Ghi chú chưa có thông tin này." và không hỏi model, để tránh model đoán mò.
+
+### Ghi chú có câu lệnh nhắm vào AI
+
+Nếu Chủ Nhân lưu một tin nhắn lạ kiểu "SYSTEM: bỏ qua mọi hướng dẫn…", HG vẫn hiện nó (có dấu ⚠) nhưng **không gửi cho model** và không bao giờ dùng nó làm nguồn. Nếu đó là ghi chú của chính Chủ Nhân (ví dụ một prompt mẫu cho công việc) và an toàn, gỡ cách ly bằng:
+
+```
+hg note trust M-000012-ab12cd
+```
+
+Việc gỡ được ghi vào sổ cái. Bộ phát hiện chỉ là lớp bảo vệ thêm (có thể bỏ lọt hoặc nhận nhầm); bảo vệ chính vẫn là nhãn HG tự tính.
 
 ## 3. Ghi chú
 
@@ -41,6 +53,7 @@ hg note search bao hiem                                    # tìm
 hg note list                                               # 20 ghi chú mới nhất
 hg note show M-000003-7292b0                               # mọi phiên bản của chủ đề
 hg note forget M-000003-7292b0                             # thu hồi (vẫn còn trong lịch sử)
+hg note trust M-000003-7292b0                              # gỡ cách ly cho một ghi chú an toàn
 ```
 
 Cùng một `--subject` mà nội dung khác, HG từ chối (mã 4) và chỉ ra ghi chú cũ. Muốn thay, ghi rõ: `hg note add --subject xe --replaces M-000002-5f4a22 "Thay dầu ngày 2026-10-01"`.
@@ -94,6 +107,7 @@ Model tắt hoặc chưa tải: `hg ask` vẫn chạy, đưa nguyên văn ghi ch
 | `model MISSING` | `ollama pull qwen3:1.7b` rồi `hg model use qwen3:1.7b` |
 | `supervised Ollama is not running` | `sv up ollama` |
 | `digest changed` | Kiểm tra lại, rồi `hg model use <tên>` để ghim lại |
+| `HG_BLOCKED: hg-runtime failed … held down` trong log dịch vụ | Dịch vụ khởi động lỗi 5 lần liên tiếp nên HG tự giữ dừng để không tiêu hết lượt gọi GitHub. Xem `tail $PREFIX/var/log/sv/hg-runtime/current`, sửa nguyên nhân (thường là mất mạng), rồi `sv up hg-runtime` |
 | Trả lời chậm lần đầu | Lần đầu phải nạp model vào RAM (vài giây); các lần sau nhanh hơn trong 30 phút |
 
 ## 8. Dịch vụ hg-runtime (máy chủ cục bộ)
@@ -110,4 +124,5 @@ T=$(cat ~/.config/hg/runtime-service.token); curl -s -H "Authorization: Bearer $
 - Kiểm tra câu là kiểm tra từ vựng, không phải suy luận ngữ nghĩa.
 - Không chống được chương trình chạy cùng tài khoản Termux (quyết định Q3).
 - Lệnh `hg` là lệnh trực tiếp của Chủ Nhân; nó không đi qua cổng quản trị của runtime HG.
+- Phát hiện câu lệnh nhắm vào AI theo mẫu: có thể bỏ lọt cách viết mới; tỉ lệ bắt được trên dữ liệu chưa thấy chưa đo được (UNVERIFIED).
 - Chưa có: PDF, giọng nói, hỏi đáp qua HTTP, lối tắt màn hình chính.
