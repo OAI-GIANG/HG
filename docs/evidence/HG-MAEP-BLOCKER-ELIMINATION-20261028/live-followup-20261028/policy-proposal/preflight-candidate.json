@@ -1,0 +1,71 @@
+{
+ "checks": [
+  {
+   "check": "config",
+   "status": "PASS"
+  },
+  {
+   "check": "bindings",
+   "status": "PASS"
+  },
+  {
+   "check": "trust-root",
+   "detail": {
+    "generation": 1,
+    "record_digest": "sha256:5c8ee60fc3f09c98f07a240399261efad2dbac5d39ce43487fcaecc999f8ccf4",
+    "root_id": "hg-phone-local-root-20261023"
+   },
+   "status": "PASS"
+  },
+  {
+   "check": "policy-change-rule-ref",
+   "detail": {
+    "file_exists_after_tilde_expansion": false,
+    "note": "not dereferenced by the factory; resolution is an owner decision",
+    "ref": "file://~/.config/hg/authority/policy-change-rule.json"
+   },
+   "status": "NOTICE"
+  },
+  {
+   "check": "evidence-ledger",
+   "status": "PASS"
+  },
+  {
+   "check": "policy-approval",
+   "reason": "policy approval record unavailable",
+   "status": "BLOCKED"
+  },
+  {
+   "check": "active-policy",
+   "reason": "[Errno 2] No such file or directory: '/data/data/com.termux/files/home/.config/hg/authority/active-policy.json'",
+   "status": "BLOCKED"
+  },
+  {
+   "check": "session",
+   "reason": "session source unavailable",
+   "status": "BLOCKED"
+  },
+  {
+   "check": "memory-db",
+   "reason": "[Errno 2] No such file or directory: '/data/data/com.termux/files/usr/tmp/HG-MAEP-POLICY-PROPOSAL-20261028/memory.sqlite3'",
+   "status": "BLOCKED"
+  },
+  {
+   "check": "file-write-roots",
+   "status": "PASS"
+  },
+  {
+   "check": "state-dirs",
+   "status": "PASS"
+  },
+  {
+   "check": "checkout-readiness",
+   "detail": {
+    "candidate_ref": "hg-local:2fdf6a1640de54b99bd6864a52051820186bb4ce:80e7ba7f06522094237f86fdf54ee71efc989969ec21f2b1e7b7c187a16ace81"
+   },
+   "status": "PASS"
+  }
+ ],
+ "ready": false,
+ "schema": "hg-runtime-factory-preflight-v1"
+}

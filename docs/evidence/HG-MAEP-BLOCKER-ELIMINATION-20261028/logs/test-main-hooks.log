@@ -1,0 +1,37 @@
+test_command_after_heredoc_is_still_checked (test_maep_guard.AllowedTests.test_command_after_heredoc_is_still_checked) ... ok
+test_git_C_path_is_used_for_probes (test_maep_guard.AllowedTests.test_git_C_path_is_used_for_probes) ... ok
+test_heredoc_body_is_not_parsed_as_commands (test_maep_guard.AllowedTests.test_heredoc_body_is_not_parsed_as_commands) ... ok
+test_implicit_push_from_feature_branch_allowed (test_maep_guard.AllowedTests.test_implicit_push_from_feature_branch_allowed) ... ok
+test_ordinary_feature_branch_pushes_allowed (test_maep_guard.AllowedTests.test_ordinary_feature_branch_pushes_allowed) ... ok
+test_ordinary_shell_commands_allowed (test_maep_guard.AllowedTests.test_ordinary_shell_commands_allowed) ... ok
+test_other_tools_and_files_allowed (test_maep_guard.AllowedTests.test_other_tools_and_files_allowed) ... ok
+test_safe_local_git_commands_allowed (test_maep_guard.AllowedTests.test_safe_local_git_commands_allowed) ... ok
+test_clean_force_with_untracked_files_blocked (test_maep_guard.BlockedLocalDestructionTests.test_clean_force_with_untracked_files_blocked) ... ok
+test_clean_x_with_ignored_files_blocked (test_maep_guard.BlockedLocalDestructionTests.test_clean_x_with_ignored_files_blocked) ... ok
+test_hard_reset_with_uncommitted_changes_blocked (test_maep_guard.BlockedLocalDestructionTests.test_hard_reset_with_uncommitted_changes_blocked) ... ok
+test_hard_reset_with_unknown_tree_fails_closed (test_maep_guard.BlockedLocalDestructionTests.test_hard_reset_with_unknown_tree_fails_closed) ... ok
+test_recursive_delete_of_git_directory_blocked (test_maep_guard.BlockedLocalDestructionTests.test_recursive_delete_of_git_directory_blocked) ... ok
+test_recursive_delete_of_root_or_home_blocked (test_maep_guard.BlockedLocalDestructionTests.test_recursive_delete_of_root_or_home_blocked) ... ok
+test_deleting_protected_branches_blocked (test_maep_guard.BlockedPushTests.test_deleting_protected_branches_blocked) ... ok
+test_direct_push_to_main_blocked (test_maep_guard.BlockedPushTests.test_direct_push_to_main_blocked) ... ok
+test_force_push_variants_blocked (test_maep_guard.BlockedPushTests.test_force_push_variants_blocked) ... ok
+test_implicit_push_from_main_blocked (test_maep_guard.BlockedPushTests.test_implicit_push_from_main_blocked) ... ok
+test_lease_force_on_protected_branches_blocked (test_maep_guard.BlockedPushTests.test_lease_force_on_protected_branches_blocked) ... ok
+test_unknown_push_destination_fails_closed (test_maep_guard.BlockedPushTests.test_unknown_push_destination_fails_closed) ... ok
+test_edit_tools_on_delegation_file_blocked (test_maep_guard.DelegationFileTests.test_edit_tools_on_delegation_file_blocked) ... ok
+test_shell_writes_to_delegation_file_blocked (test_maep_guard.DelegationFileTests.test_shell_writes_to_delegation_file_blocked) ... ok
+test_allow_exits_0 (test_maep_guard.HookProcessTests.test_allow_exits_0) ... ok
+test_block_exits_2_with_reason_on_stderr (test_maep_guard.HookProcessTests.test_block_exits_2_with_reason_on_stderr) ... ok
+test_malformed_stdin_exits_2 (test_maep_guard.HookProcessTests.test_malformed_stdin_exits_2) ... ok
+test_real_git_probe_dirty_and_clean_tree (test_maep_guard.HookProcessTests.test_real_git_probe_dirty_and_clean_tree) ... ok
+test_non_object_payload_fails_closed (test_maep_guard.MalformedInputTests.test_non_object_payload_fails_closed) ... ok
+test_non_string_command_fails_closed (test_maep_guard.MalformedInputTests.test_non_string_command_fails_closed) ... ok
+test_unparseable_risky_command_fails_closed (test_maep_guard.MalformedInputTests.test_unparseable_risky_command_fails_closed) ... ok
+test_edit_tools_on_grants_file_blocked (test_maep_guard.OwnerGrantsFileTests.test_edit_tools_on_grants_file_blocked) ... ok
+test_reading_grants_file_and_editing_neighbours_allowed (test_maep_guard.OwnerGrantsFileTests.test_reading_grants_file_and_editing_neighbours_allowed) ... ok
+test_shell_writes_to_grants_file_blocked (test_maep_guard.OwnerGrantsFileTests.test_shell_writes_to_grants_file_blocked) ... ok
+
+----------------------------------------------------------------------
+Ran 32 tests in 0.467s
+
+OK

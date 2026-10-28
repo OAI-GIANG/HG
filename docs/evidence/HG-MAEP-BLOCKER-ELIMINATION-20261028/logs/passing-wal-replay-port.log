@@ -1,0 +1,9 @@
+# tree: 3ec6a2a (port)
+test_crash_wal_of_displaced_ledger_is_not_replayed_into_replacement (maep.tests.test_local_runtime_providers.LocalRuntimeProviderTests.test_crash_wal_of_displaced_ledger_is_not_replayed_into_replacement)
+Committed WAL frames left by a crash belong to the ledger that wrote them. ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.075s
+
+OK
+exit=0

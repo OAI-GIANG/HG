@@ -1,0 +1,6 @@
+test_composition_rejects_untrusted_provider_implementations (runtime.test_composition.RuntimeCompositionTests.test_composition_rejects_untrusted_provider_implementations) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+OK

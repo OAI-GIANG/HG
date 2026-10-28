@@ -1,0 +1,41 @@
+{
+  "policy_version": "MAEP-1.1.0",
+  "workdir": "/tmp/hg-selfcheck-dlyrtmji",
+  "limitations": [
+    "grants are in-process self-check fixtures, not anchored to the trust root (RT-06 BLOCKED)",
+    "verifiers are internal checks, not independent review"
+  ],
+  "scenarios": [
+    {
+      "scenario": "authorized write closes with evidence",
+      "workdir": "/tmp/hg-selfcheck-dlyrtmji/authorized",
+      "task_id": "SC-1",
+      "expected_state": "CLOSED_VERIFIED",
+      "observed_state": "CLOSED_VERIFIED",
+      "expected_file": true,
+      "observed_file": true,
+      "result": "PASS"
+    },
+    {
+      "scenario": "write without a grant never executes",
+      "workdir": "/tmp/hg-selfcheck-dlyrtmji/ungranted",
+      "task_id": "SC-2",
+      "expected_state": "PLANNED",
+      "observed_state": "PLANNED",
+      "expected_file": false,
+      "observed_file": false,
+      "result": "PASS"
+    },
+    {
+      "scenario": "READ_ONLY mode blocks a granted write",
+      "workdir": "/tmp/hg-selfcheck-dlyrtmji/readonly",
+      "task_id": "SC-3",
+      "expected_state": "BLOCKED",
+      "observed_state": "BLOCKED",
+      "expected_file": false,
+      "observed_file": false,
+      "result": "PASS"
+    }
+  ],
+  "result": "PASS"
+}
