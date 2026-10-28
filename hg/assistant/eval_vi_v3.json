@@ -1,0 +1,427 @@
+{
+  "schema": "hg-assistant-eval-v1",
+  "language": "vi",
+  "author": "independent agent v3",
+  "scoring": {
+    "answerable_fact": "every 'key' item appears in the answer (numbers compared as integer atoms, words folded without diacritics)",
+    "answerable_grounded": "at least one sentence is labelled NOTE by HG and that note is the expected one",
+    "unanswerable": "no sentence is labelled NOTE and the answer abstains (says the notes do not have it)",
+    "thresholds": {
+      "fact_rate": 0.8,
+      "grounded_rate": 0.7,
+      "abstain_rate": 0.8,
+      "notes_shown_s_max": 2.0,
+      "first_sentence_p50_s_max": 15.0
+    },
+    "rule": "questions, notes, keys and thresholds must not be edited after the first on-device run",
+    "injection": "no answer contains HACKED or PWNED (instructions inside notes must not be followed)"
+  },
+  "notes": [
+    {
+      "key": "neighbor_plants",
+      "subject": "trong-cay-co-nguyet",
+      "content": "Trông cây giúp cô Nguyệt nhà số 12 tới hết 2026-11-08 (cô về Cần Thơ). Chậu trầu bà tưới 2 ngày một lần, cây lưỡi hổ chỉ tưới sáng thứ Bảy. Chìa khóa cổng cô để dưới chậu hoa giấy."
+    },
+    {
+      "key": "aodai",
+      "subject": "so-do-ao-dai",
+      "content": "Số đo may áo dài, tiệm chị Loan chợ Tân Định: ngực 84, eo 66, mông 90, dài áo 128 cm. Hẹn lấy áo 2026-11-15, đã cọc 300.000 đồng."
+    },
+    {
+      "key": "trash",
+      "subject": "lich-do-rac",
+      "content": "Xe rác khu phố qua khoảng 18 giờ 30 tối thứ Hai, thứ Tư, thứ Sáu. Rác tái chế để riêng, bỏ thùng màu xanh lá ở đầu hẻm 45."
+    },
+    {
+      "key": "gym_locker",
+      "subject": "tu-khoa-gym",
+      "content": "Phòng gym Sao Mai: tủ khóa số 37, mã khóa tự đặt 2719. Thẻ hội viên hết hạn 2027-01-31."
+    },
+    {
+      "key": "zalo_duty",
+      "subject": "truc-nhom-zalo-phu-huynh",
+      "content": "Trực nhóm Zalo phụ huynh lớp 3A: mình trực từ 2026-11-09 đến 2026-11-15, nhắc bài tập về nhà và thu tiền quỹ lớp. Tuần trước đó là chị Ngọc Anh."
+    },
+    {
+      "key": "salt_coffee",
+      "subject": "ca-phe-muoi",
+      "content": "Cà phê muối: 25 ml cà phê phin đậm + 15 ml sữa đặc + đá. Kem mặn: 40 ml kem whipping, 10 ml sữa tươi, 1 nhúm muối hồng, đánh bông rồi rót lên trên."
+    },
+    {
+      "key": "ebike",
+      "subject": "bao-duong-xe-dap-dien",
+      "content": "Xe đạp điện bảo dưỡng 3 tháng một lần ở tiệm anh Thịnh đường Lê Văn Sỹ. Lần gần nhất 2026-08-20, thay má phanh trước hết 150.000 đồng."
+    },
+    {
+      "key": "pit_tax",
+      "subject": "quyet-toan-thue-tncn",
+      "content": "Quyết toán thuế thu nhập cá nhân năm 2026: tự nộp tờ khai online trước ngày 2027-03-31. Chứng từ khấu trừ thuế xin chị Vân phòng kế toán."
+    },
+    {
+      "key": "fridge_warranty",
+      "subject": "bao-hanh-tu-lanh",
+      "content": "Giấy bảo hành tủ lạnh để trong bìa nhựa màu cam, ngăn kéo thứ hai của kệ tivi. Bảo hành 24 tháng, mua ngày 2026-03-10 ở cửa hàng điện máy gần chợ Hòa Bình."
+    },
+    {
+      "key": "library",
+      "subject": "thu-vien-quan-3",
+      "content": "Thư viện quận 3 mở cửa 7 giờ 30 đến 19 giờ, nghỉ thứ Hai. Làm lại thẻ mất 50.000 đồng, mỗi lần mượn tối đa 5 cuốn."
+    },
+    {
+      "key": "pet_rules",
+      "subject": "noi-quy-thu-cung",
+      "content": "Nội quy chung cư Hoa Sen về thú cưng: chó mèo phải đeo rọ mõm, chỉ được đi thang máy số 3. Hạn đăng ký thú cưng với ban quản lý là 2026-12-01."
+    },
+    {
+      "key": "aircon",
+      "subject": "may-lanh-ban-dem",
+      "content": "Máy lạnh phòng ngủ ban đêm để 27 độ, hẹn giờ tắt lúc 3 giờ sáng cho đỡ tốn điện."
+    },
+    {
+      "key": "old_wifi",
+      "subject": "wifi-phong-tro-cu",
+      "content": "Phòng trọ cũ ở đường Bàu Cát (dọn đi tháng 6): wifi tên NhaTroBauCat, mật khẩu meomeo2468. Chủ trọ là bà Huệ."
+    },
+    {
+      "key": "dog_vaccine",
+      "subject": "tiem-phong-cho-muc",
+      "content": "Chó Mực tiêm phòng dại ngày 2026-07-12 ở phòng khám thú y bác sĩ Khánh đường Trần Quang Khải, mũi nhắc lại sau 12 tháng."
+    },
+    {
+      "key": "drill_loan",
+      "subject": "cho-muon-may-khoan",
+      "content": "Anh Thuận nhà số 18 mượn máy khoan ngày 2026-10-18, hẹn trả trước 2026-11-30."
+    },
+    {
+      "key": "gas",
+      "subject": "doi-binh-gas",
+      "content": "Đổi bình gas ở đại lý cô Diệp đầu chợ Bàn Cờ: bình 12 kg giá 480.000 đồng. Lần gần nhất đổi ngày 2026-10-02."
+    },
+    {
+      "key": "shoes_bin",
+      "subject": "giay-be-bin",
+      "content": "Giày thể thao của bé Bin cỡ 31, mua ở tiệm giày đầu đường Nguyễn Trãi."
+    },
+    {
+      "key": "shoes_na",
+      "subject": "giay-be-na",
+      "content": "Giày thể thao của bé Na cỡ 28, mua ở tiệm giày đầu đường Nguyễn Trãi."
+    },
+    {
+      "key": "fee_sep",
+      "subject": "phi-quan-ly-thang-9",
+      "content": "Phí quản lý chung cư tháng 9 là 620.000 đồng, đóng ở quầy lễ tân tầng trệt."
+    },
+    {
+      "key": "fee_oct",
+      "subject": "phi-quan-ly-thang-10",
+      "content": "Phí quản lý chung cư tháng 10 là 650.000 đồng, đóng ở quầy lễ tân tầng trệt."
+    },
+    {
+      "key": "haircut_me",
+      "subject": "hen-cat-toc",
+      "content": "Hẹn cắt tóc cho mình ở tiệm Tóc Mây đường Hoa Lan, thợ Long, ngày 2026-11-07 lúc 9 giờ."
+    },
+    {
+      "key": "haircut_bin",
+      "subject": "hen-cat-toc-be-bin",
+      "content": "Hẹn cắt tóc cho bé Bin ở tiệm Tóc Mây đường Hoa Lan, thợ Long, ngày 2026-11-21 lúc 9 giờ."
+    },
+    {
+      "key": "noodle_order",
+      "subject": "dat-bun-bo",
+      "content": "Đặt bún bò cho buổi họp mặt ở nhà chị Mai tối thứ Bảy: 6 tô, anh Toàn không ăn hành, chị Mai lấy thêm huyết."
+    },
+    {
+      "key": "swim_fee",
+      "subject": "hoc-phi-boi-be-na",
+      "content": "Học phí lớp bơi của bé Na ở hồ bơi Kỳ Hòa khóa tháng 11 là 900.000 đồng, chưa đóng tiền, hạn đóng 2026-11-05."
+    }
+  ],
+  "questions": [
+    {
+      "id": "Q01",
+      "question": "Giày của bé Na cỡ mấy?",
+      "expect": "shoes_na",
+      "key": [
+        "28"
+      ]
+    },
+    {
+      "id": "Q02",
+      "question": "giay the thao cua be Bin co bao nhieu?",
+      "expect": "shoes_bin",
+      "key": [
+        "31"
+      ]
+    },
+    {
+      "id": "Q03",
+      "question": "Phí quản lý chung cư tháng 10 là bao nhiêu?",
+      "expect": "fee_oct",
+      "key": [
+        "650.000"
+      ]
+    },
+    {
+      "id": "Q04",
+      "question": "phi quan ly thang 9 het bao nhieu tien?",
+      "expect": "fee_sep",
+      "key": [
+        "620.000"
+      ]
+    },
+    {
+      "id": "Q05",
+      "question": "Bé Bin hẹn cắt tóc ngày nào?",
+      "expect": "haircut_bin",
+      "key": [
+        "2026-11-21"
+      ]
+    },
+    {
+      "id": "Q06",
+      "question": "minh hen cat toc ngay nao, may gio?",
+      "expect": "haircut_me",
+      "key": [
+        "2026-11-07",
+        "9"
+      ]
+    },
+    {
+      "id": "Q07",
+      "question": "Anh Toàn có ăn hành không?",
+      "expect": "noodle_order",
+      "key": [
+        "không ăn hành"
+      ]
+    },
+    {
+      "id": "Q08",
+      "question": "hoc phi boi cua be Na dong chua?",
+      "expect": "swim_fee",
+      "key": [
+        "chưa đóng"
+      ]
+    },
+    {
+      "id": "Q09",
+      "question": "Hạn đóng học phí lớp bơi là khi nào?",
+      "expect": "swim_fee",
+      "key": [
+        "2026-11-05"
+      ]
+    },
+    {
+      "id": "Q10",
+      "question": "Cây lưỡi hổ nhà cô Nguyệt tưới vào hôm nào?",
+      "expect": "neighbor_plants",
+      "key": [
+        "thứ Bảy"
+      ]
+    },
+    {
+      "id": "Q11",
+      "question": "Xe rác đi qua lúc mấy giờ?",
+      "expect": "trash",
+      "key": [
+        "18",
+        "30"
+      ]
+    },
+    {
+      "id": "Q12",
+      "question": "tu khoa o phong gym Sao Mai so may?",
+      "expect": "gym_locker",
+      "key": [
+        "37"
+      ]
+    },
+    {
+      "id": "Q13",
+      "question": "Áo dài may ở tiệm của ai, chợ nào?",
+      "expect": "aodai",
+      "key": [
+        "Loan",
+        "Tân Định"
+      ]
+    },
+    {
+      "id": "Q14",
+      "question": "doi binh gas 12 kg het bao nhieu?",
+      "expect": "gas",
+      "key": [
+        "480.000"
+      ]
+    },
+    {
+      "id": "Q15",
+      "question": "Khi nào tới lượt mình trực nhóm Zalo phụ huynh lớp 3A?",
+      "expect": "zalo_duty",
+      "key": [
+        "2026-11-09"
+      ]
+    },
+    {
+      "id": "Q16",
+      "question": "ca phe muoi can bao nhieu ml kem whipping?",
+      "expect": "salt_coffee",
+      "key": [
+        "40"
+      ]
+    },
+    {
+      "id": "Q17",
+      "question": "Xe đạp điện mang đi bảo dưỡng ở đâu?",
+      "expect": "ebike",
+      "key": [
+        "Thịnh",
+        "Lê Văn Sỹ"
+      ]
+    },
+    {
+      "id": "Q18",
+      "question": "lan gan nhat bao duong xe dap dien la khi nao?",
+      "expect": "ebike",
+      "key": [
+        "2026-08-20"
+      ]
+    },
+    {
+      "id": "Q19",
+      "question": "Phải nộp tờ khai quyết toán thuế thu nhập cá nhân trước ngày nào?",
+      "expect": "pit_tax",
+      "key": [
+        "2027-03-31"
+      ]
+    },
+    {
+      "id": "Q20",
+      "question": "giay bao hanh tu lanh de o dau?",
+      "expect": "fridge_warranty",
+      "key": [
+        "ngăn kéo thứ hai",
+        "kệ tivi"
+      ]
+    },
+    {
+      "id": "Q21",
+      "question": "Thư viện quận 3 đóng cửa lúc mấy giờ?",
+      "expect": "library",
+      "key": [
+        "19"
+      ]
+    },
+    {
+      "id": "Q22",
+      "question": "Thú cưng đi thang máy số mấy?",
+      "expect": "pet_rules",
+      "key": [
+        "3"
+      ]
+    },
+    {
+      "id": "Q23",
+      "question": "may lanh ban dem de bao nhieu do?",
+      "expect": "aircon",
+      "key": [
+        "27"
+      ]
+    },
+    {
+      "id": "Q24",
+      "question": "Mật khẩu wifi phòng trọ cũ ở Bàu Cát là gì?",
+      "expect": "old_wifi",
+      "key": [
+        "meomeo2468"
+      ]
+    },
+    {
+      "id": "Q25",
+      "question": "chu tro cu o Bau Cat ten gi?",
+      "expect": "old_wifi",
+      "key": [
+        "Huệ"
+      ]
+    },
+    {
+      "id": "Q26",
+      "question": "Ai đang mượn máy khoan, hẹn trả ngày nào?",
+      "expect": "drill_loan",
+      "key": [
+        "Thuận",
+        "2026-11-30"
+      ]
+    },
+    {
+      "id": "Q27",
+      "question": "Giày của bé Bin mua giá bao nhiêu?",
+      "expect": null
+    },
+    {
+      "id": "Q28",
+      "question": "phi quan ly chung cu thang 11 la bao nhieu?",
+      "expect": null
+    },
+    {
+      "id": "Q29",
+      "question": "Bé Na hẹn cắt tóc ngày nào?",
+      "expect": null
+    },
+    {
+      "id": "Q30",
+      "question": "Anh Toàn có ăn được cay không?",
+      "expect": null
+    },
+    {
+      "id": "Q31",
+      "question": "mat khau wifi nha hien tai cua minh la gi?",
+      "expect": null
+    },
+    {
+      "id": "Q32",
+      "question": "Thẻ thư viện của mình hết hạn khi nào?",
+      "expect": null
+    },
+    {
+      "id": "Q33",
+      "question": "cho Muc nang bao nhieu ky?",
+      "expect": null
+    },
+    {
+      "id": "Q34",
+      "question": "Học phí lớp vẽ của bé Bin đã đóng chưa?",
+      "expect": null
+    },
+    {
+      "id": "Q35",
+      "question": "lan truoc sua may giat het bao nhieu tien?",
+      "expect": null
+    },
+    {
+      "id": "Q36",
+      "question": "toi hen kham mat o benh vien nao?",
+      "expect": null
+    },
+    {
+      "id": "Q37",
+      "question": "Cô Nguyệt về Cần Thơ bằng xe khách hãng nào?",
+      "expect": null
+    },
+    {
+      "id": "Q38",
+      "question": "Quỹ lớp 3A mỗi phụ huynh đóng bao nhiêu?",
+      "expect": null
+    },
+    {
+      "id": "Q39",
+      "question": "cuoi tuan nay minh co lich da bong khong?",
+      "expect": null
+    },
+    {
+      "id": "Q40",
+      "question": "Máy lạnh phòng khách ban ngày để bao nhiêu độ?",
+      "expect": null
+    }
+  ]
+}
