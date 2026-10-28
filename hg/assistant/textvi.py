@@ -19,6 +19,10 @@ WORD = re.compile(r"\w+", re.UNICODE)
 _NUMBER = re.compile(r"\d+(?:[.,:/\-]\d+)*")
 
 # Function syllables that carry no topic. Kept small and explicit; negations excluded on purpose.
+# Only entries WITH diacritics are matched as written. Text typed without diacritics is matched
+# against UNACCENTED_STOP below, a curated list of forms whose function-word reading dominates:
+# "nha" can be "nhà" (house), "ho" "hộ" (hộ chiếu), "cho" "chó" (dog), "the" "thẻ" (card),
+# "be" "bé" (child), "ve" "vé" (ticket) — dropping those would lose the topic (finding F-D3).
 STOPWORDS = frozenset("""
 là và của có cho các những một này đó kia thì với trong để đã sẽ đang được bị
 ở tại về từ khi nào gì ai sao thế nhé nha ạ à ơi vậy rồi cũng lại mà nên hay hoặc
@@ -29,13 +33,27 @@ the a an of to in on at is are was were be been and or for with by from it this 
 """.split())
 NEGATIONS = frozenset({"không", "ko", "hông", "chưa", "chẳng", "chả", "đừng", "chớ", "khỏi",
                        "not", "no", "never", "none"})
+UNACCENTED_STOP = frozenset("""
+la va cua cac nhung mot nay kia voi trong de se bi o khi nao gi ai sao nhe a oi roi cung nen hay hoac thi
+them nhu theo vao ra len toi em ta xin giup chiec viec nguoi luc u vui ok okay
+of and or for with from this that is are was were been by it
+""".split())
+# Without diacritics only unambiguous negations count: "cho" may be "chớ" but is far more often
+# "cho" (for) or "chó" (dog); "dung" may be "đừng", "dùng" or "đúng"; "cha" may be "chả" or "cha".
+UNACCENTED_NEGATIONS = frozenset({"khong", "ko", "not", "no", "never", "none"})
 
 
 # Question and modal words: they shape a question but are not its topic. Accented forms are
 # matched as written; only the unaccented forms listed in _SAFE_UNACCENTED_QUESTION are matched
 # without diacritics, because e.g. "dau" can be "đâu" (where) or "dầu" (oil).
-QUESTION_WORDS = frozenset("bao nhiêu mấy đâu phải cần làm gồm hả hở chứ chăng".split())
-_SAFE_UNACCENTED_QUESTION = frozenset({"bao", "nhieu", "phai", "gom"})
+QUESTION_WORDS = frozenset("nhiêu mấy đâu phải cần làm gồm hả hở chứ chăng".split())
+_SAFE_UNACCENTED_QUESTION = frozenset({"nhieu", "phai", "gom", "lam"})
+# "bao" is a question word only in "bao nhiêu"/"bao nhieu" (else it may be "bảo hiểm", "báo").
+# Answer slots: the noun a question asks to fill ("tên gì", "ngày nào", "mấy giờ", "liều bao
+# nhiêu", "bao nhiêu tiền") is optional when matching a note's topic (finding F-D3).
+_SLOT_BEFORE = frozenset({"gì", "gi", "nào", "nao"})
+_SLOT_AFTER = frozenset({"mấy"})
+_TIME_INTERROGATIVE_HEADS = frozenset({"khi", "luc", "hoi", "gio"})
 
 
 def nfc(text):
@@ -49,8 +67,13 @@ def fold(token):
     return unicodedata.normalize("NFC", "".join(c for c in decomposed if not unicodedata.combining(c)))
 
 
-_FOLDED_STOPWORDS = frozenset(fold(w) for w in STOPWORDS)
-_FOLDED_NEGATIONS = frozenset(fold(w) for w in NEGATIONS)
+_ACCENTED_STOPWORDS = frozenset(w for w in STOPWORDS if w != fold(w))
+_FOLDED_STOPWORDS = frozenset(fold(w) for w in STOPWORDS)          # kept for callers; not used for matching
+_FOLDED_NEGATIONS = UNACCENTED_NEGATIONS
+
+
+def is_stopword(w):
+    return w in _ACCENTED_STOPWORDS if w != fold(w) else w in UNACCENTED_STOP
 
 
 def words(text):
@@ -62,9 +85,9 @@ def content_words(text):
     """Words that carry topic: no function syllables, no single letters (digits kept)."""
     out = []
     for w in words(text):
-        # Accented words are compared as written ("đỏ" is not "đó"); only text typed without
-        # diacritics is compared against the folded list, where "do" is genuinely ambiguous.
-        if w in STOPWORDS or (w == fold(w) and w in _FOLDED_STOPWORDS):
+        # Accented words are compared as written ("đỏ" is not "đó"); words without diacritics
+        # only against the curated UNACCENTED_STOP list.
+        if is_stopword(w):
             continue
         if len(w) == 1 and not w.isdigit():
             continue
@@ -79,9 +102,30 @@ def _key(word):
 
 
 def topic_keys(text):
-    """Query keys of a question without question/modal words and negations, in order."""
+    """Keys of what a question is about, in order: content words minus question/modal words,
+    negations, "bao" of "bao nhiêu", and answer-slot nouns ("tên gì", "mấy giờ", "liều bao nhiêu")."""
+    raw = words(text)
+    drop = set()
+    for i, w in enumerate(raw):
+        nxt = raw[i + 1] if i + 1 < len(raw) else ""
+        is_bao_nhieu = w == "bao" and fold(nxt) == "nhieu"
+        if is_bao_nhieu or w in _SLOT_BEFORE:
+            # Only a noun DIRECTLY before the interrogative is a slot ("tên gì", "ngày nào"):
+            # in "nhóm máu của tôi là gì" the whole subject is asked, and "khi nào"/"lúc nào"
+            # ask for a time without naming a slot.
+            j = i - 1
+            if j >= 0 and not is_stopword(raw[j]) and fold(raw[j]) not in _TIME_INTERROGATIVE_HEADS:
+                drop.add(j)
+        if is_bao_nhieu:
+            drop.add(i)
+            if i + 2 < len(raw) and not is_stopword(raw[i + 2]):
+                drop.add(i + 2)
+        if w in _SLOT_AFTER and i + 1 < len(raw):
+            drop.add(i + 1)
     out = []
-    for w in content_words(text):
+    for i, w in enumerate(raw):
+        if i in drop or is_stopword(w) or (len(w) == 1 and not w.isdigit()):
+            continue
         if w in QUESTION_WORDS or (w == fold(w) and w in _SAFE_UNACCENTED_QUESTION):
             continue
         if negations(w):
@@ -140,7 +184,7 @@ def numbers(text):
 def negations(text):
     """Negation words, folded so 'không' and 'khong' compare equal; accented words must match exactly."""
     return {fold(w) for w in words(text)
-            if w in NEGATIONS or (w == fold(w) and w in _FOLDED_NEGATIONS)}
+            if w in NEGATIONS or (w == fold(w) and w in UNACCENTED_NEGATIONS)}
 
 
 def folded_set(text):

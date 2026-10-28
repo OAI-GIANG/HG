@@ -162,3 +162,41 @@ class NoteTextHygieneTests(unittest.TestCase):
             clean_text("Mật khẩu \u202egnp.exe")
         self.assertEqual(clean_text("Họp\u200b nhóm"), "Họp nhóm")
         self.assertEqual(clean_text("👨\u200d👩\u200d👧 gia đình"), "👨\u200d👩\u200d👧 gia đình")
+
+
+class FD3RegressionTests(unittest.TestCase):
+    """Root causes behind the wrong labels of the first eval_vi_v2 run (2026-10-29)."""
+
+    def test_unaccented_content_syllables_are_not_dropped_as_function_words(self):
+        from hg.assistant import textvi
+        self.assertIn("~ho", textvi.topic_keys("ho chieu cua toi het han khi nao"))      # hộ chiếu, not họ
+        self.assertIn("~nha", textvi.query_keys("tien nha thang nay"))                    # nhà, not nha (particle)
+        self.assertIn("~be", textvi.query_keys("be Su hoc lop may"))                      # bé, not "be"
+        self.assertIn("~the", textvi.query_keys("the ngan hang het han"))                 # thẻ, not "the"
+        self.assertNotIn("~la", textvi.query_keys("tien dien la bao nhieu"))
+
+    def test_unaccented_cho_is_not_a_negation(self):
+        r = grounding.check_sentence("Tên wifi cho khách là NhaMinh_Guest.",
+                                     {"N1": "Wifi cho khách tên là NhaMinh_Guest, chỉ bật vào cuối tuần."},
+                                     question="Tên wifi dành cho khách là gì?")
+        self.assertEqual(r["label"], "NOTE")
+
+    def test_two_syllable_topic_needs_both_syllables(self):
+        self.assertIsNotNone(grounding.anchored("nhom mau cua toi la gi?",
+                                                "Thông báo từ nhóm chat chung cư: thang máy bảo trì."))
+
+    def test_answer_slot_is_optional(self):
+        note = "Thuốc huyết áp của bố là Amlodipin 5 mg, uống 1 viên lúc 7 giờ sáng."
+        self.assertIsNone(grounding.anchored("Bố tôi uống thuốc huyết áp tên gì, liều bao nhiêu?", note))
+        self.assertIsNone(grounding.anchored("Lần trước đổi bình gas hết bao nhiêu tiền?",
+                                             "Lần trước đổi bình gas giá 450.000 đồng."))
+
+    def test_wrong_document_with_a_matching_date_is_not_note(self):
+        lease = "Hợp đồng thuê nhà hết hạn ngày 2027-05-31."
+        r = grounding.check_sentence("Hết hạn ngày 2027-05-31 [N1].", {"N1": lease},
+                                     question="ho chieu cua toi het han khi nao?")
+        self.assertNotEqual(r["label"], "NOTE")
+
+    def test_abstention_phrase_inside_brackets_does_not_hide_a_claim(self):
+        self.assertFalse(grounding.is_abstention("Lõi lọc thay mỗi 6 tháng [Ghi chú chưa có thông tin này]."))
+        self.assertTrue(grounding.is_abstention("Ghi chú chưa có thông tin này."))

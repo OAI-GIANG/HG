@@ -179,7 +179,7 @@ def append_receipt(home, kind, payload, *, clock, lock_wait_s=5.0):
 
 def ask(question, *, notebook, router_factory, listener=None, model_check=None, out=print, color=False,
         notes_only=False, unavailable_reason=None, max_tokens=400, clock=None, monotonic=time.monotonic,
-        release="dev"):
+        release="dev", general=False):
     """Run one question end to end. Returns (exit_code, receipt)."""
     clock = clock or (lambda: datetime.now(timezone.utc))
     started = monotonic()
@@ -218,15 +218,19 @@ def ask(question, *, notebook, router_factory, listener=None, model_check=None, 
             + " — kiểm tra lại, có thể cần `hg note add --replaces`.")
     receipt["note_conflicts"] = conflicts
     answer, labelled, error, response = "", [], unavailable_reason, None
-    if not usable and is_personal(question):
-        # HG's own gate: a question about the owner's life with no matching note is answered by HG
-        # itself ("not in the notes"); asking a model would only invite a guess.
+    if not usable and (not general or is_personal(question)):
+        # HG's own gate: with no note on the topic HG answers itself ("not in the notes"); asking a
+        # small model would only invite a guess about the owner's life (finding F-D3: it invented
+        # a dog's weight and a class fee). `--general` lets the model answer a general-knowledge
+        # question, labelled [?]; a question about the owner's own life is never sent without notes.
         out(ABSTAIN_TEXT)
         seconds = monotonic() - started
-        receipt.update(outcome="NO_DATA", gate="PERSONAL_WITHOUT_NOTES", abstained=True, answer=ABSTAIN_TEXT,
+        gate = "PERSONAL_WITHOUT_NOTES" if is_personal(question) else "NO_USABLE_NOTES"
+        receipt.update(outcome="NO_DATA", gate=gate, abstained=True, answer=ABSTAIN_TEXT,
                        sentences=[{"sentence": ABSTAIN_TEXT, "label": "ABSTAIN", "note": None, "cited": [], "reasons": []}],
                        error=None, seconds=round(seconds, 3))
-        out("— HG không có ghi chú nào về việc này nên không hỏi model (tránh đoán mò).")
+        out("— HG không có ghi chú nào về việc này nên không hỏi model (tránh đoán mò)."
+            + ("" if gate == "PERSONAL_WITHOUT_NOTES" else " Câu hỏi kiến thức chung: hg ask --general \"…\""))
         append_receipt(notebook.home, "ASK", receipt, clock=clock)
         return EXIT["NO_DATA"], receipt
     if not notes_only:

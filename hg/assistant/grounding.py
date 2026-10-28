@@ -57,9 +57,18 @@ def split_sentences(text):
     return out
 
 
+_BRACKETED = re.compile(r"\[[^\]]*\]|\([^)]*\)")
+
+
 def is_abstention(sentence):
-    folded = " ".join(textvi.fold(w) for w in textvi.words(sentence))
-    return any(p in folded for p in ABSTAIN_PATTERNS)
+    """The sentence itself says the notes lack this. A phrase only inside brackets, next to a
+    claim ("… thay mỗi 6 tháng [Ghi chú chưa có thông tin này]"), is not an abstention."""
+    outside = _BRACKETED.sub(" ", sentence)
+    folded = " ".join(textvi.fold(w) for w in textvi.words(outside))
+    if any(p in folded for p in ABSTAIN_PATTERNS):
+        return True
+    inside = " ".join(textvi.fold(w) for w in textvi.words(sentence))
+    return any(p in inside for p in ABSTAIN_PATTERNS) and not textvi.content_words(outside)
 
 
 def citations(sentence):
@@ -147,22 +156,27 @@ def compare(sentence, note_text):
 
 
 def anchored(question, note_text):
-    """Is the note about what was asked? (None if yes, else the missing topic word.)
+    """Is the note about what was asked? (None if yes, else the missing topic word(s).)
 
-    Vietnamese topic words are mostly two syllables ("mật khẩu", "tiết kiệm"). After question
-    and modal words are removed, every adjacent pair of the question's topic syllables must
-    have at least one syllable in the note; a note that has neither syllable of an asked-about
-    word is not about it, however many other words match. A one-word topic must be present.
+    Topic = the question's content syllables without question/modal words, negations and the
+    answer slot (hg.assistant.textvi.topic_keys). Vietnamese topic words are mostly two syllables
+    ("mật khẩu", "nhóm máu"), so:
+    - no adjacent pair of topic syllables may be missing from the note entirely, and
+    - few syllables may be missing overall: none for a topic of 1-2 syllables ("nhóm máu" is not
+      matched by a note about "nhóm chat"), one for 3-6, two beyond that ("đi khám răng" still
+      matches "lịch khám răng").
     """
     topic = textvi.topic_keys(question or "")
     if not topic:
         return None
     note_keys = set(textvi.document_keys(note_text))
-    if len(topic) == 1:
-        return None if topic[0] in note_keys else topic[0].lstrip("~")
+    missing = [k for k in topic if k not in note_keys]
+    allowed = 0 if len(topic) <= 2 else 1 if len(topic) <= 6 else 2
     for a, b in zip(topic, topic[1:]):
         if a not in note_keys and b not in note_keys:
             return f"{a.lstrip('~')} {b.lstrip('~')}"
+    if len(missing) > allowed:
+        return " ".join(k.lstrip("~") for k in missing)
     return None
 
 
