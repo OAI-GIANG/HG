@@ -64,15 +64,19 @@ class PolicyTemplateUnitTests(unittest.TestCase):
             "memory:task/{task_id}", "memory:task/T-1 [store:/state/memory.sqlite3]", "T-1"))
 
     def test_evidence_and_knowledge_templates_are_segment_bounded(self):
-        self.assertTrue(resource_template_matches(
-            "memory:evidence/{evidence_id} [store:/state/memory.sqlite3]",
-            "memory:evidence/EV-1 [store:/state/memory.sqlite3]", "T-1"))
-        self.assertTrue(resource_template_matches(
-            "memory:knowledge/verify/{claim_id} [store:/state/memory.sqlite3]",
-            "memory:knowledge/verify/CLM-1 [store:/state/memory.sqlite3]", "T-1"))
-        self.assertTrue(resource_template_matches(
-            "memory:knowledge/task/{task_id} [store:/state/memory.sqlite3]",
-            "memory:knowledge/task/T-1 [store:/state/memory.sqlite3]", "T-1"))
+        cases = (
+            ("memory:evidence/{evidence_id} [store:/state/memory.sqlite3]",
+             "memory:evidence/EV-1 [store:/state/memory.sqlite3]"),
+            ("memory:knowledge/verify/{claim_id} [store:/state/memory.sqlite3]",
+             "memory:knowledge/verify/CLM-1 [store:/state/memory.sqlite3]"),
+            ("memory:knowledge/task/{task_id} [store:/state/memory.sqlite3]",
+             "memory:knowledge/task/T-1 [store:/state/memory.sqlite3]"),
+        )
+        for template, resource in cases:
+            with self.subTest(template=template):
+                self.assertTrue(resource_template_matches(template, resource, "T-1"))
+                if "{task_id}" in template:
+                    self.assertFalse(resource_template_matches(template, resource.replace("T-1", "T-2"), "T-1"))
         self.assertFalse(resource_template_matches(
             "memory:evidence/{evidence_id} [store:/state/memory.sqlite3]",
             "memory:evidence/../secret [store:/state/memory.sqlite3]", "T-1"))
@@ -190,9 +194,14 @@ class _Principal:
         return {
             "principal_id": "owner-test", "status": "ACTIVE", "verified": True,
             "identity_evidence_ref": "test:identity", "capabilities": ["READ", "WRITE"],
-            "resource_scopes": (["memory:task/{task_id} [store:/state/memory.sqlite3]"] if self.templates
+            "resource_scopes": (["memory:task/{task_id} [store:/state/memory.sqlite3]",
+                                 "memory:evidence/{evidence_id} [store:/state/memory.sqlite3]",
+                                 "memory:knowledge/{claim_id} [store:/state/memory.sqlite3]",
+                                 "memory:knowledge/verify/{claim_id} [store:/state/memory.sqlite3]"] if self.templates
                                 else ["memory:task/T-1 [store:/state/memory.sqlite3]"]),
-            "allowed_scopes": (["memory:task:{task_id}:read"] if self.templates else ["memory:task:T-1:read"]),
+            "allowed_scopes": (["memory:task:{task_id}:read", "memory:task:{task_id}:evidence:read",
+                                "memory:task:{task_id}:knowledge:read", "memory:task:{task_id}:knowledge:verify"]
+                               if self.templates else ["memory:task:T-1:read"]),
         }
 
 
@@ -264,6 +273,39 @@ class PolicyV2EngineIntegrationTests(unittest.TestCase):
         cross_task = dict(self.request, resource="memory:task/T-2 [store:/state/memory.sqlite3]",
                           scope=["memory:task:T-2:read"])
         self.assertIs(self.authorize(cross_task).decision, Decision.DENY)
+
+    def test_v2_evidence_knowledge_scope_must_match_request_task(self):
+        cases = (
+            ("memory:evidence/{evidence_id} [store:/state/memory.sqlite3]",
+             "memory:evidence/EV-1 [store:/state/memory.sqlite3]", "memory:task:T-1:evidence:read"),
+            ("memory:knowledge/{claim_id} [store:/state/memory.sqlite3]",
+             "memory:knowledge/CL-1 [store:/state/memory.sqlite3]", "memory:task:T-1:knowledge:read"),
+            ("memory:knowledge/verify/{claim_id} [store:/state/memory.sqlite3]",
+             "memory:knowledge/verify/CL-1 [store:/state/memory.sqlite3]", "memory:task:T-1:knowledge:verify"),
+        )
+        for template, resource, task_scope in cases:
+            with self.subTest(resource=resource):
+                source = v2_policy(rules=[{
+                    "action": "READ", "resource": template, "match_mode": "TEMPLATE",
+                    "effect": "ALLOW", "scope": [task_scope],
+                }])
+                principal = _Principal(templates=True)
+                original_resolve = principal.resolve
+                cross_scope = task_scope.replace("T-1", "T-2")
+                def resolve_with_cross_task_grant(context, _resolve=original_resolve, _scope=cross_scope):
+                    record = _resolve(context)
+                    record["allowed_scopes"] = list(record["allowed_scopes"]) + [_scope]
+                    return record
+                principal.resolve = resolve_with_cross_task_grant
+                self.engine = self._engine(
+                    dict(source, policy_digest=digest(source), provenance_verified=True), principal)
+                allowed = dict(self.request, resource=resource, scope=[task_scope])
+                result = self.authorize(allowed)
+                self.assertIs(result.decision, Decision.ALLOW, result.reason_codes)
+                cross_task = dict(allowed, task_ref="T-2", scope=[cross_scope])
+                # Principal deliberately grants both scopes; the policy rule must still
+                # bind this evidence/knowledge operation to T-1 and deny T-2.
+                self.assertIs(self.authorize(cross_task).decision, Decision.DENY)
 
     def test_v2_template_denies_same_task_in_another_memory_store(self):
         # The [store:...] suffix is a literal binding: the same task id in another
