@@ -5,14 +5,16 @@ No model is involved. For each sentence HG finds the closest notes and reports:
     MÂU THUẪN (CONFLICT)  a note on the same thing has a different number/date/name or negation
     CHƯA RÕ   (MODEL)     no note covers it
 """
-from hg.assistant import grounding
+from hg.assistant import grounding, guard
 
 LABELS_VI = {"NOTE": "KHỚP", "CONFLICT": "MÂU THUẪN", "MODEL": "CHƯA RÕ", "BADCITE": "CHƯA RÕ",
              "NONE": "", "ABSTAIN": ""}
 
 
 def check(text, notebook, *, per_sentence=5):
-    records = notebook.active()
+    """A note that addresses an AI is never a KHỚP source (owner-trusted notes excepted)."""
+    trusted = notebook.trusted_ids()
+    records = [r for r in notebook.active() if r["memory_id"] in trusted or not guard.is_directive(r["content"])]
     results = []
     for sentence in grounding.split_sentences(text):
         hits = notebook.search(sentence, limit=per_sentence, records=records)
@@ -23,4 +25,6 @@ def check(text, notebook, *, per_sentence=5):
         result["memory_id"] = refs[result["note"]]["memory_id"] if result.get("note") else None
         result["note_text"] = refs[result["note"]]["content"] if result.get("note") else None
         results.append(result)
-    return grounding.summarize(results)
+    summary = grounding.summarize(results)
+    summary["directives_in_text"] = guard.directives(text)
+    return summary

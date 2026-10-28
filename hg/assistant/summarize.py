@@ -23,7 +23,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-from hg.assistant import grounding, textvi
+from hg.assistant import grounding, guard, textvi
 from hg.brain.providers import ProviderError
 
 MAX_BYTES = 1_000_000
@@ -127,7 +127,14 @@ def check_model_sentence(sentence, lines):
     return {"sentence": text, "lines": [lo, hi], "label": "UNSUPPORTED", "reasons": reasons}
 
 
+class DirectiveInput(Exception):
+    """The text addresses an AI; it is not sent to a model (OWASP LLM01)."""
+
+
 def with_model(text, router, *, max_sentences=5, max_tokens=500, strict=False):
+    found = guard.directives(text)
+    if found:
+        raise DirectiveInput(", ".join(found))
     lines = text.splitlines()
     numbered = [f"L{i}: {line}" for i, line in enumerate(lines, 1) if line.strip()]
     body = "\n".join(numbered)
@@ -175,4 +182,4 @@ def as_json(obj):
 
 
 __all__ = ["read_input", "extractive", "with_model", "check_model_sentence", "render", "receipt",
-           "InputError", "ProviderError"]
+           "InputError", "ProviderError", "DirectiveInput"]

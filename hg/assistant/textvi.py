@@ -31,6 +31,13 @@ NEGATIONS = frozenset({"không", "ko", "hông", "chưa", "chẳng", "chả", "đ
                        "not", "no", "never", "none"})
 
 
+# Question and modal words: they shape a question but are not its topic. Accented forms are
+# matched as written; only the unaccented forms listed in _SAFE_UNACCENTED_QUESTION are matched
+# without diacritics, because e.g. "dau" can be "đâu" (where) or "dầu" (oil).
+QUESTION_WORDS = frozenset("bao nhiêu mấy đâu phải cần làm gồm hả hở chứ chăng".split())
+_SAFE_UNACCENTED_QUESTION = frozenset({"bao", "nhieu", "phai", "gom"})
+
+
 def nfc(text):
     return unicodedata.normalize("NFC", text or "")
 
@@ -69,6 +76,18 @@ def _key(word):
     """An accented word matches only itself ('thủ' is not 'thứ'); a word typed without
     diacritics matches every accented form it could stand for ('thu' ~ 'thủ', 'thứ', 'thu')."""
     return word if word != fold(word) else "~" + word
+
+
+def topic_keys(text):
+    """Query keys of a question without question/modal words and negations, in order."""
+    out = []
+    for w in content_words(text):
+        if w in QUESTION_WORDS or (w == fold(w) and w in _SAFE_UNACCENTED_QUESTION):
+            continue
+        if negations(w):
+            continue
+        out.append(_key(w))
+    return out
 
 
 def query_keys(text):
