@@ -3,7 +3,7 @@
 - Task: `HG-V1-COMPLETION-20261028` (kế thừa `HG-V1-SCOPE-RESET`)
 - Nhánh: `stt/v1-assistant-20261028`, base `main` @ `37f1627e3c96835be3ae1dc2ba002fd2a46ff2e8`
 - Policy: MAEP-1.1.0 (giữ nguyên, Q4)
-- Trạng thái tài liệu: PLAN v0.2 — đã qua thẩm định nội bộ (mục 9); đây là phê bình nội bộ của các agent, KHÔNG phải review độc lập theo MAEP-021
+- Trạng thái tài liệu: PLAN v0.2 — đã qua thẩm định nội bộ (mục 9; phê bình nội bộ của các agent, KHÔNG phải review độc lập theo MAEP-021); kết quả thực hiện ở mục 10
 
 ## 1. Quyết định của Chủ Nhân (2026-10-28, nguyên văn: "chấp nhận tất cả đề xuất")
 
@@ -178,3 +178,35 @@ Những gì HG học từ các nguồn trên là *vấn đề* (trích dẫn kh�
 | Kiểm thử & vận hành | Tất định ≠ nguồn gốc | So cây Git + manifest với bản build ngoài điện thoại (AC-D1) |
 
 Ý tưởng được nhận vào v1: nhãn có ngày ghi chú; `hg check`; cảnh báo khi hai ghi chú mâu thuẫn nhau (AC-A7). Dời sang v2: `hg ask --verify` (kiểm lại biên nhận sau), lối tắt Termux:Widget/thông báo, đọc PDF/clipboard trực tiếp.
+
+## 10. Kết quả thực hiện (cập nhật 2026-10-28)
+
+### 10.1 Thay đổi đã vào `main`
+
+| PR | Merge commit | Nội dung | CI |
+|---|---|---|---|
+| #65 | `57f59b2` | Lớp trợ lý `hg/assistant/`, providers loopback/stream, NOTE kind, 63 test mới, tài liệu | `unittest (3.13)`, `unittest (3.14)`, `rt06-anchor` xanh |
+| #66 | `98c53fd` | Sửa từ lần chạy chọn model trên thiết bị: cổng câu hỏi đời tư, khớp ≥ nửa từ, tên trùng đại từ | xanh; 3 test mới fail trên code trước sửa, pass sau sửa |
+
+Recovery point trước khi merge: nhánh `recovery/main-pre-v1-assistant-20261028` @ `37f1627`.
+
+### 10.2 Trạng thái từng tiêu chí
+
+| AC | Trạng thái | Bằng chứng |
+|---|---|---|
+| AC-N1…N5 | VERIFIED (unit/subprocess) | `hg/tests/test_assistant_notes.py`; CI; điện thoại Python 3.14.6 tại `7017949`: hg 319 OK |
+| AC-A1, A2, A3, A4, A5, A7 | VERIFIED (unit) | `test_assistant_grounding.py` (bộ đối kháng 21 câu → 0 NOTE), `test_assistant_ask.py` |
+| AC-A6 | **NOT_RUN** (bộ nghiệm thu) | Điện thoại mất kết nối trước khi chạy. Bộ chọn model (code `7017949`, trước #66): qwen3:1.7b đúng dữ kiện 0,6, gắn nguồn 0,6, từ chối đúng 0,33, chèn lệnh 0, câu đầu p50 3,5 s → FAIL chất lượng; qwen3:4b ~38–61 s/câu → FAIL độ trễ |
+| AC-M1, AC-M2 | VERIFIED (unit); thiết bị: Ollama 0.40.12 `/api/version`, `/api/tags`, `think:false` (qwen3:1.7b 4,3 s gồm 3,5 s nạp) | `test_assistant_ask.py`; log thiết bị |
+| AC-S1, AC-S2 | VERIFIED (unit) | `SummarizeTests` |
+| AC-R1 | VERIFIED | CI 3.13/3.14 (#65, #66); điện thoại tại `7017949`: maep 304 OK (3 skip), hg 319 OK, hooks 32 OK, selfcheck 0, bench 0; fixture state `f3dac34` nạp được |
+| AC-D1 | PARTIAL | Build ngoài thiết bị tại `57f59b2`: 219 file, tree `5cd8dea…`; build trên thiết bị NOT_RUN |
+| AC-D2 | VERIFIED (unit, shim chạy từ checkout giả vẫn nạp release); thiết bị NOT_RUN | `ShimAndCliTests` |
+| AC-D3, D4, D5 | **NOT_RUN** — BLOCKED_EXTERNAL | Thiết bị offline (Desktop Commander, "last seen" ≈ 20:06 +07); script sẵn ở `deploy/termux/` |
+| AC-G1 | NOT_RUN | Cần thiết bị |
+
+### 10.3 Trạng thái vận hành đã quan sát (trước khi thiết bị offline)
+
+- `hg-runtime`: READY, release `f7cfd766…` (commit `f3dac34`), trust LOADED @ `37f1627`, không bị đụng tới.
+- Ollama 0.40.12 cài từ gói Termux (mô phỏng `apt-get -s`: chỉ thêm 1 gói, 0 nâng cấp), dịch vụ runit `ollama` trên `127.0.0.1:11434`; model đã tải: `qwen3:1.7b`, `qwen3:4b`, `gemma3:4b`.
+- `~/HG` (46 thay đổi chưa commit của Chủ Nhân) không bị đụng tới.
