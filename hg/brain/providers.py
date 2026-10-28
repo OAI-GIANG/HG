@@ -25,10 +25,13 @@ Every call is recorded as a MODEL_CALL event (provider, model, kind, status, usa
 duration, a hash of the request) -- never the prompt text or any key.
 """
 import hashlib
+import ipaddress
 import json
 import os
+import re
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 from maep.core import MAEPError
@@ -84,6 +87,132 @@ def urllib_post_json(url, headers, payload, timeout):
         if isinstance(reason, TimeoutError) or "timed out" in str(reason):
             raise ProviderError("TIMEOUT", str(reason))
         raise ProviderError("UNAVAILABLE", f"cannot reach {url}: {reason}")
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
+# A local model must never be reached through HTTP(S)_PROXY (urllib honours those variables
+# by default, and 127.0.0.1 is only exempt if NO_PROXY says so) or be redirected elsewhere.
+_LOCAL_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect())
+
+
+def is_loopback_url(url):
+    """True only for http://<literal loopback IP>:<port>/... with no user info."""
+    try:
+        parts = urllib.parse.urlsplit(url)
+        host = parts.hostname
+        if parts.scheme != "http" or parts.username or parts.password or host is None:
+            return False
+        return ipaddress.ip_address(host).is_loopback and parts.port is not None
+    except ValueError:
+        return False
+
+
+def _local_request(url, data, timeout):
+    req = urllib.request.Request(url, data=data, method="POST" if data is not None else "GET",
+                                 headers={"content-type": "application/json"} if data is not None else {})
+    try:
+        return _LOCAL_OPENER.open(req, timeout=timeout)
+    except urllib.error.HTTPError:
+        raise
+    except TimeoutError as exc:
+        raise ProviderError("TIMEOUT", str(exc))
+    except (urllib.error.URLError, OSError) as exc:
+        reason = getattr(exc, "reason", exc)
+        if isinstance(reason, TimeoutError) or "timed out" in str(reason):
+            raise ProviderError("TIMEOUT", str(reason))
+        raise ProviderError("UNAVAILABLE", f"cannot reach {url}: {reason}")
+
+
+def local_post_json(url, headers, payload, timeout):
+    """Like urllib_post_json, but never through a proxy and never following redirects."""
+    try:
+        with _local_request(url, json.dumps(payload).encode("utf-8"), timeout) as resp:
+            return resp.status, dict(resp.headers), resp.read().decode("utf-8")
+    except urllib.error.HTTPError as exc:
+        return exc.code, dict(exc.headers or {}), exc.read().decode("utf-8", errors="replace") if exc.fp else ""
+
+
+def local_post_stream(url, payload, timeout, on_json):
+    """POST and call on_json(obj) for each NDJSON line as it arrives. Returns the HTTP status."""
+    try:
+        with _local_request(url, json.dumps(payload).encode("utf-8"), timeout) as resp:
+            for raw in resp:
+                line = raw.decode("utf-8").strip()
+                if line:
+                    try:
+                        on_json(json.loads(line))
+                    except ValueError as exc:
+                        raise ProviderError("INVALID_RESPONSE", f"bad stream line: {exc}")
+            return resp.status
+    except urllib.error.HTTPError as exc:
+        return exc.code
+
+
+def local_get_json(url, timeout):
+    try:
+        with _local_request(url, None, timeout) as resp:
+            return resp.status, json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        return exc.code, None
+    except ValueError as exc:
+        raise ProviderError("INVALID_RESPONSE", f"unparseable JSON from {url}: {exc}")
+
+
+_THINK = re.compile(r"<think>.*?(</think>|$)", re.DOTALL)
+
+
+def strip_thinking(text):
+    """Drop <think>...</think> blocks some local models emit before the answer."""
+    return _THINK.sub("", text).strip()
+
+
+class _ThinkFilter:
+    """Streaming counterpart of strip_thinking: forwards only text outside <think> blocks.
+
+    A tag may arrive split across chunks ("<thi" + "nk>"), so a trailing fragment that could
+    still become a tag is held back until the next chunk decides it.
+    """
+    OPEN, CLOSE = "<think>", "</think>"
+
+    def __init__(self, sink):
+        self._sink, self._buf, self._inside = sink, "", False
+
+    @staticmethod
+    def _pending(buf, tag):
+        """Length of the longest suffix of buf that is a proper prefix of tag."""
+        for n in range(min(len(buf), len(tag) - 1), 0, -1):
+            if tag.startswith(buf[-n:]):
+                return n
+        return 0
+
+    def feed(self, text):
+        self._buf += text
+        out = []
+        while self._buf:
+            tag = self.CLOSE if self._inside else self.OPEN
+            at = self._buf.find(tag)
+            if at >= 0:
+                if not self._inside:
+                    out.append(self._buf[:at])
+                self._buf, self._inside = self._buf[at + len(tag):], not self._inside
+                continue
+            hold = self._pending(self._buf, tag)
+            if not self._inside:
+                out.append(self._buf[:len(self._buf) - hold])
+            self._buf = self._buf[len(self._buf) - hold:] if hold else ""
+            break
+        text = "".join(out)
+        if text:
+            self._sink(text)
+
+    def flush(self):
+        if self._buf and not self._inside:
+            self._sink(self._buf)
+        self._buf = ""
 
 
 class ModelProvider:
@@ -156,33 +285,94 @@ class AnthropicProvider(ModelProvider):
 
 
 class OllamaProvider(ModelProvider):
+    """A local Ollama server. Loopback only unless allow_remote=True is passed explicitly.
+
+    options: Ollama runtime options (num_ctx, num_thread, ...); temperature 0 and num_predict
+    come from the request. think: True/False is sent as Ollama's "think" flag when set; any
+    <think> block in the output is removed either way. keep_alive: how long Ollama keeps the
+    model loaded after the call (e.g. "30m").
+    """
     name = "ollama"
     offline = True
+    supports_stream = True
 
-    def __init__(self, model="llama3.1", *, base_url="http://127.0.0.1:11434", http_post=urllib_post_json, timeout=120):
+    def __init__(self, model="llama3.1", *, base_url="http://127.0.0.1:11434", http_post=local_post_json,
+                 stream_post=local_post_stream, timeout=120, options=None, think=None, keep_alive=None,
+                 allow_remote=False):
+        if not allow_remote and not is_loopback_url(base_url.rstrip("/") + "/"):
+            raise MAEPError("Ollama base_url must be http://<loopback IP>:<port> (pass allow_remote=True to override)")
         self.model = model
-        self._url = base_url.rstrip("/") + "/api/chat"
+        self.base_url = base_url.rstrip("/")
+        self._url = self.base_url + "/api/chat"
         self._post = http_post
+        self._stream_post = stream_post
         self._timeout = timeout
+        self._options = dict(options or {})
+        self._think = think
+        self._keep_alive = keep_alive
 
-    def complete(self, request):
+    def _payload(self, request, stream):
         messages = ([{"role": "system", "content": request["system"]}] if request["system"] else []) + request["messages"]
-        payload = {"model": self.model, "messages": messages, "stream": False,
-                   "options": {"num_predict": request["max_tokens"], "temperature": 0}}
-        status, _headers, body = self._post(self._url, {}, payload, self._timeout)
-        if status == 404:
-            raise ProviderError("UNAVAILABLE", f"model {self.model} is not available locally")
-        if status != 200:
-            raise ProviderError("UNAVAILABLE" if status >= 500 else "INVALID_REQUEST", f"HTTP {status}")
+        payload = {"model": self.model, "messages": messages, "stream": stream,
+                   "options": dict(self._options, num_predict=request["max_tokens"], temperature=0)}
+        if self._think is not None:
+            payload["think"] = self._think
+        if self._keep_alive is not None:
+            payload["keep_alive"] = self._keep_alive
+        return payload
+
+    def complete(self, request, on_delta=None):
+        if on_delta is not None:
+            return self._complete_stream(request, on_delta)
+        status, _headers, body = self._post(self._url, {}, self._payload(request, False), self._timeout)
+        self._check_status(status)
         try:
             data = json.loads(body)
             text = data["message"]["content"]
         except (ValueError, KeyError, TypeError) as exc:
             raise ProviderError("INVALID_RESPONSE", f"unparseable /api/chat response: {exc}")
+        return self._response(strip_thinking(text), data)
+
+    def _complete_stream(self, request, on_delta):
+        parts, final = [], {}
+        visible = _ThinkFilter(on_delta)
+
+        def on_json(obj):
+            if obj.get("error"):
+                raise ProviderError("UNAVAILABLE", str(obj["error"])[:200])
+            chunk = (obj.get("message") or {}).get("content") or ""
+            if chunk:
+                parts.append(chunk)
+                visible.feed(chunk)
+            if obj.get("done"):
+                final.update(obj)
+
+        status = self._stream_post(self._url, self._payload(request, True), self._timeout, on_json)
+        self._check_status(status)
+        visible.flush()
+        if not final:
+            raise ProviderError("INVALID_RESPONSE", "stream ended without a final message")
+        return self._response(strip_thinking("".join(parts)), final)
+
+    def _check_status(self, status):
+        if status == 404:
+            raise ProviderError("UNAVAILABLE", f"model {self.model} is not available locally")
+        if status != 200:
+            raise ProviderError("UNAVAILABLE" if status >= 500 else "INVALID_REQUEST", f"HTTP {status}")
+
+    def _response(self, text, data):
         return {"text": text, "provider": self.name, "model": data.get("model", self.model),
                 "usage": {"input_tokens": int(data.get("prompt_eval_count", 0)),
                           "output_tokens": int(data.get("eval_count", 0))},
                 "finish_reason": data.get("done_reason", "stop")}
+
+    def tags(self, *, get_json=local_get_json, timeout=5):
+        """Locally available models: [{name, digest, size}] (GET /api/tags)."""
+        status, data = get_json(self.base_url + "/api/tags", timeout)
+        if status != 200 or not isinstance(data, dict) or not isinstance(data.get("models"), list):
+            raise ProviderError("UNAVAILABLE", f"/api/tags answered HTTP {status}")
+        return [{"name": m.get("name"), "digest": m.get("digest"), "size": m.get("size")}
+                for m in data["models"] if isinstance(m, dict)]
 
 
 class ModelRouter:
@@ -216,8 +406,13 @@ class ModelRouter:
     def available(self, kind="default"):
         return [p.name for p in self.candidates(kind)]
 
-    def complete(self, request, *, kind="default", task_id=None):
-        """Return the first successful response; raise ProviderError(UNAVAILABLE) with attempts otherwise."""
+    def complete(self, request, *, kind="default", task_id=None, on_delta=None):
+        """Return the first successful response; raise ProviderError(UNAVAILABLE) with attempts otherwise.
+
+        on_delta(text) receives visible text as it is produced. A provider without streaming
+        gets one call with the whole text. Once any text has been shown, the call is never
+        retried or handed to another provider: the reader would see two different answers.
+        """
         request = make_request(request.get("system", ""), request.get("messages"),
                                max_tokens=request.get("max_tokens", 1024))
         digest = request_digest(request)
@@ -229,13 +424,25 @@ class ModelRouter:
         for provider in providers:
             for attempt in range(self._max_retries + 1):
                 started = self._monotonic()
+                shown = []
+
+                def relay(text, _shown=shown):
+                    _shown.append(text)
+                    on_delta(text)
                 try:
-                    response = provider.complete(request)
+                    if on_delta is not None and getattr(provider, "supports_stream", False):
+                        response = provider.complete(request, on_delta=relay)
+                    else:
+                        response = provider.complete(request)
                     if not isinstance(response, dict) or not isinstance(response.get("text"), str):
                         raise ProviderError("INVALID_RESPONSE", "provider returned no text")
+                    if on_delta is not None and not getattr(provider, "supports_stream", False):
+                        on_delta(response["text"])
                 except ProviderError as exc:
                     attempts.append({"provider": provider.name, "attempt": attempt + 1, "error": exc.kind})
                     self._record(task_id, kind, provider, "ERROR", None, started, digest, exc.kind)
+                    if shown:
+                        raise ProviderError(exc.kind, "the answer stopped part-way: " + str(exc))
                     if exc.kind not in RETRYABLE:
                         break
                     if attempt < self._max_retries:
