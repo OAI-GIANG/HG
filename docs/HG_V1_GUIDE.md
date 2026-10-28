@@ -31,7 +31,7 @@ Dòng cuối tóm tắt, ví dụ: `— 2 câu có nguồn · 1 câu model tự 
 
 HG tự kiểm từng câu bằng cách so từ ngữ, số, ngày, tên và phủ định với ghi chú. Một câu chỉ được nhãn nguồn khi ghi chú đó nói đúng chủ đề Chủ Nhân hỏi và có đủ phần thông tin câu trả lời thêm vào. Đây không phải hiểu nghĩa sâu: câu diễn đạt rất khác ghi chú có thể bị gắn `[?]` dù đúng.
 
-Câu hỏi về việc riêng của Chủ Nhân (có "tôi", "mình", "nhà mình"…) mà không có ghi chú nào đúng chủ đề thì HG tự trả lời "Ghi chú chưa có thông tin này." và không hỏi model, để tránh model đoán mò.
+Khi không có ghi chú nào đúng chủ đề, HG tự trả lời "Ghi chú chưa có thông tin này." (mã 5) và **không hỏi model**: model nhỏ trên máy khi không có ghi chú thường bịa (thử thật: hỏi giờ họp khi chưa có ghi chú, model đáp "15:00"). Muốn hỏi kiến thức chung, thêm `--general`; câu trả lời khi đó luôn mang nhãn `[?]`. Câu hỏi về việc riêng của Chủ Nhân (có "tôi", "mình"…) không bao giờ được gửi cho model khi không có ghi chú, kể cả với `--general`.
 
 ### Ghi chú có câu lệnh nhắm vào AI
 
@@ -63,7 +63,8 @@ Cùng một `--subject` mà nội dung khác, HG từ chối (mã 4) và chỉ r
 ## 4. Hỏi, đối chiếu, tóm tắt
 
 ```
-hg ask "Họp nhóm HG lúc mấy giờ?"
+hg ask "Họp nhóm HG lúc mấy giờ?"         # từ ghi chú; không có ghi chú → "Ghi chú chưa có thông tin này." (mã 5)
+hg ask --general "Thủ đô của Pháp là gì?"  # cho phép model trả lời kiến thức chung, nhãn [?]
 hg ask --notes-only "bảo hiểm"            # không gọi model, chỉ đưa ghi chú
 hg ask --json "..."                        # biên nhận đầy đủ dạng JSON
 echo "Mai họp lúc 21 giờ nhé" | hg check   # tin nhắn này có khớp ghi chú không

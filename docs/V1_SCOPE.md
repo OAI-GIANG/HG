@@ -274,9 +274,25 @@ Recovery point: `recovery/main-pre-v1-deploy-fixes-20261029` @ `927d018`.
 | Dương tính giả held-out (77 ghi chú vô hại mới, agent độc lập) | **PASS 0,013 (1/77)** ≤ 0,05 (ngưỡng chốt trước); ca nhận nhầm là system prompt Chủ Nhân tự lưu → `hg note trust` | `hg/tests/fixtures/guard_heldout/ordinary_v3.json` |
 | Recall held-out bộ phát hiện đã sửa | **UNVERIFIED** (không có dữ liệu mới, xem §11) | — |
 | Chọn model (`eval_vi_select.json`, release mới) | qwen3:1.7b **PASS** (đúng dữ kiện 1,0; gắn nguồn 0,8; từ chối đúng 1,0; câu đầu p50 4,6 s); gemma3:4b **FAIL** (gắn nguồn 0,6; p50 16,5 s > 15) → chọn **qwen3:1.7b**, ghim digest `8f68893c…`, listener VERIFIED_PROCESS | `select3.log`, `model-use.log` |
-| AC-A6 (`eval_vi_v2.json`, lần chạy đầu) | **NOT_RUN/UNVERIFIED** — đã khởi chạy 00:27, thiết bị mất kết nối trước khi đọc được kết quả; có thể đã bị dừng cùng tiến trình Desktop Commander | `acceptance.log` (chưa đọc) |
-| AC-D3…D5, AC-G1 | **NOT_RUN** — BLOCKED_EXTERNAL (thiết bị offline) | — |
+| AC-A6 (`eval_vi_v2.json`, lần chạy đầu, release `ed0df5ab…`, qwen3:1.7b ghim, listener VERIFIED_PROCESS) | **FAIL** — đúng dữ kiện 0,682 (< 0,8), gắn đúng nguồn 0,682 (< 0,7), từ chối đúng 0,786 (< 0,8); **chèn lệnh bị làm theo: 0**; ghi chú hiện ≤ 0,05 s; câu đầu p50 4,67 s, p95 7,29 s. Một nhãn NOTE sai ("nhóm máu" → ghi chú "nhóm chat") | `eval-AC-A6-v2-ed0df5.json` |
+| `eval_vi.json` chạy lại (bị nhiễm) | Bị dừng giữa chừng khi Termux bị Android tắt (≈ 00:49); không dùng làm bằng chứng | `acceptance.log` |
+| AC-D3 | **PASS** — chuyển sang `ed0df5ab…`: smoke `CLOSED_VERIFIED`, đọc lại khớp, replay cùng kết quả, đổi nội dung → 409; `sv restart` → READY, task còn | `p5.log`, `switch-20261028T180020Z/` |
+| AC-D4 | **PASS** — `--restore`: state hiện tại được sao lưu, `state_precheck` của release CŨ `f7cfd766…` PASS trên state mới (tasks, actions, memory, idempotency); release cũ READY và GET được task mới; chuyển lại release mới, task cũ và mới đều `CLOSED_VERIFIED` | `restore-20261028T180034Z/`, `switch-20261028T180044Z/` |
+| AC-D5 | **PASS** — quota kiểm trước mỗi lần chuyển (54/60); `finish` mới cài riêng có sao lưu (hash `c200ca09…`); hành vi giữ dừng đã thử thật bằng dịch vụ tạm | `finish-20261028T180019Z/`, §12.2 P1b |
+| AC-G1 | **PASS (26/27)** — mọi lệnh trong hướng dẫn chạy trên máy với HG_HOME tạm; 1 lệnh sai là kỳ vọng sai của script kiểm tra (`note trust` trên ghi chú đã bị thay thế bị từ chối mã 2, đúng thiết kế); chế độ tương tác chạy qua `script` | `ac-g1.log` |
+| Trạng thái cuối | `hg-runtime` READY trên `ed0df5ab…` (commit `af8b6fd`), lệnh `hg` trỏ cùng release | `deploy_smoke.py ready` |
 
-### 12.3 Phát hiện F-D2 (vận hành)
+### 12.3 Phát hiện F-D3 (chất lượng trả lời, từ lần chạy AC-A6 v2) — sửa ở PR riêng
+
+Nguyên nhân gốc đã tái hiện offline:
+1. **Gõ không dấu bị cắt mất chủ đề**: danh sách từ chức năng được so sau khi bỏ dấu, nên "ho" (hộ chiếu), "nha" (nhà), "be" (bé), "the" (thẻ) bị bỏ như từ chức năng; "cho" bị coi là phủ định "chớ" → câu đúng về wifi bị gắn MÂU THUẪN.
+2. **Neo chủ đề quá lỏng** với chủ đề hai âm tiết: "nhóm máu" khớp ghi chú "nhóm chat" → nhãn NOTE cho câu sai.
+3. **Từ chỉ chỗ trả lời** ("tên gì", "liều bao nhiêu", "bao nhiêu tiền") bị coi là chủ đề bắt buộc → ghi chú đúng bị loại, HG từ chối nhầm.
+4. **Không có ghi chú phù hợp nhưng vẫn hỏi model** → model bịa (cân nặng chó, học phí; trên máy khi chạy AC-G1: "HG họp nhóm lúc 15:00 [N1]"). HG đã gắn `[!]` nhưng không nên hỏi model ngay từ đầu.
+5. Cụm từ chối nằm trong ngoặc kế bên một khẳng định làm câu bị coi là ABSTAIN.
+
+Sửa: danh sách không dấu được chọn lọc (`UNACCENTED_STOP`, phủ định không dấu chỉ "khong"/"ko"); bỏ từ chỉ chỗ trả lời khỏi chủ đề; neo chặt hơn (chủ đề 1–2 âm tiết không được thiếu âm tiết nào; 3–6 thiếu tối đa 1); không có ghi chú phù hợp → HG tự từ chối, `--general` mới cho model trả lời kiến thức chung (nhãn `[?]`), câu hỏi về đời tư không bao giờ gửi đi khi không có ghi chú; bỏ qua cụm từ chối trong ngoặc. Phân tích dev (không phải bằng chứng): ghi chú đúng được đưa cho model 18→20/22 trên v2, 4→5/5 trên bộ chọn, 20→20/20 trên v1 (sau khi thêm "thi", "lam"). `eval_vi_v2.json` từ nay **bị nhiễm**; AC-A6 chỉ VERIFIED trên `eval_vi_v3.json` mới do agent độc lập viết, chạy một lần sau khi deploy bản sửa.
+
+### 12.4 Phát hiện F-D2 (vận hành)
 
 Hai lần liên tiếp (≈ 20:06 ngày 28 và ≈ 00:29 ngày 29) Desktop Commander mất kết nối **khi model đang chạy nặng**; lần trước, lần chạy `qwen3:4b` dừng giữa chừng ở S07, cho thấy tiến trình nền khởi chạy từ Desktop Commander chết theo nó. Giả thuyết (chưa kiểm chứng): Android dừng tiến trình nền khi máy tải nặng (phantom process killer / tối ưu pin). Cách xử lý khi tiếp tục: chạy việc dài bằng `nohup setsid …` để tách khỏi phiên; Chủ Nhân có thể tắt tối ưu pin cho Termux và, nếu muốn, tắt phantom process killer (Android 12+, qua `adb`) — quyết định của Chủ Nhân.

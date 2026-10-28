@@ -50,6 +50,8 @@ def add_parsers(sub):
     ask.add_argument("--provider", choices=["local", "anthropic"], default="local",
                      help="'anthropic' is a paid API and is used only when named here")
     ask.add_argument("--json", action="store_true", help="print the full receipt instead of the labelled answer")
+    ask.add_argument("--general", action="store_true",
+                     help="allow the model to answer a general-knowledge question when no note matches (labelled [?])")
 
     check = sub.add_parser("check", help="compare any text with your notes (no model)")
     check.add_argument("text", nargs="*")
@@ -267,7 +269,7 @@ def _ask(home, question, args, out):
     code, receipt = ask(question, notebook=Notebook(home), router_factory=lambda: cfg.router(conf, provider_choice=args.provider),
                         listener=listener, model_check=check, out=sink, color=_color(sys.stdout) and not args.json,
                         notes_only=notes_only, unavailable_reason=reason, max_tokens=conf["max_tokens"],
-                        release=_release())
+                        release=_release(), general=getattr(args, "general", False))
     if args.json:
         _print_json(receipt, out)
     return code
@@ -390,7 +392,8 @@ def interactive(stdin=None, out=None):
             ns = argparse.Namespace(command="check", text=line.split()[1:], json=False)
             code = run(ns, out=out, stdin=_Prompt())
         else:
-            ns = argparse.Namespace(command="ask", question=[line], notes_only=False, provider="local", json=False)
+            ns = argparse.Namespace(command="ask", question=[line], notes_only=False, provider="local", json=False,
+                                    general=False)
             code = run(ns, out=out, stdin=_Prompt())
         if code not in (EXIT_OK, EXIT_NO_MODEL, EXIT_NO_DATA):
             out(f"(mã thoát {code})")

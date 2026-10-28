@@ -93,11 +93,20 @@ class AskTests(AskBase):
         code, _receipt = self.run_ask("toi co hen di da lat khong", model)
         self.assertEqual((code, model.requests), (5, []))
 
-    def test_general_question_without_notes_still_reaches_the_model(self):
+    def test_no_usable_note_means_hg_abstains_unless_general_is_asked(self):
+        """F-D3: without a note on the topic the model only guesses; HG answers itself."""
+        model = FakeModel("Chó Mực nặng khoảng 10 kg [N1].")
+        code, receipt = self.run_ask("Chó Mực nặng bao nhiêu ký?", model)
+        self.assertEqual((code, receipt["gate"], model.requests), (5, "NO_USABLE_NOTES", []))
         model = FakeModel("Paris là thủ đô của Pháp.")
-        code, receipt = self.run_ask("Thủ đô của Pháp là gì?", model)
+        code, receipt = self.run_ask("Thủ đô của Pháp là gì?", model, general=True)
         self.assertEqual((code, len(model.requests)), (0, 1))
         self.assertEqual(receipt["sentences"][0]["label"], "MODEL")
+
+    def test_general_never_sends_a_personal_question_without_notes(self):
+        model = FakeModel("Bạn có hẹn đi Đà Lạt.")
+        code, receipt = self.run_ask("Tôi có hẹn đi Đà Lạt không?", model, general=True)
+        self.assertEqual((code, receipt["gate"], model.requests), (5, "PERSONAL_WITHOUT_NOTES", []))
 
     def test_notes_only_never_calls_the_model(self):
         model = FakeModel("không được gọi")
@@ -140,11 +149,11 @@ class AskTests(AskBase):
                               "Lịch dịch tài liệu vào thứ Sáu.", origin="test")
         model = FakeModel("Bạn dịch tài liệu vào thứ Sáu [N1].")
         _code, receipt = self.run_ask("lịch dịch tài liệu vào thứ mấy", model)
-        self.assertNotIn("careful translator", model.requests[0]["messages"][0]["content"])
-        self.assertNotEqual(receipt["sentences"][0]["label"], "NOTE")
+        self.assertEqual(model.requests, [])                     # quarantined: no usable note, HG abstains
+        self.assertEqual(receipt["quarantined"][0]["memory_id"], note["memory_id"])
         self.nb.trust(note["memory_id"])
         _code, receipt = self.run_ask("lịch dịch tài liệu vào thứ mấy", model)
-        self.assertIn("careful translator", model.requests[1]["messages"][0]["content"])
+        self.assertIn("careful translator", model.requests[0]["messages"][0]["content"])
         self.assertEqual(receipt["sentences"][0]["label"], "NOTE")
         events = (self.home / "notes.jsonl").read_text(encoding="utf-8")
         self.assertIn("NOTE_TRUST", events)
