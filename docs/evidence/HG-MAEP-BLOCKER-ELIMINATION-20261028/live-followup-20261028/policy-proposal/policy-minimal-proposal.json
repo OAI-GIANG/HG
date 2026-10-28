@@ -1,0 +1,23 @@
+{
+  "policy": {
+    "applicability_rules": [],
+    "approval_evidence_refs": [],
+    "grant_ttl_seconds": 30,
+    "provenance_verified": false,
+    "root_generation": 1,
+    "rules": [],
+    "schema_version": "hg.policy.v1",
+    "status": "PROPOSED",
+    "version": "hg-runtime-service-minimal-v1"
+  },
+  "policy_digest": "sha256:a8738c2f1f813b2d115175af20f174a5cdcda20ee2ae6e645ebff485f6e317fc",
+  "proposal_metadata": {
+    "decision_needed": "Owner must explicitly define minimally needed production actions/resources/scopes and applicability rules. Do not activate this empty deny-all proposal.",
+    "repository": "OAI-GIANG/HG",
+    "root_digest": "sha256:5c8ee60fc3f09c98f07a240399261efad2dbac5d39ce43487fcaecc999f8ccf4",
+    "root_generation": 1,
+    "root_id": "hg-phone-local-root-20261023",
+    "schema": "hg-runtime-policy-proposal-metadata-v1",
+    "status_note": "PROPOSAL ONLY: no ALLOW rules; not production-approved; not accepted by runtime LocalPolicyProvider until owner-authored finalized policy, matching digest, and D2-a approval exist."
+  }
+}

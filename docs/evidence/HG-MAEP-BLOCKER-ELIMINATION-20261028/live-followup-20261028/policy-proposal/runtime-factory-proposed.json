@@ -1,0 +1,18 @@
+{
+  "authority_dir": "/data/data/com.termux/files/home/.config/hg/authority/root",
+  "checkout": "/data/data/com.termux/files/usr/tmp/HG-FACTORY-PREFLIGHT-20261028",
+  "evidence_dir": "/data/data/com.termux/files/home/.config/hg/authority/evidence",
+  "file_write_roots": {
+    "task-output": "/data/data/com.termux/files/usr/tmp/HG-MAEP-POLICY-PROPOSAL-20261028/write-root"
+  },
+  "host": "127.0.0.1",
+  "idempotency_db": "/data/data/com.termux/files/usr/tmp/HG-MAEP-POLICY-PROPOSAL-20261028/idempotency.sqlite3",
+  "memory_db": "/data/data/com.termux/files/usr/tmp/HG-MAEP-POLICY-PROPOSAL-20261028/memory.sqlite3",
+  "policy_approval_path": "/data/data/com.termux/files/home/.config/hg/authority/policy-approval.json",
+  "policy_path": "/data/data/com.termux/files/home/.config/hg/authority/active-policy.json",
+  "port": 18768,
+  "receipts_dir": "/data/data/com.termux/files/usr/tmp/HG-MAEP-POLICY-PROPOSAL-20261028/receipts",
+  "schema": "hg-runtime-factory-config-v2",
+  "session_record": "/data/data/com.termux/files/usr/tmp/HG-MAEP-POLICY-PROPOSAL-20261028/session.json",
+  "session_revocations": "/data/data/com.termux/files/usr/tmp/HG-MAEP-POLICY-PROPOSAL-20261028/revocations.json"
+}

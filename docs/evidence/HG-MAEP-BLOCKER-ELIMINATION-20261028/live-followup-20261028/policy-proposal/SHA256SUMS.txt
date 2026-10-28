@@ -1,0 +1,3 @@
+ddd8893f1e3ae0484f9b7a0df871cf725c861767b58e2f9b50330d68745d2db0  OWNER-POLICY-PROPOSAL.md
+5fd1a8da60a8f320aedd9d4d9f2f44f959c28b93873ea48ffb57d6bfb68a4d08  a1-policy-change-rule-governance.md
+0aa8339395d570ba85f469538ce622919fe8dc55cba685351aeee8750a6dcda2  policy-minimal-proposal.json
