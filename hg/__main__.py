@@ -7,6 +7,17 @@
     python -m hg learn --workdir DIR [--threshold N] [--cases-out P]   failures -> lessons
     python -m hg health --workdir DIR [--trust]    health report from a runtime's ledgers
 
+Assistant (runs as the owner in their own shell, outside the governed runtime path; see
+hg/assistant/cli.py for exit codes):
+    python -m hg                              interactive prompt (when stdin is a terminal)
+    python -m hg note add|search|list|show|forget ...
+    python -m hg ask "câu hỏi" [--notes-only] [--provider local|anthropic] [--json]
+    python -m hg check "văn bản"             compare text with the notes, no model
+    python -m hg summarize FILE|- [--model] [--strict]
+    python -m hg model status | use NAME      local model status / select and pin
+    python -m hg eval [--set FILE]            fixed Vietnamese evaluation in a temporary home
+    python -m hg repair                       recover a ledger with a cut-off last line
+
 selfcheck exercises the real runtime path (BrainOrchestrator -> TaskStore -> ActionGateway
 -> local filesystem -> AcceptanceGate) in a scratch directory. Its grants are self-check
 fixtures created in-process; they are not anchored to the owner trust root (RT-06 BLOCKED).
@@ -126,7 +137,7 @@ def authority_check(loader=load_canonical_manifest):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="python -m hg")
-    sub = parser.add_subparsers(dest="command", required=True)
+    sub = parser.add_subparsers(dest="command")
     sc = sub.add_parser("selfcheck", help="run runtime self-check scenarios")
     sc.add_argument("--workdir", help="directory for ledgers and files (default: a new temp directory)")
     st = sub.add_parser("status", help="read-only report from a runtime work directory")
@@ -145,7 +156,17 @@ def main(argv=None):
     serve = sub.add_parser("serve", help="run authenticated loopback HTTP service")
     serve.add_argument("--config", required=True)
     serve.add_argument("--check", action="store_true", help="run read-only preflight without binding a port")
+    from hg.assistant import cli as assistant_cli
+    assistant_cli.add_parsers(sub)
     args = parser.parse_args(argv)
+
+    if args.command is None:
+        if sys.stdin.isatty():
+            return assistant_cli.interactive()
+        parser.print_help()
+        return 2
+    if args.command in {"note", "ask", "check", "summarize", "model", "eval", "repair"}:
+        return assistant_cli.run(args)
 
     if args.command == "serve":
         from hg.service import run as run_service

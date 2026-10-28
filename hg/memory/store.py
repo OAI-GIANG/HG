@@ -11,6 +11,8 @@ Invariants
 - Every record names its source (USER, TOOL, EVIDENCE, INFERENCE, SYSTEM) and a source_ref.
 - Kinds keep their meaning (MAEP-009): a FACT needs evidence_refs; INFERENCE, HYPOTHESIS
   and PROPOSAL must disclose limitations; nothing is promoted to FACT without evidence.
+  A NOTE is what the owner told HG (source USER, layer SEMANTIC or PROJECT): recorded as
+  said, never a verified claim, never promoted.
 - In SEMANTIC and PROJECT, a FACT or DECISION that contradicts the ACTIVE record on the
   same subject is refused (MemoryConflict) unless it explicitly supersedes that record.
 - Nothing is overwritten: supersede and retract append status events (MAEP-015);
@@ -29,7 +31,7 @@ from hg.memory.index import Index
 from hg.verification.evidence import EventLog
 
 LAYERS = {"WORKING", "EPISODIC", "SEMANTIC", "PROJECT"}
-KINDS = {"FACT", "INFERENCE", "HYPOTHESIS", "PROPOSAL", "DECISION", "PREFERENCE", "EVENT"}
+KINDS = {"FACT", "INFERENCE", "HYPOTHESIS", "PROPOSAL", "DECISION", "PREFERENCE", "EVENT", "NOTE"}
 SOURCES = {"USER", "TOOL", "EVIDENCE", "INFERENCE", "SYSTEM"}
 CLAIM_KINDS = {"FACT", "INFERENCE", "HYPOTHESIS", "PROPOSAL"}
 CONFLICT_LAYERS = {"SEMANTIC", "PROJECT"}
@@ -121,6 +123,10 @@ class MemoryStore:
                 and (layer is None or r["layer"] == layer) and (kind is None or r["kind"] == kind)
                 and (subject is None or r["subject"] == subject)]
 
+    def all_records(self):
+        """Every record in any status, in ledger order."""
+        return [copy.deepcopy(r) for r in self._records.values()]
+
     def history(self, subject):
         return sorted((copy.deepcopy(r) for r in self._records.values() if r["subject"] == subject),
                       key=lambda r: (r["version"], r["created_at"]))
@@ -177,6 +183,8 @@ class MemoryStore:
                             "evidence_refs": r["evidence_refs"], "limitations": r["limitations"]})
         if r["kind"] == "EVENT" and r["layer"] != "EPISODIC":
             raise MAEPError("EVENT records belong to EPISODIC memory")
+        if r["kind"] == "NOTE" and (r["source"] != "USER" or r["layer"] not in {"SEMANTIC", "PROJECT"}):
+            raise MAEPError("a NOTE comes from the USER and lives in SEMANTIC or PROJECT memory")
 
     def _active(self, memory_id):
         record = self._records.get(memory_id)

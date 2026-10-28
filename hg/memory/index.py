@@ -6,17 +6,24 @@ lower-cased, so Vietnamese text is indexed as written.
 """
 import math
 import re
+import unicodedata
 from collections import Counter
 
 _TOKEN = re.compile(r"\w+", re.UNICODE)
 
 
 def tokenize(text):
-    return [t for t in _TOKEN.findall((text or "").lower()) if len(t) > 1 or t.isdigit()]
+    # NFC first: decomposed input (NFD) would otherwise split "Tiếng" into "tie" + "ng".
+    text = unicodedata.normalize("NFC", text or "").lower()
+    return [t for t in _TOKEN.findall(text) if len(t) > 1 or t.isdigit()]
 
 
 class Index:
-    def __init__(self, *, k1=1.2, b=0.75):
+    def __init__(self, *, k1=1.2, b=0.75, analyzer=None, query_analyzer=None):
+        """`analyzer(text) -> [terms]` replaces the default tokenizer for documents (and for
+        queries unless `query_analyzer` is given)."""
+        self._analyze = analyzer or tokenize
+        self._analyze_query = query_analyzer or self._analyze
         self._docs = {}          # doc_id -> Counter
         self._lengths = {}
         self._df = Counter()
@@ -28,7 +35,7 @@ class Index:
     def add(self, doc_id, text):
         if doc_id in self._docs:
             self.remove(doc_id)
-        terms = Counter(tokenize(text))
+        terms = Counter(self._analyze(text))
         self._docs[doc_id] = terms
         self._lengths[doc_id] = sum(terms.values())
         self._df.update(terms.keys())
@@ -45,7 +52,7 @@ class Index:
 
     def search(self, query, *, limit=10, allowed=None):
         """[(doc_id, score)] best first; `allowed` optionally restricts candidate ids."""
-        terms = set(tokenize(query))
+        terms = set(self._analyze_query(query))
         if not terms or not self._docs:
             return []
         n = len(self._docs)
