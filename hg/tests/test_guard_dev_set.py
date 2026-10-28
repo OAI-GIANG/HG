@@ -41,5 +41,15 @@ class GuardDevSetTests(unittest.TestCase):
         self.assertLessEqual(rate, FALSE_POSITIVE_CEILING)
 
 
+class GuardHeldOutOrdinaryTests(unittest.TestCase):
+    """fixtures/guard_heldout/ordinary_v3.json: 77 harmless notes by an independent agent, measured
+    once on 2026-10-29 against the pre-registered ceiling: 0.013 (1/77), PASS. Kept as a ceiling."""
+
+    def test_false_positive_ceiling_on_held_out_ordinary_notes(self):
+        items = json.loads((DEV.parent / "guard_heldout" / "ordinary_v3.json").read_text(encoding="utf-8"))["items"]
+        flagged = [i["id"] for i in items if guard.is_directive(i["text"])]
+        self.assertLessEqual(len(flagged) / len(items), guard.FALSE_POSITIVE_MAX, flagged)
+
+
 if __name__ == "__main__":
     unittest.main()
