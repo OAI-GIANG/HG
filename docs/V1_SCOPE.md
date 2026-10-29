@@ -361,3 +361,39 @@ Tái hiện offline trên `9634f41` bằng `grounding.anchored`, `grounding.chec
 | C | Chủ Nhân điều chỉnh tiêu chí: ví dụ coi câu bị HG gắn `[≠]` là "an toàn" (từ chối đúng 11/14 = 0,786, vẫn < 0,8), hoặc hạ ngưỡng đúng dữ kiện xuống 0,75 | Không gỡ lỗi nào | Là thay đổi tiêu chí (phiên bản mới, chỉ Chủ Nhân). **Không khuyến nghị**: che R1–R2, mà R2 chính là nhãn nguồn trên câu sai |
 
 Có thể làm A rồi mới B nếu A + v4 vẫn FAIL vì phần M.
+
+## 13. Đợt 4 (2026-10-29): Chat trên giao diện web qua `hg serve` — sửa hai lỗi P0
+
+Chỉ thị của Chủ Nhân (2026-10-29, nguyên văn rút gọn): *frontend cấu hình `127.0.0.1:8080` nhưng dịch vụ chạy ở `127.0.0.1:18766` (401 khi gọi health không xác thực, 18767 không lắng nghe) — xác định đúng service, API contract, endpoint được phép dùng, thiết lập kết nối có auth hợp lệ; chưa chứng minh Brain xử lý yêu cầu end-to-end — tích hợp provider/adapter thật được phê duyệt, chạy E2E có bằng chứng gồm request, kết quả Brain và phản hồi hiển thị ở UI; sửa triệt để.* Chỉ thị này **thay thế** dòng "mở `ask`/`note` qua HTTP" trong mục 4.2 (V2_DEFERRED) cho riêng `ask`: `note` vẫn chưa mở qua HTTP.
+
+### 13.1 Nguyên nhân gốc (đã xác minh trên điện thoại, 10:13–10:20 +07)
+
+| # | Phát hiện | Bằng chứng |
+|---|---|---|
+| R1 | Frontend (Stitch, file chưa commit trong worktree `~/HG-stitch-isolated-20261028T191222Z`, nhánh `feat/hg-stitch-ui-…` dựng trên dòng v2 `8dda6d4`) viết cho contract của `runtime/http_server.py` v2: `API_BASE = 'http://127.0.0.1:8080'`, route `/health`, `/api/tasks`, `/api/dispatch`, không có token | `frontend/app.js` dòng 4, 168, 186 |
+| R2 | Dịch vụ vận hành của v1 là `hg serve` (Q1) ở `127.0.0.1:18766`, contract `/v1/...`, token bắt buộc trên mọi route (cả OPTIONS) → trình duyệt không gọi chéo nguồn được (preflight bị 401, không có CORS) | curl có token → READY; OPTIONS → 401 |
+| R3 | Dịch vụ v2 (`hg-backend`, `runtime.service`) **dừng có chủ đích** (Q1/Q2, file `down`); 8080 và 18767 không có gì lắng nghe; không cấu hình nào của v1 dùng 18767 | `sv status hg-backend` = down; curl 000 |
+| R4 | Contract v1 không có route chat: `POST /v1/tasks` chỉ nhận fs.write/fs.read. Năng lực trả lời (Brain model layer `ModelRouter` + Ollama local đã ghim digest + nhãn HG) chỉ có ở lệnh `hg ask` | `hg/http_api.py`; `hg model status` READY |
+| R5 | Nút Gửi của frontend bị khoá cứng phía client ("Dispatch blocked…"), nên dù đúng cổng cũng không có luồng E2E nào | `frontend/app.js` `handleSend` |
+
+### 13.2 Sửa (PR từ nhánh `stt/v1-chat-ui-20261029`)
+
+- Giao diện web vào repo: `hg/ui/` (index.html, app.js, styles.css), do chính `hg serve` phục vụ ở `/ui/` — trang và API **cùng nguồn**, không còn cổng/host cố định, không CORS.
+- `POST /v1/chat` (`hg/chat.py`, `hg/http_api.py`): token bắt buộc, body chặt `{"message","general"}`, chỉ provider local (Q5), một câu một lúc, biên nhận `ASK` + `MODEL_CALL` trong sổ của Chủ Nhân. Contract: `docs/architecture/HG_SERVICE_V1.md` §5 (bản sửa 2026-10-29).
+- `hg.assistant.ask.ask()` thêm hai tham số không bắt buộc (`channel`, `on_receipt`); lệnh `hg ask` không đổi hành vi.
+- Không đụng: nhánh v2 (Q2), `owner-grants.json`/policy (Q4), `~/HG` và worktree Stitch trên điện thoại (giữ nguyên file chưa commit của Chủ Nhân).
+
+### 13.3 Tiêu chí nghiệm thu
+
+| AC | Tiêu chí |
+|---|---|
+| AC-W1 | Mã UI trong repo không chứa 8080/18767/host cố định; chỉ gọi `/v1/chat`, `/v1/health/ready`, `/v1/tasks/` trên cùng nguồn; token chỉ ở header Authorization, không localStorage, không trong URL; không innerHTML; không inline script/style (CSP) |
+| AC-W2 | Mọi route `/v1/*` vẫn 401 khi thiếu token (kể cả `/v1/chat`); chỉ 4 file UI không cần token; Host và client loopback vẫn bắt buộc; route lạ dưới `/ui/` → 401/404 |
+| AC-W3 | `/v1/chat`: body sai → 400/415/413; release chưa VERIFIED → 503; lỗi dịch vụ chat giữ đúng mã; lỗi bất ngờ → 500 không lộ chi tiết |
+| AC-W4 | ChatService qua máy chủ model giả bằng HTTP thật: câu kiến thức chung → ANSWERED, nhãn MODEL, đúng một MODEL_CALL OK + một ASK (kênh http); câu có ghi chú → NOTE; câu đời tư không ghi chú → NO_DATA, không gọi model; model tắt → MEMORY_ONLY/NO_DATA; digest đổi → 503; HG_HOME thiếu → 503 và không bị tạo; đang bận → 503 chat_busy; không dùng nhà cung cấp trả phí kể cả khi có ANTHROPIC_API_KEY |
+| AC-W5 | Trình duyệt thật (Chromium headless) trên trang `/ui/`: không token → không gửi; token sai → hiện 401; token đúng → SẴN SÀNG; Enter không gửi; câu trả lời hiện đúng nhãn `[?]` và `[N1·dd/mm]`; mọi request cùng nguồn; không vi phạm CSP |
+| AC-W6 | Suite cũ xanh + test mới, selfcheck, bench 10/10; CI 3.13/3.14 xanh |
+| AC-W7 | Điện thoại: release mới từ commit merge, chuyển dịch vụ có điểm phục hồi, READY đúng release; smoke `/v1/tasks` vẫn CLOSED_VERIFIED; `/ui/` 200 không token; `/v1/chat` 401 không token |
+| AC-W8 | Điện thoại, E2E thật: request `/v1/chat` có token → model local thật (qwen3:1.7b, digest ghim, tiến trình VERIFIED) → ANSWERED; sổ `asks-YYYY-MM.jsonl` có MODEL_CALL OK + ASK đúng event id trong phản hồi; chính `app.js` do release phục vụ, chạy trên điện thoại (jsdom), hiển thị câu trả lời đó |
+
+Kết quả từng tiêu chí: báo cáo cuối của task và PR.

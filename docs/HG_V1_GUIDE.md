@@ -111,14 +111,37 @@ Model tắt hoặc chưa tải: `hg ask` vẫn chạy, đưa nguyên văn ghi ch
 | `HG_BLOCKED: hg-runtime failed … held down` trong log dịch vụ | Dịch vụ khởi động lỗi 5 lần liên tiếp nên HG tự giữ dừng để không tiêu hết lượt gọi GitHub. Xem `tail $PREFIX/var/log/sv/hg-runtime/current`, sửa nguyên nhân (thường là mất mạng), rồi `sv up hg-runtime` |
 | Trả lời chậm lần đầu | Lần đầu phải nạp model vào RAM (vài giây); các lần sau nhanh hơn trong 30 phút |
 
-## 8. Dịch vụ hg-runtime (máy chủ cục bộ)
+## 8. Dịch vụ hg-runtime (máy chủ cục bộ) và giao diện web
 
-`hg-runtime` vẫn chạy như trước ở `127.0.0.1:18766` (ghi/đọc file có xác minh qua `POST /v1/tasks`). Kiểm tra:
+`hg-runtime` chạy ở `127.0.0.1:18766` (ghi/đọc file có xác minh qua `POST /v1/tasks`, chat qua `POST /v1/chat`). Kiểm tra:
 
 ```
 sv status hg-runtime
 T=$(cat ~/.config/hg/runtime-service.token); curl -s -H "Authorization: Bearer $T" http://127.0.0.1:18766/v1/health/ready; unset T
 ```
+
+Gọi `/v1/health/ready` không kèm token thì nhận `401` — đó là đúng thiết kế, không phải lỗi; `401` cũng không chứng minh dịch vụ dùng được. Cổng `8080` và `18767` không thuộc HG v1.
+
+### Chat trên giao diện web
+
+1. Mở Chrome trên điện thoại, vào `http://127.0.0.1:18766/ui/` (hoặc trong Termux: `termux-open-url http://127.0.0.1:18766/ui/`).
+2. Bấm **⚙ Kết nối**. Trong Termux chạy `cat ~/.config/hg/runtime-service.token`, giữ ngón tay để sao chép, dán vào ô **Token dịch vụ**, bấm **Lưu và kiểm tra** → huy hiệu **SẴN SÀNG**.
+3. Vào **Chat**, gõ câu hỏi (Enter chỉ xuống dòng), bấm **Gửi**. Lần đầu có thể mất 10–60 giây vì model nạp vào RAM.
+
+Câu trả lời có cùng nhãn như lệnh `hg ask` (mục 2). Ô **Cho phép model trả lời câu hỏi kiến thức chung** bật sẵn: câu hỏi kiến thức chung được model trả lời với nhãn `[?]`; câu hỏi về đời tư của Chủ Nhân (có "tôi", "mình"…) vẫn chỉ trả lời từ ghi chú, không có ghi chú thì HG nói "Ghi chú chưa có thông tin này." và không hỏi model. Tắt ô này thì chat giống `hg ask` không có `--general`.
+
+- Trang chỉ gọi đúng dịch vụ đã phục vụ nó (cùng địa chỉ), không gọi ra ngoài; chỉ dùng model local (Ollama), không có nhà cung cấp trả phí.
+- Token chỉ giữ trong tab đang mở (sessionStorage), không đưa vào địa chỉ trang. Bấm **Quên token** khi xong.
+- Mỗi câu chat ghi biên nhận `ASK` (kênh `http:/v1/chat`) và sự kiện `MODEL_CALL` vào `~/.local/share/hg/assistant/asks-YYYY-MM.jsonl`, giống `hg ask`.
+
+| Hiện tượng trên trang | Cách xử lý |
+|---|---|
+| `TOKEN SAI` / `401` | Dán lại đúng token (mục 2 ở trên) |
+| `KHÔNG KẾT NỐI` | `sv status hg-runtime`; dịch vụ dừng thì `sv up hg-runtime` |
+| `chat_busy` | HG đang trả lời câu khác; chờ xong rồi gửi lại |
+| `model_untrusted` | `hg model status` (Ollama dừng: `sv up ollama`; digest đổi: kiểm tra rồi `hg model use <tên>`) |
+| `assistant_unavailable` | Thư mục trợ lý chưa có hoặc sai quyền: chạy `hg note list` một lần |
+| `notes_ledger_damaged` | `hg repair` |
 
 ## 9. Giới hạn của v1
 
@@ -126,4 +149,5 @@ T=$(cat ~/.config/hg/runtime-service.token); curl -s -H "Authorization: Bearer $
 - Không chống được chương trình chạy cùng tài khoản Termux (quyết định Q3).
 - Lệnh `hg` là lệnh trực tiếp của Chủ Nhân; nó không đi qua cổng quản trị của runtime HG.
 - Phát hiện câu lệnh nhắm vào AI theo mẫu: có thể bỏ lọt cách viết mới; tỉ lệ bắt được trên dữ liệu chưa thấy chưa đo được (UNVERIFIED).
-- Chưa có: PDF, giọng nói, hỏi đáp qua HTTP, lối tắt màn hình chính.
+- Chưa có: PDF, giọng nói, thêm/sửa ghi chú qua trang web, lối tắt màn hình chính.
+- Chat qua web chạy ngoài cổng quản trị của runtime HG (giống lệnh `hg ask`): không ENFORCED bởi runtime, không gây hành động nào ngoài việc ghi biên nhận.
