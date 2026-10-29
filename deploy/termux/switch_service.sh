@@ -101,6 +101,10 @@ release_ok() {   # release_ok <config> <release id>
     || { say "config $1 does not name release $2"; return 1; }
 }
 
+run_config() {   # run_config <run script>: the --config file a rendered hg-runtime ./run starts the service with
+  sed -n 's/^exec python3 -B -u -m hg serve --config "\(.*\)"$/\1/p' "$1"
+}
+
 finish_ok() {
   [ -f "$S/finish" ] && cmp -s "$S/finish" "$FINISH_SRC" \
     || { say "hg-runtime/finish is not the reviewed version: run --install-finish first"; return 1; }
@@ -171,8 +175,13 @@ if [ "${1:-}" = "--restore" ] || [ "${1:-}" = "--restore-state" ]; then
   grep -q "$(sha "$SRC/run.old")" "$SRC/hashes.before" || { say "run.old does not match its recorded hash"; exit 1; }
   grep -q "$(sha "$OLDCONF")" "$SRC/hashes.before" \
     || { say "the shared config changed since the switch; refusing to restore onto it"; exit 1; }
-  OLD_RID="$(field "$OLDCONF" release_id)"
+  # The release to go back to is the one run.old started, with the config it started it with.
+  # The forward switch never edits the shared config, so its release_id can be older (F-W2).
+  OLD_RUNCONF="$(run_config "$SRC/run.old")"
+  [ -n "$OLD_RUNCONF" ] && [ -f "$OLD_RUNCONF" ] || { say "run.old names no readable service config"; exit 1; }
+  OLD_RID="$(field "$OLD_RUNCONF" release_id)"
   OLD_ROOT="$HOME/hg-releases/$OLD_RID"
+  grep -qF "cd \"$OLD_ROOT\"" "$SRC/run.old" || { say "run.old does not start release $OLD_RID from $OLD_RUNCONF"; exit 1; }
   BK="$E/restore-$TS"
   mkdir -m 700 "$BK"
   cp -p "$S/run" "$BK/run.current"
@@ -182,7 +191,7 @@ if [ "${1:-}" = "--restore" ] || [ "${1:-}" = "--restore-state" ]; then
     ( cd "$SRC/state" && sha256sum -c --quiet "$SRC/state.sha256" ) || { say "backed-up state fails its hashes"; exit 1; }
   fi
   quota_ok
-  release_ok "$OLDCONF" "$OLD_RID"
+  release_ok "$OLD_RUNCONF" "$OLD_RID"
   finish_ok
   space_ok
   stop_service
@@ -199,7 +208,7 @@ if [ "${1:-}" = "--restore" ] || [ "${1:-}" = "--restore-state" ]; then
   fi
   cp -p "$SRC/run.old" "$S/run.tmp" && mv "$S/run.tmp" "$S/run"
   SWAPPED=1
-  start_and_wait "$OLDCONF" "$OLD_RID"
+  start_and_wait "$OLD_RUNCONF" "$OLD_RID"
   SWAPPED=0; STATE_SWAPPED=0
   sha256sum "$S/run" > "$BK/run.restored.sha256"
   echo "RESTORE_DIR=$BK"

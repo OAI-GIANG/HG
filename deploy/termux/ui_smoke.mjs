@@ -55,8 +55,22 @@ const dom = await JSDOM.fromURL(origin + '/ui/', {
         report.requests.push({ method: init.method || 'GET', url: url.href, refused: true });
         throw new window.TypeError('cross-origin request refused by ui_smoke');
       }
-      const res = await fetch(url, { method: init.method, headers: init.headers, body: init.body,
-                                     cache: init.cache, redirect: init.redirect, signal: init.signal });
+      // The page's AbortSignal belongs to jsdom; Node's fetch accepts only its own, so bridge it.
+      let signal;
+      if (init.signal) {
+        const bridge = new AbortController();
+        if (init.signal.aborted) bridge.abort();
+        else init.signal.addEventListener('abort', () => bridge.abort());
+        signal = bridge.signal;
+      }
+      let res;
+      try {
+        res = await fetch(url, { method: init.method, headers: init.headers, body: init.body,
+                                 cache: init.cache, redirect: init.redirect, signal });
+      } catch (err) {
+        report.requests.push({ method: init.method || 'GET', path: url.pathname, error: String(err && err.message) });
+        throw err;
+      }
       report.requests.push({ method: init.method || 'GET', path: url.pathname, status: res.status,
                              authorization: Boolean(init.headers && init.headers.Authorization) });
       return res;
@@ -87,7 +101,13 @@ report.checks.answer = {
   marks: [...shown.querySelectorAll('.mark')].map((m) => m.textContent),
   meta: (shown.querySelector('.msg-meta') || {}).textContent || null,
 };
-report.checks.model_panel = JSON.parse(document.getElementById('model-info').textContent || '{}');
+// The Model screen is filled only from a successful answer; keep its text as shown otherwise.
+const panel = document.getElementById('model-info').textContent || '';
+try {
+  report.checks.model_panel = JSON.parse(panel);
+} catch (_e) {
+  report.checks.model_panel = { shown_text: panel };
+}
 report.elapsed_s = (Date.now() - started) / 1000;
 report.result = report.checks.service_badge === 'SẴN SÀNG' && report.checks.answer.outcome === 'ANSWERED' ? 'PASS' : 'FAIL';
 dom.window.close();
