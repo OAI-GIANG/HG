@@ -144,5 +144,18 @@ class DeployScriptTests(unittest.TestCase):
         self.assertIn("not overwriting", text)
 
 
+class InstallSealOrderTests(unittest.TestCase):
+    def test_release_is_sealed_and_reverified_before_the_pointer_is_published(self):
+        from pathlib import Path
+        text = (Path(__file__).resolve().parents[2] / "deploy/termux/install_release.sh").read_text(encoding="utf-8")
+        verify_first = text.index("verify_root(")
+        seal = text.index("seal_root(")
+        verify_again = text.index("verify_root(", seal)
+        pointer = text.index('"$POINTER.tmp"')
+        self.assertLess(verify_first, seal)
+        self.assertLess(seal, verify_again)
+        self.assertLess(verify_again, pointer)
+
+
 if __name__ == "__main__":
     unittest.main()

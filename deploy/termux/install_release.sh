@@ -19,6 +19,10 @@ fi
 cmp "$B/one.json" "$MAN"
 python3 -I -B -c 'import sys, json; sys.path.insert(0, sys.argv[1]); from hg.release import verify_root; print(json.dumps(verify_root(sys.argv[1], sys.argv[2], sys.argv[3]), sort_keys=True))' "$ROOT" "$MAN" "$RID"
 
+# Seal the verified release read-only, then verify again before any pointer is published.
+python3 -I -B -c 'import sys, json; sys.path.insert(0, sys.argv[1]); from hg.release import seal_root; print(json.dumps(seal_root(sys.argv[1]), sort_keys=True))' "$ROOT"
+python3 -I -B -c 'import sys, json; sys.path.insert(0, sys.argv[1]); from hg.release import verify_root; print(json.dumps(verify_root(sys.argv[1], sys.argv[2], sys.argv[3]), sort_keys=True))' "$ROOT" "$MAN" "$RID"
+
 # `hg` command: pointer file + shim (the shim never imports from the current directory).
 POINTER="$HOME/.config/hg/assistant-release"
 if [ -e "$POINTER" ]; then cp -p "$POINTER" "$POINTER.prev"; fi
