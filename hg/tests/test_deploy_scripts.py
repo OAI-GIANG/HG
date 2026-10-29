@@ -64,11 +64,46 @@ class DeployScriptTests(unittest.TestCase):
                     full.index("# ---------------------------------------------------------------- switch forward")]
         self.assertIn('PREV_RUN="$BK/run.current"', text)          # failure returns to the release that was running
         self.assertIn("the shared config changed since the switch", text)
-        order = [text.index(m) for m in ("quota_ok", 'release_ok "$OLDCONF" "$OLD_RID"', "stop_service",
+        order = [text.index(m) for m in ("quota_ok", 'release_ok "$OLD_RUNCONF" "$OLD_RID"', "stop_service",
                                          'backup_state "$BK/state"', 'precheck_with "$OLD_ROOT"',
-                                         'cp -p "$SRC/run.old" "$S/run.tmp"', "start_and_wait")]
+                                         'cp -p "$SRC/run.old" "$S/run.tmp"', 'start_and_wait "$OLD_RUNCONF" "$OLD_RID"')]
         self.assertEqual(order, sorted(order))
         self.assertIn('sha256sum -c --quiet "$SRC/state.sha256"', text)
+
+    def test_restore_targets_the_release_the_recorded_run_script_started(self):
+        """Finding F-W2 (phone, 2026-10-29 10:44 +07): the forward switch never edits the shared
+        config, so its release_id can name an older release (f7cfd766) than the one run.old
+        actually started (1cb93e5f). Restore must take the release and config from run.old,
+        or it validates one release, starts another and waits for READY on the wrong id."""
+        full = (DEPLOY / "switch_service.sh").read_text(encoding="utf-8")
+        text = full[full.index("# ---------------------------------------------------------------- --restore"):
+                    full.index("# ---------------------------------------------------------------- switch forward")]
+        self.assertIn('OLD_RUNCONF="$(run_config "$SRC/run.old")"', text)
+        self.assertIn('OLD_RID="$(field "$OLD_RUNCONF" release_id)"', text)
+        self.assertNotIn('OLD_RID="$(field "$OLDCONF" release_id)"', text)
+        self.assertLess(text.index('OLD_RUNCONF="$(run_config "$SRC/run.old")"'), text.index("stop_service"))
+        self.assertIn('grep -qF "cd \\"$OLD_ROOT\\"" "$SRC/run.old"', text)
+
+    def test_run_config_reads_the_config_of_a_rendered_run_script(self):
+        if shutil.which("sh") is None:
+            self.skipTest("no sh")
+        full = (DEPLOY / "switch_service.sh").read_text(encoding="utf-8")
+        start = full.index("run_config() {")
+        func = full[start:full.index("\n}\n", start) + 3]
+        template = (DEPLOY / "hg-runtime.run.in").read_text(encoding="utf-8")
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            conf = Path(td) / "runtime-service-1cb9.json"
+            run_old = Path(td) / "run.old"
+            run_old.write_text(template.replace("@ROOT@", td + "/hg-releases/1cb9").replace("@CONF@", str(conf)),
+                               encoding="utf-8")
+            other = Path(td) / "run.other"
+            other.write_text("#!/bin/sh\nexec python3 -m something_else\n", encoding="utf-8")
+            script = func + 'run_config "$1"\n'
+            out = subprocess.run(["sh", "-c", script, "sh", str(run_old)], capture_output=True, text=True)
+            self.assertEqual((out.returncode, out.stdout.strip()), (0, str(conf)))
+            out = subprocess.run(["sh", "-c", script, "sh", str(other)], capture_output=True, text=True)
+            self.assertEqual(out.stdout.strip(), "")
 
     def test_finish_is_installed_separately_with_a_backup(self):
         full = (DEPLOY / "switch_service.sh").read_text(encoding="utf-8")

@@ -40,7 +40,9 @@ remote session cannot cut them short:
        HG_JSDOM_DIR=~/hg-v1-evidence/ui-smoke node <release_root>/deploy/termux/ui_smoke.mjs 18766 ~/hg-v1-evidence/ui-smoke-$(date +%s).json "Thủ đô của Pháp là gì?" general
 
    It reads the token itself (never printed, never in argv or the report) and exits 0 only if the page showed READY and an ANSWERED reply.
-6. Rollback: `sh switch_service.sh --restore <switch dir>` refuses if the shared config changed, checks
+6. Rollback: `sh switch_service.sh --restore <switch dir>` refuses if the shared config changed, takes the
+   release and config to return to from the recorded `run.old` (not from the shared config, whose
+   `release_id` the forward switch never updates — finding F-W2), checks
    the old release (quota, verify-root, preflight), stops, backs up the current state, proves the OLD
    release reads it, puts the recorded run script back and waits for READY. If the old release could
    not read the state, `--restore-state <switch dir>` also puts back the backed-up state after checking
