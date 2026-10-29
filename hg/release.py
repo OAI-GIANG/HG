@@ -283,6 +283,31 @@ def verify_root(root_path: str | Path, manifest_path: str | Path, expected_relea
             "tree": doc["tree"], "files_checked": count}
 
 
+def seal_root(root_path: str | Path):
+    """Make an installed release read-only for its owner so runtime imports cannot write into it."""
+    root_input = Path(root_path)
+    if root_input.is_symlink() or not root_input.is_dir():
+        raise ReleaseError("installed release root must be a real directory, not a symlink")
+    root = root_input.resolve()
+    files, dirs = [], []
+    for path in root.rglob("*"):
+        rel = path.relative_to(root).as_posix()
+        if path.is_symlink():
+            raise ReleaseError(f"symlink in installed release: {rel}")
+        if path.is_file():
+            files.append(path)
+        elif path.is_dir():
+            dirs.append(path)
+        else:
+            raise ReleaseError(f"special file in installed release: {rel}")
+    for path in files:
+        executable = os.stat(path).st_mode & 0o111
+        os.chmod(path, 0o555 if executable else 0o444)
+    for path in sorted(dirs, key=lambda p: len(p.parts), reverse=True) + [root]:
+        os.chmod(path, 0o555)
+    return {"result": "SEALED", "files": len(files), "directories": len(dirs) + 1}
+
+
 def extract_archive(archive_path: str | Path, destination: str | Path):
     destination = Path(destination)
     if destination.is_symlink():
@@ -323,6 +348,8 @@ def main(argv=None):
     extract = sub.add_parser("extract")
     extract.add_argument("--archive", required=True)
     extract.add_argument("--destination", required=True)
+    seal = sub.add_parser("seal")
+    seal.add_argument("--root", required=True)
     root = sub.add_parser("verify-root")
     root.add_argument("--root", required=True)
     root.add_argument("--manifest", required=True)
@@ -338,6 +365,8 @@ def main(argv=None):
         elif args.command == "extract":
             extract_archive(args.archive, args.destination)
             report = {"result": "EXTRACTED", "destination": str(Path(args.destination).resolve())}
+        elif args.command == "seal":
+            report = seal_root(args.root)
         else:
             report = verify_root(args.root, args.manifest, args.release_id)
     except ReleaseError as exc:
