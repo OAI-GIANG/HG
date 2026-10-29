@@ -164,15 +164,25 @@ def trust_report(authority):
     return {"result": "LOADED", "provenance": provenance, "policy_version": doc["policy_version"]}
 
 
-def create_service(config, *, token, authority, release_report):
+def create_service(config, *, token, authority, release_report, assistant_home=None):
+    """The production server: runtime, idempotency ledger and the chat route.
+
+    Chat (POST /v1/chat) answers from the owner's assistant home -- the same directory the `hg`
+    command uses ($HG_HOME, default ~/.local/share/hg/assistant). The service never creates it:
+    if it is missing or unsafe, only the chat route answers 503; the rest of the service is not
+    affected, and no new key is added to the strict service config.
+    """
+    from hg.assistant.home import default_home
+    from hg.chat import ChatService
     from hg.runtime import build_runtime
     state = Path(config["state_dir"])
     runtime = build_runtime(state, [], authority=authority, issue_task_grants=True, memory=True,
                             verifiers={"AC-READBACK": planned_write_readback_verifier(state / "root")})
+    chat = ChatService(assistant_home or default_home(), release_id=config["release_id"])
     return HGHTTPServer(runtime=runtime, token=token, host=config["host"], port=config["port"],
                         max_body_bytes=config["max_body_bytes"], release_report=release_report,
                         trust_report=lambda: trust_report(authority),
-                        idempotency_path=state / "http-idempotency.sqlite3")
+                        idempotency_path=state / "http-idempotency.sqlite3", chat=chat)
 
 
 def run(config_path: str | Path, *, check=False) -> int:

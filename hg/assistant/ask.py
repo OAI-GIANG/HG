@@ -179,8 +179,13 @@ def append_receipt(home, kind, payload, *, clock, lock_wait_s=5.0):
 
 def ask(question, *, notebook, router_factory, listener=None, model_check=None, out=print, color=False,
         notes_only=False, unavailable_reason=None, max_tokens=400, clock=None, monotonic=time.monotonic,
-        release="dev", general=False):
-    """Run one question end to end. Returns (exit_code, receipt)."""
+        release="dev", general=False, channel=None, on_receipt=None):
+    """Run one question end to end. Returns (exit_code, receipt).
+
+    channel     recorded in the receipt when given (e.g. "http:/v1/chat"), so a receipt written
+                for the web UI can be told apart from one written by the owner's terminal
+    on_receipt  called with the ledger event of the appended receipt (its event_id and seq)
+    """
     clock = clock or (lambda: datetime.now(timezone.utc))
     started = monotonic()
     question = safe(question).strip()
@@ -209,6 +214,8 @@ def ask(question, *, notebook, router_factory, listener=None, model_check=None, 
                "off_topic": [{"memory_id": r["memory_id"], "missing_topic": r["missing_topic"]} for r in off_topic],
                "notes_ledger": notes_hash, "listener": listener, "model_check": model_check, "release": release,
                "timings": timings}
+    if channel is not None:
+        receipt["channel"] = channel
     timings["notes_shown_s"] = round(monotonic() - started, 3)
     # Only notes that do not address an AI are sent to the model or used as a source (OWASP LLM01).
     notes_text = {ref: r["content"] for ref, r in usable.items()}
@@ -231,7 +238,7 @@ def ask(question, *, notebook, router_factory, listener=None, model_check=None, 
                        error=None, seconds=round(seconds, 3))
         out("— HG không có ghi chú nào về việc này nên không hỏi model (tránh đoán mò)."
             + ("" if gate == "PERSONAL_WITHOUT_NOTES" else " Câu hỏi kiến thức chung: hg ask --general \"…\""))
-        append_receipt(notebook.home, "ASK", receipt, clock=clock)
+        _receipt_written(append_receipt(notebook.home, "ASK", receipt, clock=clock), on_receipt)
         return EXIT["NO_DATA"], receipt
     if not notes_only:
         router = router_factory()
@@ -266,8 +273,13 @@ def ask(question, *, notebook, router_factory, listener=None, model_check=None, 
         out("— HG không có ghi chú nào về câu hỏi này" + (" và không có model." if error or not notes_only else ".")
             + (f" ({safe(error)[:240]})" if error else ""))
     receipt.update(outcome=outcome, error=error, seconds=round(seconds, 3))
-    append_receipt(notebook.home, "ASK", receipt, clock=clock)
+    _receipt_written(append_receipt(notebook.home, "ASK", receipt, clock=clock), on_receipt)
     return EXIT[outcome], receipt
+
+
+def _receipt_written(event, on_receipt):
+    if on_receipt is not None:
+        on_receipt(event)
 
 
 def _show(sentence, notes_text, refs, labelled, out, color, question=None):

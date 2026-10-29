@@ -8,8 +8,10 @@ import io
 import json
 import re
 import sqlite3
+import stat
 import threading
 import time
+import unicodedata
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlsplit
 
@@ -32,6 +34,45 @@ _BUSY_BODY = b'{"error":"server_busy"}'
 _BUSY_RESPONSE = (b"HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json; charset=utf-8\r\n"
                   b"Content-Length: " + str(len(_BUSY_BODY)).encode() + b"\r\nCache-Control: no-store\r\n"
                   b"Connection: close\r\n\r\n" + _BUSY_BODY)
+
+
+# Web UI shipped inside the release (hg/ui/). These four exact request targets are the only
+# ones answered without a bearer token: static files with no data and no effect, so a browser
+# can open the page. Host and loopback-client checks still apply; every other route,
+# including any other /ui/... path, still answers 401 before routing (HG_SERVICE_V1 §5).
+UI_DIR = Path(__file__).resolve().parent / "ui"
+UI_FILES = {
+    "/ui/": ("index.html", "text/html; charset=utf-8"),
+    "/ui/index.html": ("index.html", "text/html; charset=utf-8"),
+    "/ui/app.js": ("app.js", "text/javascript; charset=utf-8"),
+    "/ui/styles.css": ("styles.css", "text/css; charset=utf-8"),
+}
+UI_CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; "
+          "base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
+UI_HEADERS = (
+    ("Content-Security-Policy", UI_CSP),
+    ("X-Frame-Options", "DENY"),
+    ("X-Content-Type-Options", "nosniff"),
+    ("Referrer-Policy", "no-referrer"),
+    ("Cache-Control", "no-store"),
+    ("Cross-Origin-Opener-Policy", "same-origin"),
+    ("Cross-Origin-Resource-Policy", "same-origin"),
+)
+MAX_CHAT_MESSAGE_CHARS = 2000
+
+
+def load_ui_assets(ui_dir=UI_DIR):
+    """Read the UI files once at startup: {request target: (bytes, content type)}; regular files only."""
+    assets = {}
+    for target, (name, content_type) in UI_FILES.items():
+        path = Path(ui_dir) / name
+        try:
+            if not stat.S_ISREG(path.lstat().st_mode):
+                continue
+            assets[target] = (path.read_bytes(), content_type)
+        except OSError:
+            continue
+    return assets
 
 
 class _DeadlineSocketReader(io.RawIOBase):
@@ -248,7 +289,8 @@ class HGHTTPServer(http.server.ThreadingHTTPServer):
     def __init__(self, *, runtime, token, host="127.0.0.1", port=8765, max_body_bytes=262144,
                  release_report=None, trust_report=None, idempotency_path=None,
                  request_timeout_seconds=REQUEST_TIMEOUT_SECONDS,
-                 request_deadline_seconds=REQUEST_DEADLINE_SECONDS, max_connections=MAX_CONNECTIONS):
+                 request_deadline_seconds=REQUEST_DEADLINE_SECONDS, max_connections=MAX_CONNECTIONS,
+                 chat=None, ui_dir=UI_DIR):
         if host != "127.0.0.1":
             raise ValueError("HG HTTP API must bind to IPv4 loopback 127.0.0.1")
         if isinstance(port, bool) or not isinstance(port, int) or not (0 <= port <= 65535):
@@ -265,6 +307,8 @@ class HGHTTPServer(http.server.ThreadingHTTPServer):
             raise ValueError("max_connections must be in 1..256")
         if not isinstance(token, bytes) or len(token) < 32:
             raise ValueError("service token must be at least 32 bytes")
+        if chat is not None and not callable(chat):
+            raise ValueError("chat must be callable(message, general=bool) -> dict")
         self.runtime = runtime
         try:
             token.decode("ascii")
@@ -275,6 +319,8 @@ class HGHTTPServer(http.server.ThreadingHTTPServer):
         self.release_report = release_report or (lambda: {"result": "UNVERIFIED"})
         self.trust_report = trust_report or (lambda: {"result": "UNVERIFIED"})
         self.idempotency = IdempotencyStore(idempotency_path) if idempotency_path else None
+        self.chat = chat                       # hg.chat.ChatService in production (hg/service.py)
+        self.ui_assets = load_ui_assets(ui_dir) if ui_dir is not None else {}
         self._request_lock = threading.Lock()
         self.request_timeout_seconds = float(request_timeout_seconds)
         self.request_deadline_seconds = float(request_deadline_seconds)
@@ -347,6 +393,21 @@ class HGHTTPServer(http.server.ThreadingHTTPServer):
             def _fail(self, error):
                 self._send(error.status, {"error": error.code, "message": str(error)})
 
+            def _send_static(self, data, content_type):
+                self.request.settimeout(outer.request_timeout_seconds)
+                self.close_connection = True
+                try:
+                    self.send_response(200)
+                    self.send_header("Content-Type", content_type)
+                    self.send_header("Content-Length", str(len(data)))
+                    for name, value in UI_HEADERS:
+                        self.send_header(name, value)
+                    self.send_header("Connection", "close")
+                    self.end_headers()
+                    self.wfile.write(data)
+                except (BrokenPipeError, ConnectionResetError, TimeoutError):
+                    return
+
             def _validate_host(self):
                 hosts = self.headers.get_all("Host", [])
                 if len(hosts) != 1:
@@ -366,10 +427,13 @@ class HGHTTPServer(http.server.ThreadingHTTPServer):
                 if name.lower() not in allowed:
                     raise HTTPBoundaryError(400, "invalid_host", "Host must identify loopback")
 
-            def _authenticate(self):
-                self._validate_host()
+            def _require_loopback_client(self):
                 if not self.client_address or self.client_address[0] not in ("127.0.0.1", "::1"):
                     raise HTTPBoundaryError(403, "loopback_only", "client must be loopback")
+
+            def _authenticate(self):
+                self._validate_host()
+                self._require_loopback_client()
                 auth_values = self.headers.get_all("Authorization", [])
                 expected = ("Bearer " + outer.token.decode("ascii")).encode("ascii")
                 if len(auth_values) != 1:
@@ -418,6 +482,12 @@ class HGHTTPServer(http.server.ThreadingHTTPServer):
 
             def do_GET(self):
                 try:
+                    asset = outer.ui_assets.get(self.path)     # exact request target only
+                    if asset is not None:
+                        self._validate_host()
+                        self._require_loopback_client()
+                        self._send_static(*asset)
+                        return
                     self._authenticate()
                     parsed = urlsplit(self.path)
                     if parsed.query or parsed.fragment or "%" in parsed.path:
@@ -464,10 +534,35 @@ class HGHTTPServer(http.server.ThreadingHTTPServer):
                 except Exception:
                     self._send(500, {"error": "internal_error"})
 
+            def _chat(self):
+                """POST /v1/chat (contract revision 2026-10-29): one message -> outer.chat -> answer."""
+                if outer.chat is None:
+                    raise HTTPBoundaryError(503, "chat_unavailable", "chat is not configured on this service")
+                try:
+                    release = outer.release_report()
+                except Exception:
+                    raise HTTPBoundaryError(503, "service_not_ready", "release integrity is unavailable")
+                if release.get("result") != "VERIFIED":
+                    raise HTTPBoundaryError(503, "service_not_ready", "release integrity must be VERIFIED")
+                payload = self._body()
+                if not isinstance(payload, dict) or set(payload) != {"message", "general"}:
+                    raise HTTPBoundaryError(400, "invalid_request", "request must contain exactly message and general")
+                message, general = payload["message"], payload["general"]
+                if not isinstance(message, str) or not isinstance(general, bool):
+                    raise HTTPBoundaryError(400, "invalid_request", "message must be a string and general a boolean")
+                message = unicodedata.normalize("NFC", message).strip()
+                if not message or len(message) > MAX_CHAT_MESSAGE_CHARS:
+                    raise HTTPBoundaryError(400, "invalid_message",
+                                            f"message must have 1..{MAX_CHAT_MESSAGE_CHARS} characters")
+                self._send(200, outer.chat(message, general=general))
+
             def do_POST(self):
                 try:
                     self._authenticate()
                     parsed = urlsplit(self.path)
+                    if parsed.path == "/v1/chat" and not parsed.query and not parsed.fragment:
+                        self._chat()
+                        return
                     if parsed.path != "/v1/tasks" or parsed.query or parsed.fragment:
                         raise HTTPBoundaryError(404, "not_found", "route not found")
                     idem_values = self.headers.get_all("Idempotency-Key", [])

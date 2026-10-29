@@ -6,7 +6,7 @@ Status: implementation candidate; not production-certified until merge and on-de
 
 The service is added to the existing OAI-GIANG/HG application. The single runtime assembly remains hg/runtime.py; HTTP requests are dispatched through the real BrainOrchestrator, TaskStore, ActionGateway and evidence/acceptance path. Production startup does not use fixture grants or caller-supplied authority.
 
-The listener is IPv4 loopback only (127.0.0.1). A bearer token is required on every route. Request bodies, Authorization headers, prompt content and provider errors must not be logged. The listener enables SO_REUSEADDR for safe immediate restart after a closed socket enters TIME_WAIT; this does not permit a second active listener on the same address.
+The listener is IPv4 loopback only (127.0.0.1). A bearer token is required on every route except the four static web UI files (§5). Request bodies, Authorization headers, prompt content and provider errors must not be logged. The listener enables SO_REUSEADDR for safe immediate restart after a closed socket enters TIME_WAIT; this does not permit a second active listener on the same address.
 
 Security limitation: this is an application-level boundary. A process running under the same Android UID can generally read a mode-0600 token and access files owned by that UID. Loopback and a token do not establish OS isolation.
 
@@ -55,15 +55,30 @@ Only the dedicated HG runit service is a candidate for activation. Do not enable
 
 ## 5. HTTP contract
 
-All routes require Authorization: Bearer token and a Host header identifying the loopback listener.
+Contract revision 2026-10-29 (owner instruction of 2026-10-29: the web UI's Chat must reach this service with valid authentication and get an answer from HG Brain end to end). The revision is additive: every route that existed keeps its behavior. It adds the web UI files and `POST /v1/chat`. It changes no policy, grant or trust root (MAEP-1.1.0, Q4).
 
-| Method | Route | Behavior |
-|---|---|---|
-| GET | /v1/health/live | Liveness only; not a readiness assertion |
-| GET | /v1/health/ready | 200 only if installed release integrity is VERIFIED and current owner authority is LOADED |
-| GET | /v1/integrity | Installed release integrity and release_id |
-| GET | /v1/tasks/<task_id> | Read-only task snapshot |
-| POST | /v1/tasks | Submit one constrained task through the canonical HG runtime |
+Every route requires Authorization: Bearer token and a Host header identifying the loopback listener, with one exception: the four exact request targets of the web UI below, which carry no data and cause no effect, are served without the token so that a browser can open the page. They still require the loopback Host and a loopback client. Any other path, including any other `/ui/...` target or one with a query string, still answers 401 before routing when the token is missing.
+
+| Method | Route | Token | Behavior |
+|---|---|---|---|
+| GET | /ui/, /ui/index.html, /ui/app.js, /ui/styles.css | not required | The web UI shipped in the release (`hg/ui/`), read once at startup from the verified release root. Headers: `Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store`, same-origin COOP/CORP |
+| GET | /v1/health/live | required | Liveness only; not a readiness assertion |
+| GET | /v1/health/ready | required | 200 only if installed release integrity is VERIFIED and current owner authority is LOADED |
+| GET | /v1/integrity | required | Installed release integrity and release_id |
+| GET | /v1/tasks/<task_id> | required | Read-only task snapshot |
+| POST | /v1/tasks | required | Submit one constrained task through the canonical HG runtime |
+| POST | /v1/chat | required | One message from the owner -> HG Brain model layer -> HG-labelled answer (below) |
+
+The UI calls only its own origin with relative `/v1/...` paths (same address space, so no CORS preflight and no browser local-network permission is involved), keeps the token the owner pastes in the tab's sessionStorage and sends it only in the Authorization header. There is no CORS support: a page from any other origin cannot read responses.
+
+### POST /v1/chat
+
+- Request: Content-Type application/json, one bounded Content-Length, body exactly `{"message": <string>, "general": <boolean>}`. The message is NFC-normalized and trimmed; 1..2000 characters. Anything else: 400 `invalid_request` / `invalid_message`, 415 `content_type`, 413 `body_too_large`, 400 `invalid_json`.
+- Precondition: installed release integrity VERIFIED, else 503 `service_not_ready`. Canonical owner authority is not required: a chat answer is not a MAEP action and causes no effect.
+- Processing (`hg/chat.py`): the owner's assistant home (`$HG_HOME`, default `~/.local/share/hg/assistant`, never created by the service) is checked; the supervised local model process and the pinned model digest are attested as for `hg ask`; then `hg.assistant.ask.ask()` runs with `hg.brain.providers.ModelRouter` holding exactly one provider, the local Ollama model (Q5: no paid provider is reachable from this route). `general=false` behaves like `hg ask`; `general=true` like `hg ask --general` (a question about the owner's own life is still answered only from notes).
+- Response 200: `outcome` (ANSWERED, MEMORY_ONLY or NO_DATA, as `hg ask`), `answer`, `sentences` (each with HG's label NOTE / MODEL / CONFLICT / BADCITE / ABSTAIN), `counts`, `notes` used (content re-read and matched to the receipt's SHA-256), `quarantined`, `note_conflicts`, `provider`, `model`, `model_check`, `listener`, `seconds`, `release`, `display` (what the terminal would show) and `brain`: `router`, `provider_policy`, `model_calls` (event ids of the MODEL_CALL events) and `receipt_event_id` (the ASK receipt). Both kinds of event are appended to `$HG_HOME/asks-YYYY-MM.jsonl`; MODEL_CALL never contains the prompt.
+- Errors: 503 `chat_busy` (one chat at a time: the phone runs one model), `assistant_unavailable`, `assistant_busy`, `model_untrusted`, `notes_ledger_damaged`, `chat_unavailable` (no chat service configured); 500 `internal_error` without detail.
+- Boundary statement: this route does not run through BrainOrchestrator, TaskStore or ActionGateway and is not ENFORCED by the HG runtime path; model output never triggers an action. Same-UID attackers are out of scope (Q3). The v2 line's `/api/dispatch` (branch `stt/maep-v1-20261022`, frozen by Q2) is not part of this contract.
 
 POST requires a valid Idempotency-Key, Content-Type application/json, one bounded Content-Length, and a JSON object with exactly task and steps.
 

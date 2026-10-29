@@ -34,6 +34,12 @@ remote session cannot cut them short:
 5. `python3 -I -B deploy_smoke.py ready|ready-wait RID SECONDS|submit TAG|get TASK_ID` — readiness, a
    verified write on a task id that did not exist (`replayed: false`) with independent read-back,
    idempotent replay and a 409 for a changed body.
+5b. Web UI and chat (release with `hg/ui/`): `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18766/ui/` → `200` without a token, `POST /v1/chat` without a token → `401`; then the on-device UI check, which runs the release's own `app.js` against the live service and the real local model (jsdom is installed once into a private evidence directory, never into the release):
+
+       npm install --prefix ~/hg-v1-evidence/ui-smoke jsdom@26
+       HG_JSDOM_DIR=~/hg-v1-evidence/ui-smoke node <release_root>/deploy/termux/ui_smoke.mjs 18766 ~/hg-v1-evidence/ui-smoke-$(date +%s).json "Thủ đô của Pháp là gì?" general
+
+   It reads the token itself (never printed, never in argv or the report) and exits 0 only if the page showed READY and an ANSWERED reply.
 6. Rollback: `sh switch_service.sh --restore <switch dir>` refuses if the shared config changed, checks
    the old release (quota, verify-root, preflight), stops, backs up the current state, proves the OLD
    release reads it, puts the recorded run script back and waits for READY. If the old release could

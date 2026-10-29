@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="referrer" content="no-referrer" />
+  <title>HG — trợ lý trên điện thoại (OAI-GIANG/HG)</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="top-bar" role="banner">
+    <div class="top-bar-left">
+      <button id="back-btn" class="btn" aria-label="Quay lại" hidden>← Quay lại</button>
+      <strong id="screen-title">Trang chính</strong>
+    </div>
+    <div class="top-bar-right">
+      <span id="service-badge" class="badge badge-neutral" role="status">CHƯA KIỂM TRA</span>
+      <button id="avatar-settings-btn" class="btn" aria-label="Kết nối và bảo mật">⚙ Kết nối</button>
+    </div>
+  </header>
+
+  <main id="app-main" role="main">
+    <div id="global-toast" class="status-banner" role="alert" hidden></div>
+
+    <!-- 1. Trang chính -->
+    <section id="screen-home" class="screen active" data-title="Trang chính" data-root="home">
+      <div class="card">
+        <h2>HG trên điện thoại</h2>
+        <p>Kho mã: <strong>OAI-GIANG/HG</strong> · dịch vụ <code>hg-runtime</code> (<code>hg serve</code>) phục vụ trang này.</p>
+        <p id="health-summary" class="muted mt-1">Dịch vụ: CHƯA KIỂM TRA. Nhập token ở mục Kết nối rồi bấm Kiểm tra dịch vụ.</p>
+        <div class="row mt-2">
+          <button id="btn-probe-health" class="btn btn-primary">Kiểm tra dịch vụ</button>
+          <button class="btn" data-nav-target="chat">Chat</button>
+          <button class="btn" data-nav-target="settings">Kết nối</button>
+          <button class="btn" data-nav-target="models">Model</button>
+          <button class="btn" data-nav-target="tasks">Tác vụ</button>
+          <button class="btn" data-nav-target="diagnostics">Chẩn đoán</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. Chat (ẩn thanh điều hướng dưới) -->
+    <section id="screen-chat" class="screen" data-title="Chat" data-root="chat" data-hide-bottom-nav="true">
+      <div class="card">
+        <div class="row-between mb-1">
+          <span>Hỏi HG · model chạy ngay trên điện thoại</span>
+          <span class="badge badge-blocked">Enter = xuống dòng</span>
+        </div>
+        <p class="muted small mb-1">Nhãn của HG: <span class="mark mark-NOTE">[N1·dd/mm]</span> khớp ghi chú ·
+          <span class="mark mark-MODEL">[?]</span> model tự nói, chưa kiểm chứng ·
+          <span class="mark mark-CONFLICT">[≠N1]</span> mâu thuẫn ghi chú · <span class="mark mark-BADCITE">[!]</span> trích dẫn sai.</p>
+        <div id="chat-messages" class="chat-messages" aria-live="polite"></div>
+        <div class="chat-options">
+          <label class="check"><input id="chat-general" type="checkbox" checked />
+            Cho phép model trả lời câu hỏi kiến thức chung (câu hỏi về đời tư của Chủ Nhân vẫn chỉ trả lời từ ghi chú)</label>
+        </div>
+        <div class="chat-composer">
+          <textarea id="chat-input" aria-label="Nhập tin nhắn" maxlength="2000"
+            placeholder="Nhập câu hỏi (Enter để xuống dòng, bấm Gửi để gửi)..."></textarea>
+          <button id="chat-send-btn" class="btn btn-primary" aria-label="Gửi tin nhắn">Gửi</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. Model -->
+    <section id="screen-models" class="screen" data-title="Model" data-root="tools">
+      <div class="card">
+        <h2>Model và nhà cung cấp</h2>
+        <p>Chỉ dùng model local qua Ollama trên điện thoại (quyết định Q5). Trang này không có lựa chọn nhà cung cấp trả phí.</p>
+        <p class="muted mt-1">Thông tin dưới đây lấy từ câu trả lời chat gần nhất, không phải dữ liệu mẫu.</p>
+        <pre id="model-info" class="code-block">Chưa có câu trả lời nào trong phiên này.</pre>
+      </div>
+    </section>
+
+    <!-- 4. Ghi chú -->
+    <section id="screen-memory" class="screen" data-title="Ghi chú" data-root="files">
+      <div class="card">
+        <h2>Ghi chú của Chủ Nhân</h2>
+        <p>Chat đọc ghi chú để trả lời và gắn nhãn từng câu. Thêm hoặc sửa ghi chú trong Termux:
+          <code>hg note add "nội dung"</code>, <code>hg note list</code>.</p>
+        <p class="mt-1">Sửa ghi chú qua trang web: <span class="badge badge-blocked">CHƯA MỞ QUA HTTP</span></p>
+      </div>
+    </section>
+
+    <!-- 5. Tệp -->
+    <section id="screen-files" class="screen" data-title="Tệp" data-root="files">
+      <div class="card">
+        <h2>Tệp</h2>
+        <p>Chọn tệp từ điện thoại: <span class="badge badge-blocked">CHƯA CÓ</span></p>
+        <p class="muted mt-1">Tóm tắt tệp dùng lệnh <code>hg summarize TỆP</code> trong Termux.</p>
+      </div>
+    </section>
+
+    <!-- 6. Công cụ -->
+    <section id="screen-tools" class="screen" data-title="Công cụ" data-root="tools">
+      <div class="card">
+        <h2>Công cụ</h2>
+        <div class="grid-2">
+          <button class="btn" data-nav-target="models">Model</button>
+          <button class="btn" data-nav-target="memory">Ghi chú</button>
+          <button class="btn" data-nav-target="tasks">Tác vụ</button>
+          <button class="btn" data-nav-target="search">Tìm kiếm</button>
+          <button class="btn" data-nav-target="diagnostics">Chẩn đoán</button>
+          <button class="btn" data-nav-target="settings">Kết nối</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 7. Tác vụ -->
+    <section id="screen-tasks" class="screen" data-title="Tác vụ" data-root="quick-actions">
+      <div class="card">
+        <h2>Tác vụ MAEP</h2>
+        <label for="task-scope-id" class="field-label">Mã tác vụ</label>
+        <input id="task-scope-id" class="field mb-1" type="text" autocomplete="off" spellcheck="false"
+          placeholder="Ví dụ: SMOKE-..." aria-describedby="task-scope-help" />
+        <p id="task-scope-help" class="muted small mb-1">Đọc trạng thái một tác vụ qua <code>GET /v1/tasks/&lt;mã&gt;</code> (cần token).</p>
+        <div class="row mb-1">
+          <button id="btn-fetch-tasks" class="btn btn-primary">Xem tác vụ</button>
+        </div>
+        <pre id="tasks-output" class="code-block">Chưa đọc tác vụ nào.</pre>
+      </div>
+    </section>
+
+    <!-- 8. Tìm kiếm -->
+    <section id="screen-search" class="screen" data-title="Tìm kiếm" data-root="tools">
+      <div class="card">
+        <h2>Tìm kiếm và nghiên cứu</h2>
+        <p>Trạng thái: <span class="badge badge-blocked">CHƯA MỞ QUA HTTP</span></p>
+        <p class="muted mt-1">Tìm trong ghi chú dùng <code>hg note search "từ khoá"</code> trong Termux.</p>
+      </div>
+    </section>
+
+    <!-- 9. Chẩn đoán -->
+    <section id="screen-diagnostics" class="screen" data-title="Chẩn đoán" data-root="tools">
+      <div class="card">
+        <h2>Chẩn đoán</h2>
+        <p>Dịch vụ: <span id="diag-health-status" class="badge badge-neutral">CHƯA KIỂM TRA</span></p>
+        <pre id="diag-health-json" class="code-block">Chưa kiểm tra.</pre>
+        <p class="muted mt-1">Pin, nhiệt độ: <span class="badge badge-blocked">CHƯA CÓ</span> (trình duyệt không đọc được số liệu thật của Android; không hiển thị số giả).</p>
+      </div>
+    </section>
+
+    <!-- 10. Kết nối và bảo mật -->
+    <section id="screen-settings" class="screen" data-title="Kết nối" data-root="settings">
+      <div class="card">
+        <h2>Kết nối với hg-runtime</h2>
+        <p>Trang này chỉ gọi đúng dịch vụ đã phục vụ nó (cùng địa chỉ), qua các route <code>/v1/…</code>, kèm token trong header <code>Authorization</code>.</p>
+        <label for="token-input" class="field-label mt-2">Token dịch vụ</label>
+        <input id="token-input" class="field mb-1" type="password" autocomplete="off" spellcheck="false"
+          placeholder="Dán token của hg-runtime" aria-describedby="token-help" />
+        <p id="token-help" class="muted small mb-1">Lấy token trong Termux: <code>cat ~/.config/hg/runtime-service.token</code>, giữ ngón tay để sao chép.
+          Token chỉ giữ trong tab này (sessionStorage), không lưu lâu dài, không đưa vào địa chỉ trang.</p>
+        <div class="row">
+          <button id="btn-save-token" class="btn btn-primary">Lưu và kiểm tra</button>
+          <button id="btn-forget-token" class="btn">Quên token</button>
+        </div>
+        <p id="token-status" class="muted mt-1">Chưa có token.</p>
+      </div>
+    </section>
+  </main>
+
+  <nav id="bottom-nav" class="bottom-nav" aria-label="Điều hướng chính">
+    <button class="nav-item active" data-root-nav="home" data-nav-target="home">Trang chính</button>
+    <button class="nav-item" data-root-nav="chat" data-nav-target="chat">Chat</button>
+    <button class="nav-item" data-root-nav="quick-actions" data-nav-target="tasks">Tác vụ</button>
+    <button class="nav-item" data-root-nav="files" data-nav-target="files">Tệp</button>
+    <button class="nav-item" data-root-nav="tools" data-nav-target="tools">Công cụ</button>
+  </nav>
+
+  <script src="app.js"></script>
+</body>
+</html>
