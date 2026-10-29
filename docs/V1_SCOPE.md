@@ -397,3 +397,26 @@ Chỉ thị của Chủ Nhân (2026-10-29, nguyên văn rút gọn): *frontend c
 | AC-W8 | Điện thoại, E2E thật: request `/v1/chat` có token → model local thật (qwen3:1.7b, digest ghim, tiến trình VERIFIED) → ANSWERED; sổ `asks-YYYY-MM.jsonl` có MODEL_CALL OK + ASK đúng event id trong phản hồi; chính `app.js` do release phục vụ, chạy trên điện thoại (jsdom), hiển thị câu trả lời đó |
 
 Kết quả từng tiêu chí: báo cáo cuối của task và PR.
+
+### 13.4 Kết quả (2026-10-29, 10:53 +07)
+
+Đã vào `main`: PR #73 (merge `c7b2996`, UI + `/v1/chat`), PR #74 (merge `cd87154`, sửa công cụ `ui_smoke.mjs` và F-W2). CI `unittest (3.13)`, `unittest (3.14)`, `rt06-anchor` xanh trên cả hai.
+
+| AC | Kết quả | Bằng chứng |
+|---|---|---|
+| AC-W1 | PASS | `hg/tests/test_http_ui_chat.py::UISourceContractTests` (7 test) |
+| AC-W2 | PASS | test HTTP thật; trên điện thoại: `/ui/`, `/ui/app.js`, `/ui/styles.css` → 200 không token, CSP đúng; `/v1/chat`, `/v1/health/ready`, `/ui/secret` không token → 401; Host lạ → 400 |
+| AC-W3 | PASS | `ChatRouteTests`, `ChatErrorMappingTests`, `ChatNotConfiguredTests` |
+| AC-W4 | PASS | `hg/tests/test_chat_service.py` (13 test, máy chủ model giả qua HTTP thật) |
+| AC-W5 | PASS (sandbox) | `python -m hg.tests.ui_browser_e2e` trên Chromium headless: 14/14. Chrome thật trên điện thoại: NOT_RUN (agent không điều khiển được Chrome của điện thoại) |
+| AC-W6 | PASS | maep 304, hg 410, hooks 32 — OK; selfcheck PASS; bench 10/10 |
+| AC-W7 | PASS | release `8ac60aa0…` (từ `cd87154`) build hai lần trùng byte trên điện thoại; tree `2f006d44…`, digest danh sách file `2458bfdc…` trùng bản build ở sandbox; switch có điểm phục hồi `switch-20261029T035300Z`; READY, integrity VERIFIED, trust LOADED @ `cd87154`; smoke `DEPLOY-SMOKE-chatui2-1793246003` CLOSED_VERIFIED, đọc lại khớp, replay, 409 khi đổi body |
+| AC-W8 | PASS | `/v1/chat` có token → ANSWERED "Thủ đô của Pháp là Paris." nhãn MODEL, provider `ollama`, `qwen3:1.7b`, digest ghim `8f68893c…`, tiến trình VERIFIED_PROCESS; MODEL_CALL `d119c9ff…` OK 2140 ms + ASK `a6d01098…` (kênh `http:/v1/chat`) có trong `asks-2026-10.jsonl`; câu đời tư không ghi chú → NO_DATA, không gọi model. `ui_smoke.mjs` của chính release chạy trên điện thoại: SẴN SÀNG → `POST /v1/chat` 200 có Authorization → trang hiển thị câu trả lời với nhãn `[?]` |
+
+Rollback (HG_SERVICE_V1 §6.7) đã chạy thật: `--restore switch-20261029T034058Z` → release cũ `1cb93e5f…` READY trên state hiện tại và đọc được tác vụ do release mới ghi (`DEPLOY-SMOKE-chatui-1793245285` CLOSED_VERIFIED); rồi chuyển lại `8ac60aa0…` READY.
+
+Phát hiện:
+- **F-W2 (đã sửa, PR #74)**: `switch_service.sh --restore` lấy release cũ từ config dùng chung (`f7cfd766…`, các lần switch không sửa file này) thay vì từ `run.old` (`1cb93e5f…`) → kiểm tra một release, khởi động release khác, chờ READY sai id; trap đưa dịch vụ về release mới sau 180 s (an toàn). Sửa: lấy config và release từ `run.old`.
+- **F-W1 (chưa sửa, chất lượng model)**: với câu hỏi kiến thức chung không có ghi chú, `qwen3:1.7b` có lần chèn "[Ghi chú chưa có thông tin này]" vào câu trả lời ("Thủ đô của Nhật Bản là Tokyo [Ghi chú chưa có thông tin này]."). HG gắn đúng `[?]`. Sửa prompt ảnh hưởng số đo AC-A6 nên để Chủ Nhân quyết cùng phương án mục 12.7.
+- **F-W3 (ngoài repo)**: frontend Stitch và ứng dụng Android (`~/HG-stitch-isolated-20261028T191222Z/frontend`, `android-app`, file chưa commit) vẫn trỏ `8080`; không sửa vì là file chưa commit nằm ngoài repo. Giao diện chuẩn hiện là `http://127.0.0.1:18766/ui/`; nếu giữ ứng dụng Android thì `MainActivity` nên nạp địa chỉ này thay cho asset đóng gói.
+
