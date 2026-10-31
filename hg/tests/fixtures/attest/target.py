@@ -51,6 +51,9 @@ elif mode == "reuseport1":
 elif mode == "reuseport2":
     main = tcp(port=port, reuseport=True)
     tcp(port=main.getsockname()[1], reuseport=True)
+elif mode == "dup":
+    main = tcp(port=port)
+    duplicate = os.dup(main.fileno())   # second descriptor, SAME socket (same inode): still one listener
 elif mode == "two-loopback":
     main = tcp(port=port)
     tcp("127.0.0.2", main.getsockname()[1])
@@ -75,6 +78,8 @@ def on_usr1(*_):
         for path in ("/bin/sleep", "/usr/bin/sleep"):
             if os.path.exists(path):
                 os.execv(path, [path, "3600"])
+    elif action == "close-first" and main is not None:
+        main.close()                    # the dup() descriptor (mode "dup") keeps the socket listening
     elif action == "reuse" and main is not None:
         fd = main.fileno()
         other = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)

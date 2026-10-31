@@ -303,6 +303,81 @@ class CapabilityTests(unittest.TestCase):
         self.assertEqual(att.reverify()["code"], "NOT_VERIFIED")
 
 
+class SharingScanTests(unittest.TestCase):
+    """socket_holders(): holders vs limits of observation, on a fake /proc tree (permission denials are
+    injected because root ignores file modes)."""
+
+    def setUp(self):
+        self.proc = Path(tempfile.mkdtemp(prefix="hg-fakeproc-"))
+        self.addCleanup(shutil.rmtree, self.proc, True)
+        me = os.geteuid()
+        self.denied_fd_dirs, self.denied_links = set(), set()
+        for pid, uid in ((100, me), (200, 0), (300, me + 1), (400, me), (500, me), (600, me)):
+            (self.proc / str(pid) / "fd").mkdir(parents=True)
+            (self.proc / str(pid) / "status").write_text(f"Name:\tx\nUid:\t{uid}\t{uid}\t{uid}\t{uid}\n")
+        (self.proc / "100" / "fd" / "3").symlink_to("socket:[777]")       # a real holder
+        (self.proc / "500" / "fd" / "4").symlink_to("socket:[888]")       # another socket
+        (self.proc / "600" / "fd" / "5").symlink_to("socket:[777]")       # excluded (the attested PID)
+        (self.proc / "self").mkdir()
+
+    def scan(self, *, deny_dirs=(), deny_links=(), mountinfo=None, exclude=(600,)):
+        real_listdir, real_readlink = os.listdir, os.readlink
+        info = self.proc / "self" / "mountinfo"
+        if mountinfo is None:
+            info.unlink(missing_ok=True)
+        else:
+            info.write_text(mountinfo)
+
+        def listdir(path):
+            if str(path) in {str(self.proc / str(p) / "fd") for p in deny_dirs}:
+                raise PermissionError(errno.EACCES, "denied")
+            return real_listdir(path)
+
+        def readlink(path):
+            if str(path) in {str(self.proc / l) for l in deny_links}:
+                raise PermissionError(errno.EACCES, "denied")
+            return real_readlink(path)
+
+        with mock.patch.object(at.os, "listdir", listdir), mock.patch.object(at.os, "readlink", readlink):
+            return at.socket_holders(777, exclude=set(exclude), proc=str(self.proc))
+
+    MOUNT_PLAIN = "22 1 0:5 / /proc rw,nosuid,nodev,noexec relatime shared:13 - proc proc rw\n"
+    MOUNT_HIDEPID = "22 1 0:5 / /proc rw,nosuid,nodev,noexec relatime shared:13 - proc proc rw,hidepid=2,gid=3009\n"
+
+    def test_holder_found_and_complete_scope(self):
+        result = self.scan(mountinfo=self.MOUNT_PLAIN)
+        self.assertEqual(result["holders"], [100])
+        self.assertEqual(result["scope"], "ALL_PROCESSES_INSPECTED")
+
+    def test_uninspectable_processes_are_classified_not_counted_as_holders(self):
+        result = self.scan(deny_dirs=(200, 300, 400), mountinfo=self.MOUNT_PLAIN)
+        self.assertEqual(result["holders"], [100])
+        root_is_me = os.geteuid() == 0                                    # a root attester's own UID is 0
+        self.assertEqual(result["uninspectable"], {"same_uid": 2 if root_is_me else 1, "root": 0 if root_is_me else 1,
+                                                   "other_uid": 1, "unknown": 0})
+        self.assertEqual(result["scope"], "PARTIAL")
+
+    def test_unreadable_descriptor_and_hidepid_make_scope_partial(self):
+        result = self.scan(deny_links=("500/fd/4",), mountinfo=self.MOUNT_PLAIN)
+        self.assertEqual((result["unreadable_descriptors"], result["scope"]), (1, "PARTIAL"))
+        result = self.scan(mountinfo=self.MOUNT_HIDEPID)
+        self.assertEqual((result["proc_hidepid"], result["scope"]), ("2", "PARTIAL"))
+        result = self.scan()                                              # no mountinfo: cannot know
+        self.assertEqual((result["proc_hidepid"], result["scope"]), ("UNKNOWN", "PARTIAL"))
+
+    def test_excluded_pid_is_not_a_holder(self):
+        result = self.scan(exclude=(600, 100), mountinfo=self.MOUNT_PLAIN)
+        self.assertEqual(result["holders"], [])
+
+    @unittest.skipUnless(LINUX, "Linux /proc required")
+    def test_real_proc_scan_reports_its_own_limits(self):
+        result = at.socket_holders(0, exclude={os.getpid()})
+        self.assertEqual(result["holders"], [])
+        complete = (not any(result["uninspectable"].values()) and not result["unreadable_descriptors"]
+                    and result["proc_hidepid"] is None)
+        self.assertEqual(result["scope"], "ALL_PROCESSES_INSPECTED" if complete else "PARTIAL")
+
+
 @unittest.skipUnless(LINUX, "Linux /proc required")
 class PidFileTests(unittest.TestCase):
     def setUp(self):
@@ -377,6 +452,10 @@ class AttestHappyPathTests(_LabCase):
         self.assertTrue(all(layer["status"] == "PASS" for layer in att.layers.values()))
         self.assertEqual(att.pid, doc["pid"])
         self.assertEqual(att.layers["L5_listener"]["fd"], doc["fd"])
+        sharing = att.layers["L5_listener"]["sharing"]
+        self.assertIn(sharing["scope"], ("ALL_PROCESSES_INSPECTED", "PARTIAL"))
+        self.assertEqual(sharing["basis"], at.SHARING_BASIS)              # the limit travels with the PASS
+        self.assertNotIn("holders", sharing)
         # an HTTP-like exchange happens here in production; the listener is still the same one
         with socket.create_connection(("127.0.0.1", doc["port"]), timeout=5):
             pass
@@ -584,6 +663,18 @@ class AttestL5Tests(_LabCase):
         att, _ = self.l5("reuseport2")
         self.assertEqual(_layer(att, "L5_listener"), ("FAIL", "MULTIPLE_LISTENERS"))
 
+    def test_duplicated_descriptor_is_one_listener_but_independent_sockets_are_two(self):
+        """F-9: two descriptors of ONE socket (dup) are one listener; two sockets on one port are two."""
+        att, doc = self.l5("dup")
+        layer = att.layers["L5_listener"]
+        self.assertEqual((layer["status"], layer["code"]), ("PASS", "LISTENER_OWNED"), layer)
+        self.assertEqual(len(layer["fds"]), 2)
+        self.assertEqual(layer["fd"], min(layer["fds"]))
+        self.assertEqual(att.reverify()["status"], "PASS")
+        att, _ = self.l5("reuseport2")
+        layer = att.layers["L5_listener"]
+        self.assertEqual((layer["status"], layer["code"], layer["count"]), ("FAIL", "MULTIPLE_LISTENERS", 2))
+
     def test_listener_shared_with_another_process(self):
         att, doc = self.l5("shared")
         self.assertEqual(_layer(att, "L5_listener"), ("FAIL", "LISTENER_SHARED"))
@@ -661,6 +752,14 @@ class AttestBracketTests(_LabCase):
         att = self.attest(service, doc["port"])
         self.assertEqual(att.status, "VERIFIED_LISTENER", att.report())
         return att, doc
+
+    def test_first_descriptor_closed_but_duplicate_keeps_the_listener(self):
+        service, doc = self.lab.start("dup", usr1="close-first")
+        att = self.attest(service, doc["port"])
+        self.assertEqual(att.status, "VERIFIED_LISTENER", att.report())
+        os.kill(doc["pid"], signal.SIGUSR1)
+        self.assertTrue(_wait(lambda: not os.path.exists(f"/proc/{doc['pid']}/fd/{doc['fd']}"), 5))
+        self.assertEqual(att.reverify()["status"], "PASS")           # same socket, other descriptor
 
     def test_listener_closed_after_attestation(self):
         att, doc = self.verified(usr1="close")

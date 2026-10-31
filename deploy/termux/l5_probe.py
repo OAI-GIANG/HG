@@ -196,26 +196,60 @@ def inspect(pid, pidfd, before_getfd=None):
     return rows, errors
 
 
+def proc_hidepid():
+    """hidepid of the /proc mount: None if absent, "UNKNOWN" if unreadable (then other users' processes
+    may not even be listed)."""
+    try:
+        with open("/proc/self/mountinfo", encoding="utf-8", errors="replace") as stream:
+            for line in stream:
+                left, sep, right = line.partition(" - ")
+                fields, tail = left.split(), right.split()
+                if sep and len(fields) > 5 and fields[4] == "/proc" and tail[:1] == ["proc"]:
+                    options = fields[5].split(",") + (tail[2].split(",") if len(tail) > 2 else [])
+                    return next((o.split("=", 1)[1] for o in options if o.startswith("hidepid=")), None)
+    except OSError:
+        return "UNKNOWN"
+    return "UNKNOWN"
+
+
 def holders(inode, exclude):
-    found, hidden = [], 0
+    """Holders of socket `inode` among listed processes, plus the limits of that observation:
+    uninspectable processes by UID class (from the status Uid line: /proc/PID of a non-dumpable process
+    is owned by root), unreadable descriptors, hidepid. scope PARTIAL means exclusivity is shown only
+    among inspected processes."""
+    euid, found, unreadable = os.geteuid(), [], 0
+    uninspectable = {"same_uid": 0, "root": 0, "other_uid": 0, "unknown": 0}
     for name in os.listdir("/proc"):
         if not name.isdigit() or int(name) in exclude:
             continue
         try:
             entries = os.listdir(f"/proc/{name}/fd")
         except PermissionError:
-            hidden += 1
+            status = status_fields(name)
+            try:
+                uid = int(status["Uid"].split()[1])
+                kind = "same_uid" if uid == euid else "root" if uid == 0 else "other_uid"
+            except (KeyError, ValueError, IndexError, TypeError):
+                kind = "unknown"
+            uninspectable[kind] += 1
             continue
         except OSError:
             continue
         for entry in entries:
             try:
-                if os.readlink(f"/proc/{name}/fd/{entry}") == f"socket:[{inode}]":
-                    found.append(int(name))
-                    break
-            except OSError:
+                link = os.readlink(f"/proc/{name}/fd/{entry}")
+            except FileNotFoundError:
                 continue
-    return found, hidden
+            except OSError:
+                unreadable += 1
+                continue
+            if link == f"socket:[{inode}]":
+                found.append(int(name))
+                break
+    hidepid = proc_hidepid()
+    complete = not any(uninspectable.values()) and not unreadable and hidepid is None
+    return found, {"uninspectable": uninspectable, "unreadable_descriptors": unreadable, "proc_hidepid": hidepid,
+                   "scope": "ALL_PROCESSES_INSPECTED" if complete else "PARTIAL"}
 
 
 def exited(pidfd):
@@ -283,9 +317,9 @@ def self_test(report):
                                        and by_fd.get(info["udp_fd"], {}).get("listening") is False)
         checks["exactly_one_tcp_listener"] = sum(1 for row in rows if row.get("listening")
                                                  and row.get("type") == "SOCK_STREAM") == 1
-        found, hidden = holders(lst.get("inode_dup", -1), exclude={pid, os.getpid()})
+        found, sharing = holders(lst.get("inode_dup", -1), exclude={pid, os.getpid()})
         checks["listener_not_shared"] = not found
-        report["uninspectable_processes"] = hidden
+        report["sharing"] = sharing
 
         def swap(number):                     # close + reuse the descriptor between listing and getfd
             if number == info["listener_fd"]:
@@ -367,18 +401,20 @@ def target(report, pid, expect):
         matches = [r for r in rows if r.get("listening") and r.get("type") == "SOCK_STREAM" and r.get("consistent")
                    and r.get("address") == host and r.get("port") == port]
         same_port = [r for r in rows if r.get("listening") and r.get("port") == port and r.get("address") != host]
+        sockets = sorted({r["inode_dup"] for r in matches})   # a listener is a socket; dup() adds descriptors
         alive = starttime(pid) == t0 and not exited(pidfd)
-        if len(matches) == 1 and not same_port and not matches[0]["reuseport"] and alive:
-            found, hidden = holders(matches[0]["inode_dup"], exclude={pid, os.getpid()})
-            report["holders"], report["uninspectable_processes"] = found, hidden
+        if len(sockets) == 1 and not same_port and not any(r["reuseport"] for r in matches) and alive:
+            found, sharing = holders(sockets[0], exclude={pid, os.getpid()})
+            report["holders"], report["sharing"] = found, sharing
             if not found:
-                report["result"] = {"status": "PASS", "code": "LISTENER_OWNED", "fd": matches[0]["fd"],
-                                    "inode": matches[0]["inode_dup"]}
+                report["result"] = {"status": "PASS", "code": "LISTENER_OWNED",
+                                    "fd": min(r["fd"] for r in matches), "fds": sorted(r["fd"] for r in matches),
+                                    "inode": sockets[0], "sharing_scope": sharing["scope"]}
                 return 0
             report["result"] = {"status": "FAIL", "code": "LISTENER_SHARED"}
             return 1
-        report["result"] = {"status": "FAIL", "code": "NO_UNIQUE_LISTENER", "matches": len(matches),
-                            "other_binds_on_port": len(same_port), "alive": alive}
+        report["result"] = {"status": "FAIL", "code": "NO_UNIQUE_LISTENER", "listening_sockets": len(sockets),
+                            "descriptors": len(matches), "other_binds_on_port": len(same_port), "alive": alive}
         return 1
     finally:
         os.close(pidfd)

@@ -533,10 +533,47 @@ def _is_tcp_listener(info):
             and info["proto"] == socket.IPPROTO_TCP and info["listening"])
 
 
+SHARING_BASIS = ("exclusive among the processes HG could inspect; an uninspected process could hold this socket "
+                 "only if Ollama, a same-UID process or root passed it the descriptor (same-UID and root: out of "
+                 "scope, owner decision Q3)")
+
+
+def proc_hidepid(proc="/proc"):
+    """The hidepid option of the proc mount (None if absent, "UNKNOWN" if unreadable). With hidepid set,
+    other users' processes are not even listed, so no scan of /proc can count them."""
+    try:
+        with open(f"{proc}/self/mountinfo", encoding="utf-8", errors="replace") as stream:
+            for line in stream:
+                left, sep, right = line.partition(" - ")
+                fields, tail = left.split(), right.split()
+                if sep and len(fields) > 5 and fields[4] == "/proc" and tail[:1] == ["proc"]:
+                    options = fields[5].split(",") + (tail[2].split(",") if len(tail) > 2 else [])
+                    return next((o.split("=", 1)[1] for o in options if o.startswith("hidepid=")), None)
+    except OSError:
+        return "UNKNOWN"
+    return "UNKNOWN"
+
+
+def _uid_class(pid, euid, proc):
+    # /proc/PID is owned by root when the process is not dumpable (e.g. the Termux app process itself),
+    # so the owner of the directory is not the process's UID; the status line is.
+    try:
+        uid = int(read_status(pid, proc=proc)["Uid"].split()[1])
+    except (OSError, KeyError, ValueError, IndexError):
+        return "unknown"
+    return "same_uid" if uid == euid else "root" if uid == 0 else "other_uid"
+
+
 def socket_holders(inode, *, exclude=(), proc="/proc"):
-    """PIDs among visible processes whose descriptor table holds socket `inode`; plus a count of
-    processes HG may not inspect (other users' processes are hidden or unreadable on Android)."""
-    target, holders, hidden = f"socket:[{inode}]", [], 0
+    """Which listed processes hold socket `inode`, and how complete that observation is.
+
+    Returns holders (PIDs), uninspectable processes by UID class, descriptors whose link could not be
+    read, the proc mount's hidepid option, and scope: ALL_PROCESSES_INSPECTED only when nothing was
+    hidden or unreadable and hidepid is off; otherwise PARTIAL. PARTIAL never means "shared"; it means
+    exclusivity is shown only among inspected processes (SHARING_BASIS)."""
+    target, euid = f"socket:[{inode}]", os.geteuid()
+    holders, unreadable = [], 0
+    uninspectable = {"same_uid": 0, "root": 0, "other_uid": 0, "unknown": 0}
     for name in os.listdir(proc):
         if not name.isdigit() or int(name) in exclude:
             continue
@@ -545,16 +582,23 @@ def socket_holders(inode, *, exclude=(), proc="/proc"):
         except FileNotFoundError:
             continue
         except PermissionError:
-            hidden += 1
+            uninspectable[_uid_class(name, euid, proc)] += 1
             continue
         for entry in entries:
             try:
-                if os.readlink(f"{proc}/{name}/fd/{entry}") == target:
-                    holders.append(int(name))
-                    break
+                link = os.readlink(f"{proc}/{name}/fd/{entry}")
+            except FileNotFoundError:
+                continue                     # closed while scanning
             except OSError:
+                unreadable += 1
                 continue
-    return holders, hidden
+            if link == target:
+                holders.append(int(name))
+                break
+    hidepid = proc_hidepid(proc)
+    complete = not any(uninspectable.values()) and not unreadable and hidepid is None
+    return {"holders": holders, "uninspectable": uninspectable, "unreadable_descriptors": unreadable,
+            "proc_hidepid": hidepid, "scope": "ALL_PROCESSES_INSPECTED" if complete else "PARTIAL"}
 
 
 def _listener(pid, pidfd, ref, host, port, proc, getfd, hooks, check_capability):
@@ -617,28 +661,36 @@ def _listener(pid, pidfd, ref, host, port, proc, getfd, hooks, check_capability)
         else:
             unexpected.append(record)
     if unexpected:
-        raise _LayerFail("UNEXPECTED_BIND_ON_PORT", binds=[u["address"] for u in unexpected])
-    if not matches:
+        raise _LayerFail("UNEXPECTED_BIND_ON_PORT", binds=sorted({u["address"] for u in unexpected}))
+    # Listeners are sockets, not descriptors: dup() gives one socket several descriptors (same inode).
+    sockets = {}
+    for record in matches:
+        sockets.setdefault(record["inode"], []).append(record)
+    if not sockets:
         raise _LayerFail("NO_LISTENER", inspected_fds=len(fds), raced=raced)
-    if len(matches) > 1:
-        raise _LayerFail("MULTIPLE_LISTENERS", count=len(matches))
-    match = matches[0]
-    if match["reuseport"]:
+    if len(sockets) > 1:
+        raise _LayerFail("MULTIPLE_LISTENERS", count=len(sockets))
+    (inode, records), = sockets.items()
+    numbers = sorted(r["fd"] for r in records)
+    match = {"fd": numbers[0], "fds": numbers, "inode": inode, "address": records[0]["address"], "port": port}
+    if any(r["reuseport"] for r in records):
         raise _LayerFail("REUSEPORT_SET")
     try:
-        holders, hidden = socket_holders(match["inode"], exclude={pid, os.getpid()}, proc=proc)
+        sharing = socket_holders(inode, exclude={pid, os.getpid()}, proc=proc)
     except OSError as exc:
         raise _LayerFail("PROC_SCAN_FAILED", error=_errname(exc)) from exc
-    if holders:
-        raise _LayerFail("LISTENER_SHARED", holders=holders[:8])
+    if sharing["holders"]:
+        raise _LayerFail("LISTENER_SHARED", holders=sharing["holders"][:8])
     try:
         now = read_stat(pid, proc=proc)
     except (OSError, ValueError) as exc:
         raise _LayerFail("PROCESS_EXITED") from exc
     if now.starttime != ref.starttime or _exited(pidfd):
         raise _LayerFail("PID_REUSED_OR_EXITED")
-    return match, _result(PASS, "LISTENER_OWNED", fd=match["fd"], inode=match["inode"], address=match["address"],
-                          port=port, uninspectable_processes=hidden, raced_descriptors=raced)
+    sharing.pop("holders")
+    sharing["basis"] = SHARING_BASIS
+    return match, _result(PASS, "LISTENER_OWNED", fd=match["fd"], fds=numbers, inode=inode, address=match["address"],
+                          port=port, sharing=sharing, raced_descriptors=raced)
 
 
 # ---------------------------------------------------------------- orchestration
@@ -684,18 +736,24 @@ class Attestation:
             exe = os.stat(f"{self.proc}/{pid}/exe")
             if (exe.st_dev, exe.st_ino) != self.exe:
                 return _result(FAIL, "EXEC_SINCE_ATTESTATION")
-            try:
-                dup = self._getfd(self.pidfd, self.listener["fd"])
-            except OSError as exc:
-                if exc.errno == errno.EBADF:
-                    return _result(FAIL, "LISTENER_GONE")
-                raise
-            try:
-                if os.fstat(dup).st_ino != self.listener["inode"]:
-                    return _result(FAIL, "LISTENER_REPLACED")
-                info = socket_info(dup)
-            finally:
-                os.close(dup)
+            info, replaced = None, False
+            for number in self.listener["fds"]:      # any descriptor of the recorded socket will do
+                try:
+                    dup = self._getfd(self.pidfd, number)
+                except OSError as exc:
+                    if exc.errno == errno.EBADF:
+                        continue
+                    raise
+                try:
+                    if os.fstat(dup).st_ino != self.listener["inode"]:
+                        replaced = True
+                        continue
+                    info = socket_info(dup)
+                    break
+                finally:
+                    os.close(dup)
+            if info is None:
+                return _result(FAIL, "LISTENER_REPLACED" if replaced else "LISTENER_GONE")
             if not _is_tcp_listener(info) or (info.get("address"), info.get("port")) != (
                     self.listener["address"], self.port):
                 return _result(FAIL, "LISTENER_GONE")
