@@ -216,6 +216,10 @@ class IdempotencyStore:
     def __init__(self, path):
         self.path = str(path)
         self._lock = threading.Lock()
+        # Keys claimed by requests currently executing in this service process.
+        # This is intentionally process-local: after a restart the set is empty,
+        # so a durable STARTED receipt is treated as an orphan and fails closed.
+        self._active_keys = set()
         self._db = connect_nofollow(sqlite3, self.path, timeout=5, check_same_thread=False)
         self._db.execute("PRAGMA journal_mode=WAL")
         self._db.execute("PRAGMA synchronous=FULL")
@@ -244,11 +248,19 @@ class IdempotencyStore:
                         return "CONFLICT", None
                     if state == "COMPLETE":
                         return "REPLAY", json.loads(response)
+                    if state == "STARTED":
+                        # The same store instance is shared by all handler threads
+                        # in the one admitted service process. A key absent from
+                        # this process-local set is an orphaned durable claim.
+                        return ("IN_PROGRESS" if key in self._active_keys else "IN_DOUBT"), None
                     return "IN_DOUBT", None
                 self._db.execute(
                     "INSERT INTO requests(idem_key,digest,state) VALUES(?,?, 'STARTED')",
                     (key, digest))
                 self._db.commit()
+                # Add while still holding _lock: another handler cannot observe
+                # STARTED between the durable commit and active registration.
+                self._active_keys.add(key)
                 return "NEW", None
             except Exception:
                 self._db.rollback()
@@ -264,17 +276,25 @@ class IdempotencyStore:
                 if cursor.rowcount != 1:
                     raise RuntimeError("idempotency receipt transition failed")
                 self._db.commit()
+                self._active_keys.discard(key)
             except Exception:
                 self._db.rollback()
                 raise
 
     def in_doubt(self, key):
         with self._lock:
-            self._db.execute("UPDATE requests SET state='IN_DOUBT' WHERE idem_key=? AND state='STARTED'", (key,))
-            self._db.commit()
+            try:
+                self._db.execute("UPDATE requests SET state='IN_DOUBT' WHERE idem_key=? AND state='STARTED'", (key,))
+                self._db.commit()
+            finally:
+                # Even if persistence fails, this request is no longer executing
+                # in this process; the durable STARTED row will be treated as
+                # IN_DOUBT by the next begin() call.
+                self._active_keys.discard(key)
 
     def close(self):
         with self._lock:
+            self._active_keys.clear()
             self._db.close()
 
 
@@ -594,6 +614,9 @@ class HGHTTPServer(http.server.ThreadingHTTPServer):
                     if mode == "REPLAY":
                         self._send(200, {"replayed": True, "result": prior})
                         return
+                    if mode == "IN_PROGRESS":
+                        raise HTTPBoundaryError(409, "request_in_progress",
+                                                "matching request is still being processed; retry with the same key later")
                     if mode == "IN_DOUBT":
                         raise HTTPBoundaryError(409, "outcome_in_doubt", "prior request outcome is ambiguous; reconcile before retry")
                     try:

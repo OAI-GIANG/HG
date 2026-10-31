@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from maep.authority.canonical_source import CanonicalManifest
 from maep.tests.test_canonical_source import FakeGitHub
-from hg.http_api import HGHTTPServer, canonical_json, planned_write_readback_verifier
+from hg.http_api import HGHTTPServer, IdempotencyStore, canonical_json, planned_write_readback_verifier
 from hg.runtime import build_runtime
 from hg.tests.support import TempDirMixin, grant, make_task, write_step
 
@@ -224,10 +224,65 @@ class HTTPAPITests(TempDirMixin):
         self.assertEqual((status, body["error"]), (409, "idempotency_conflict"))
         self.assertEqual((self.root / "out/hello.txt").read_text(), "xin chao")
 
+    def test_started_idempotency_owned_by_this_process_returns_in_progress(self):
+        payload = self.payload()
+        digest = hashlib.sha256(canonical_json(payload)).hexdigest()
+        self.assertEqual(self.server.idempotency.begin("active", digest)[0], "NEW")
+        status, body = self.request("POST", "/v1/tasks", body=payload,
+                                    headers={"Idempotency-Key": "active"})
+        self.assertEqual((status, body["error"]), (409, "request_in_progress"))
+        self.assertFalse((self.root / "out/hello.txt").exists())
+        self.server.idempotency.in_doubt("active")
+
+    def test_concurrent_http_duplicate_gets_in_progress_without_second_execution(self):
+        payload = self.payload()
+        entered = threading.Event()
+        release = threading.Event()
+        original = self.runtime.orch.execute_task
+
+        def blocked_execute(task, steps):
+            entered.set()
+            if not release.wait(timeout=5):
+                raise TimeoutError("test execution gate timed out")
+            return original(task, steps)
+
+        first_result = {}
+        def first_request():
+            first_result["value"] = self.request(
+                "POST", "/v1/tasks", body=payload, headers={"Idempotency-Key": "http-active-race"})
+
+        with patch.object(self.runtime.orch, "execute_task", side_effect=blocked_execute) as execute:
+            first = threading.Thread(target=first_request)
+            first.start()
+            self.assertTrue(entered.wait(timeout=3), "first request did not reach execution")
+            status, duplicate = self.request(
+                "POST", "/v1/tasks", body=payload, headers={"Idempotency-Key": "http-active-race"})
+            self.assertEqual((status, duplicate["error"]), (409, "request_in_progress"))
+            release.set()
+            first.join(timeout=5)
+            self.assertFalse(first.is_alive(), "first request did not complete")
+            self.assertEqual(first_result["value"][0], 200)
+            self.assertEqual(execute.call_count, 1)
+        self.assertEqual((self.root / "out/hello.txt").read_text(), "xin chao")
+
+    def test_orphaned_started_idempotency_after_store_restart_is_in_doubt(self):
+        payload = self.payload()
+        digest = hashlib.sha256(canonical_json(payload)).hexdigest()
+        db_path = self.workdir / "http-idempotency.sqlite3"
+        old_store = self.server.idempotency
+        self.assertEqual(old_store.begin("orphaned", digest)[0], "NEW")
+        old_store.close()
+        self.server.idempotency = IdempotencyStore(db_path)
+        status, body = self.request("POST", "/v1/tasks", body=payload,
+                                    headers={"Idempotency-Key": "orphaned"})
+        self.assertEqual((status, body["error"]), (409, "outcome_in_doubt"))
+        self.assertFalse((self.root / "out/hello.txt").exists())
+
     def test_in_doubt_idempotency_is_not_replayed(self):
         payload = self.payload()
         digest = hashlib.sha256(canonical_json(payload)).hexdigest()
         self.server.idempotency.begin("in-doubt", digest)
+        self.server.idempotency.in_doubt("in-doubt")
         status, body = self.request("POST", "/v1/tasks", body=payload,
                                     headers={"Idempotency-Key": "in-doubt"})
         self.assertEqual((status, body["error"]), (409, "outcome_in_doubt"))

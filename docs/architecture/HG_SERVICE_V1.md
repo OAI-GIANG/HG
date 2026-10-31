@@ -88,9 +88,11 @@ For the initial submission API, the task must declare one mandatory AC-READBACK 
 
 Idempotency:
 - First key/body: record STARTED durably before runtime execution.
+- Same key and body while the original request is active in this service process: 409 `request_in_progress`; the caller may retry later with the same key and body. No second execution is started.
 - Same key and body after a durable response: replay the stored response.
-- Same key with another body: 409 idempotency_conflict.
-- Ambiguous STARTED request after failure: 409 outcome_in_doubt; never automatically execute the effect again.
+- Same key with another body: 409 `idempotency_conflict`.
+- A STARTED receipt not owned by an active request in the current service process (including after process restart), or an explicitly ambiguous request: 409 `outcome_in_doubt`; never automatically execute the effect again.
+- The active-request marker is process-local and is not a lease or a persisted authority claim. On restart, the in-memory marker is absent, so an orphaned durable STARTED receipt fails closed as IN_DOUBT.
 - A result that was not verified must not be reported as CLOSED_VERIFIED.
 
 ## 6. Deployment, smoke and rollback gates
