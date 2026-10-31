@@ -1,0 +1,15 @@
+F
+======================================================================
+FAIL: test_target_with_duplicated_descriptor_is_one_listener (hg.tests.test_l5_probe.ProbeRunTests.test_target_with_duplicated_descriptor_is_one_listener)
+F-9 in the probe: two descriptors of one socket must not read as 'no unique listener'.
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/claude/hg/hg/tests/test_l5_probe.py", line 99, in test_target_with_duplicated_descriptor_is_one_listener
+    self.assertEqual(code, 0, done.stdout[-600:])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 1 != 0 : b't": true, "family": "AF_INET", "fd": 4, "inode_dup": 10783, "inode_listed": 10783, "listening": true, "port": 50927, "port_hex": "C6EF", "proto": 6, "reuseport": false, "type": "SOCK_STREAM"}], "syscalls": {"status": "AVAILABLE"}, "target": {"exe": "/usr/local/bin/python3.13", "pid": 936, "selinux": "kernel\\u0000", "status": {"CapAmb": "0000000000000000", "CapBnd": "000001fffeffffff", "CapEff": "0000000000000000", "CapInh": "0000000000000000", "CapPrm": "0000000000000000", "Gid": "30001\\t30001\\t30001\\t30001", "Groups": "30001", "NoNewPrivs": "0", "Seccomp": "0", "Uid": "999\\t999\\t999\\t999"}}}\n'
+
+----------------------------------------------------------------------
+Ran 1 test in 0.071s
+
+FAILED (failures=1)

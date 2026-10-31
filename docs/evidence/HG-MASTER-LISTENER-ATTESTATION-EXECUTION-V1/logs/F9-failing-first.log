@@ -1,0 +1,22 @@
+F
+======================================================================
+FAIL: test_duplicated_descriptor_is_one_listener_but_independent_sockets_are_two (hg.tests.test_attest.AttestL5Tests.test_duplicated_descriptor_is_one_listener_but_independent_sockets_are_two)
+F-9: two descriptors of ONE socket (dup) are one listener; two sockets on one port are two.
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/claude/hg/hg/tests/test_attest.py", line 591, in test_duplicated_descriptor_is_one_listener_but_independent_sockets_are_two
+    self.assertEqual((layer["status"], layer["code"]), ("PASS", "LISTENER_OWNED"), layer)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Tuples differ: ('FAIL', 'MULTIPLE_LISTENERS') != ('PASS', 'LISTENER_OWNED')
+
+First differing element 0:
+'FAIL'
+'PASS'
+
+- ('FAIL', 'MULTIPLE_LISTENERS')
++ ('PASS', 'LISTENER_OWNED') : {'status': 'FAIL', 'code': 'MULTIPLE_LISTENERS', 'count': 2}
+
+----------------------------------------------------------------------
+Ran 1 test in 0.169s
+
+FAILED (failures=1)
