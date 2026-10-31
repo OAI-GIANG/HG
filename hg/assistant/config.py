@@ -7,11 +7,11 @@ silent fallback, because the router is built with exactly the chosen provider.
 
 Local-model integrity, as far as Android allows:
 - /proc/net/tcp is unreadable for apps on Android 10+, so HG cannot ask the kernel who owns
-  port 11434. When `ollama_service_dir` is configured (the deploy sets it), HG instead
-  requires that the runit-supervised Ollama process is alive, is the ollama binary and runs
-  as this user. Ollama exits when it cannot bind its port, so a live supervised process
-  implies the port is ours. Anything else -> refused. Without that setting the listener is
-  reported UNVERIFIED in every receipt.
+  port 11434. When `ollama_service_dir` is configured (the deploy sets it), HG requires that
+  the runit-supervised Ollama process is alive, is the ollama binary and runs as this user;
+  anything else -> refused. That is process evidence only: it does not show the process holds
+  the port (finding F-1), so receipts carry "listener": "UNVERIFIED". The five-layer check that
+  does test listener ownership is hg.assistant.attest (not yet wired into this path).
 - `model_digest` pins the exact model weights: another app on the phone can replace a model
   through Ollama's unauthenticated API, so before each call HG compares /api/tags with the pin.
 """
@@ -95,8 +95,11 @@ def attest_listener(config, *, proc=Path("/proc")):
         raise ConfigError(f"supervised Ollama is not running ({exc.__class__.__name__}); start it: sv up ollama") from exc
     if os.path.basename(exe) != "ollama" or owner != os.getuid():
         raise ConfigError("the process on the Ollama service is not this user's ollama binary")
-    return {"status": "VERIFIED_PROCESS", "pid": pid,
-            "reason": "runit-supervised ollama alive as this user (Ollama exits when it cannot bind its port)"}
+    # A live supervised process does not prove it holds the port: while another process holds it,
+    # runit keeps restarting Ollama and each attempt is briefly alive (finding F-1,
+    # docs/architecture/HG_LISTENER_ATTESTATION_V2.md). Listener ownership is hg.assistant.attest's L5.
+    return {"status": "VERIFIED_PROCESS", "pid": pid, "listener": "UNVERIFIED",
+            "reason": "runit-supervised ollama alive as this user; listener ownership not verified (F-1)"}
 
 
 def check_model(config, provider, *, tags=None):

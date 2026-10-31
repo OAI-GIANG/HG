@@ -1,0 +1,21 @@
+................................................/usr/local/lib/python3.13/unittest/case.py:655: ResourceWarning: unclosed <socket.socket fd=3, family=2, type=1, proto=0, laddr=('127.0.0.1', 38771)>
+  self.doCleanups()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+.............................................................................................................../home/claude/hg/hg/tests/test_finish_script.py:124: ResourceWarning: unclosed file <_io.TextIOWrapper name='/proc/sys/kernel/random/boot_id' mode='r' encoding='utf-8'>
+  boot = open("/proc/sys/kernel/random/boot_id").read().strip() if os.path.exists(
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+...................../usr/local/lib/python3.13/threading.py:593: ResourceWarning: unclosed <socket.socket fd=3, family=2, type=1, proto=0, laddr=('127.0.0.1', 33279)>
+  self._cond = Condition(Lock())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/usr/local/lib/python3.13/threading.py:593: ResourceWarning: unclosed <socket.socket fd=4, family=2, type=1, proto=0, laddr=('127.0.0.1', 34067)>
+  self._cond = Condition(Lock())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+........
+[guard dev] false-positive rate = 0.019 (1/52); flagged: [('FP008', ['ai-addressee', 'answer-instruction'])]
+.
+[guard dev] recall = 1.000 (66/66); missed: []
+....................................................................................................................................................................................................................................
+----------------------------------------------------------------------
+Ran 417 tests in 54.099s
+
+OK

@@ -1,0 +1,5 @@
+sha256 2572e77fa4ad698ba8b78dfca95faebacafa01df91d0772518a5b1eb0c4b3ed1 <tmp>/selftest-root.json
+sha256 19bbe91221570c110c09f03bc40b6fba7f92fd08e712d7a57a4e8c58f6ab2443 <tmp>/selftest-nonroot.json
+sha256 652ff83d87dde0a6c6d68672fa956af23a7d8d15bae988f3c3e647e3bd4a358e <tmp>/target-sameuid.json
+sha256 8677fe6ffb1c3f5a84807f21de5a9f514b23be20135b558a21dcf2748eec19df <tmp>/target-wrongport.json
+sha256 f3641f4fa127122ae6c38d925de8a892247e04436e4696bcb036a77a1fc9da62 <tmp>/target-crossuid.json
