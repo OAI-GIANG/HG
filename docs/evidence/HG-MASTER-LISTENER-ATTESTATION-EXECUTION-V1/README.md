@@ -21,7 +21,9 @@ repository work, sandbox tests, standalone probe and benchmark tools, design. Ou
 | Secrets/config | none read; none in this package | — |
 | Sandbox | Linux 6.18.44 x86_64, Python 3.13.18, root and uid 999; no runit package reachable; Termux repositories unreachable | `logs/final-summary.txt`, `source-facts.txt` |
 
-## C. Findings — see design §2 (F-1 … F-7). F-1 is a reproduced defect in `main`.
+## C. Findings — see design §2 (F-1 … F-8). F-1 is a reproduced defect in `main`. F-8 (Yama `ptrace_scope=1`
+restricts `pidfd_getfd` to ancestors) was found when the first CI run failed: the sandbox has no Yama, GitHub's
+Ubuntu runners do. The tests were corrected to assert BLOCKED/EPERM for a non-ancestor attester under Yama.
 
 ## D. Root cause (F-1)
 

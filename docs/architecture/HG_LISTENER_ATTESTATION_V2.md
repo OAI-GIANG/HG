@@ -53,6 +53,11 @@ Overall: **not VERIFIED**. Any layer short of PASS keeps the result fail-closed.
 - **F-6 (conflict in history)** — `docs/V1_SCOPE.md` records a native Termux Ollama 0.40.12 runit service; the
   task brief records Debian 13 PRoot Ollama 0.40.13 (PIDs 31868/31870). Both are historical; current state is
   UNKNOWN. Under PRoot, `/proc/PID/exe` is the PRoot loader, so L2 fails by design (conclusion H).
+- **F-8 (fact, found by CI)** — with Yama `kernel.yama.ptrace_scope=1` (Ubuntu's default, GitHub runners)
+  `pidfd_getfd` reaches only descendants. HG is never Ollama's ancestor (runsvdir starts Ollama), so on such a
+  kernel L5 is `BLOCKED/PIDFD_GETFD_EPERM` — fail-closed, as intended. The probe records `yama_ptrace_scope`;
+  Android kernels normally lack Yama (F-5). Tests cover both: a target that sets `PR_SET_PTRACER_ANY` passes, one
+  that does not is BLOCKED, never PASS.
 - **F-7 (blocker)** — the Termux package repositories are unreachable from the build sandbox (HTTP 000 on three
   mirrors), so the digest of the Termux `ollama` binary could not be obtained with its signature chain. L3 stays
   UNVERIFIED until §9 is done on the phone.
@@ -150,7 +155,7 @@ redirection. Codes: `SERVICE_RESTARTED`, `PROCESS_EXITED`, `EXEC_SINCE_ATTESTATI
 | self-test PASS, target `LISTENER_OWNED` | L5 works on this device | §9 anchor, then PR-B wiring |
 | `SECCOMP_SIGSYS` / `PIDFD_*_ENOSYS` | syscall unavailable (seccomp or kernel < 5.6) | option B (inherited listener patch) or C (below) |
 | `PIDFD_GETFD_EACCES` | SELinux denies | same as above; record the AVC if `logcat` shows it |
-| `PIDFD_GETFD_EPERM` | ptrace rules (UID, dumpable) | check Ollama runs as the Termux UID, not under PRoot |
+| `PIDFD_GETFD_EPERM` | ptrace rules: UID, dumpable, or Yama `ptrace_scope` ≥ 1 (see `environment.yama_ptrace_scope`, F-8) | check Ollama runs as the Termux UID, not under PRoot; under Yama, option B/C |
 | target `NO_UNIQUE_LISTENER` | process does not hold the expected listener | F-1 situation or wrong service; investigate before anything else |
 
 Option C (only if A and B fail): Ollama bound to a Unix-domain socket inside the 0700 app directory, so the
