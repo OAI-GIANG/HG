@@ -11,6 +11,7 @@ import unittest
 from pathlib import Path
 
 from hg.assistant import attest as at
+from hg.tests.test_attest import yama_scope
 
 PROBE = Path(__file__).resolve().parents[2] / "deploy" / "termux" / "l5_probe.py"
 REQUIRE = os.environ.get("HG_REQUIRE_PROC_TESTS") == "1"
@@ -57,13 +58,27 @@ class ProbeRunTests(unittest.TestCase):
         self.assertEqual(report["syscalls"], {"status": "AVAILABLE"})
         self.assertIn("kernel", report["environment"])
 
-    def test_target_mode_finds_owned_listener_and_rejects_wrong_port(self):
+    def listener(self, ptracer_any):
+        """A loopback listener that is the probe's sibling, not its child (as Ollama is on the phone)."""
+        allow = ("import ctypes;ctypes.CDLL(None).prctl(0x59616D61,ctypes.c_ulong(2**64-1),0,0,0);"
+                 if ptracer_any else "")
         child = subprocess.Popen([sys.executable, "-I", "-S", "-c",
-                                  "import socket,os,sys;s=socket.socket();s.bind(('127.0.0.1',0));s.listen(2);"
-                                  "print(os.getpid(),s.getsockname()[1],flush=True);sys.stdin.read()"],
+                                  allow + "import socket,os,sys;s=socket.socket();s.bind(('127.0.0.1',0));"
+                                  "s.listen(2);print(os.getpid(),s.getsockname()[1],flush=True);sys.stdin.read()"],
                                  stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
         self.addCleanup(lambda: (child.kill(), child.wait(5), child.stdin.close(), child.stdout.close()))
         pid, port = map(int, child.stdout.readline().split())
+        return child, pid, port
+
+    def test_target_mode_under_yama_without_exception_is_blocked(self):
+        if yama_scope() != 1:
+            self.skipTest("Yama ptrace_scope is not 1 here")
+        _, pid, port = self.listener(ptracer_any=False)
+        code, report, _ = run_probe("--target-pid", str(pid), "--expect", f"127.0.0.1:{port}")
+        self.assertEqual((code, report["result"]), (2, {"status": "BLOCKED", "code": "PIDFD_GETFD_EPERM"}))
+
+    def test_target_mode_finds_owned_listener_and_rejects_wrong_port(self):
+        child, pid, port = self.listener(ptracer_any=True)
         code, report, done = run_probe("--target-pid", str(pid), "--expect", f"127.0.0.1:{port}")
         self.assertEqual(code, 0, done.stdout[-600:])
         self.assertEqual(report["result"]["code"], "LISTENER_OWNED")

@@ -26,7 +26,24 @@ jobs:
       - name: HG runtime tests
         env:
           HG_REQUIRE_PROC_TESTS: "1"   # pidfd_getfd / real runsv tests fail instead of skipping
-        run: python -m unittest discover -s hg/tests -t . -v
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m unittest discover -s hg/tests -t . -v 2>&1 | tee "$RUNNER_TEMP/hg-tests.log"
+      - name: Report failing HG tests as annotations (readable without log access)
+        if: failure()
+        shell: bash
+        run: |
+          python - "$RUNNER_TEMP/hg-tests.log" <<'PY'
+          import re, sys
+          text = open(sys.argv[1], encoding="utf-8", errors="replace").read()
+          for block in re.split(r"\n=+\n", text)[1:11]:
+              head, _, rest = block.partition("\n")
+              lines = [l for l in rest.splitlines() if l.strip() and not set(l.strip()) <= {"-"}
+                       and not re.match(r"(Ran \d+ tests? in|FAILED \(|OK$|OK \()", l.strip())]
+              tail = " | ".join(lines[-3:])[:900]
+              print(f"::error title={head.strip()[:150]}::{tail}")
+          PY
       - name: HG runtime self-check
         run: python -m hg selfcheck
       - name: HG benchmark (fails on unauthorized effects, false closures or failed cases)

@@ -14,6 +14,13 @@ import time
 mode, ready = sys.argv[1], sys.argv[2]
 port = int(os.environ.get("TARGET_PORT", "0"))
 socks, children = [], []
+if os.environ.get("TARGET_PTRACER_ANY") == "1":
+    # Yama (ptrace_scope=1) lets only ancestors attach; this exception lets a non-ancestor attester in.
+    import ctypes
+    try:
+        ctypes.CDLL(None, use_errno=True).prctl(0x59616D61, ctypes.c_ulong(2 ** 64 - 1), 0, 0, 0)
+    except (OSError, AttributeError):
+        pass
 
 
 def tcp(addr="127.0.0.1", port=0, listen=True, reuseport=False):

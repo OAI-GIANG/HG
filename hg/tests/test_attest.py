@@ -34,6 +34,14 @@ SUPERVISOR = "runit" if shutil.which("runsv") else "double"
 LINUX = sys.platform.startswith("linux") and os.path.isdir("/proc/self/fd")
 
 
+def yama_scope():
+    """kernel.yama.ptrace_scope (0 when Yama is absent). At 1, pidfd_getfd needs an ancestor attester."""
+    try:
+        return int(Path("/proc/sys/kernel/yama/ptrace_scope").read_text().strip())
+    except (OSError, ValueError):
+        return 0
+
+
 def _skip(reason):
     if REQUIRE:
         raise AssertionError(f"required environment missing: {reason}")
@@ -85,11 +93,12 @@ class Lab:
         path.mkdir(mode=0o700)
         return path
 
-    def start(self, mode, *, service=None, exe_name="ollama", usr1="", wrapper=False, port=0, supervisor=None):
+    def start(self, mode, *, service=None, exe_name="ollama", usr1="", wrapper=False, port=0, supervisor=None,
+              ptracer_any=False):
         service = service or self.service()
         ready = self.tmp / f"ready-{uuid.uuid4().hex}.json"
         cmd = [str(self.interpreter(exe_name)), "-I", "-S", str(FIXTURES / "target.py"), mode, str(ready)]
-        env = dict(self.env, TARGET_USR1=usr1, TARGET_PORT=str(port))
+        env = dict(self.env, TARGET_USR1=usr1, TARGET_PORT=str(port), TARGET_PTRACER_ANY="1" if ptracer_any else "0")
         if (supervisor or SUPERVISOR) == "runit":
             runsv = shutil.which("runsv") or _skip("runit (runsv) not installed")
             line = " ".join(shlex.quote(c) for c in cmd)
@@ -382,18 +391,31 @@ class AttestHappyPathTests(_LabCase):
         self.assertEqual(_layer(att, "L5_listener"), ("PASS", "LISTENER_OWNED"))
         self.assertEqual(att.reverify()["code"], "NOT_VERIFIED")
 
-    def test_cli_reports_json_and_exit_code(self):
-        service, doc = self.lab.start("listen")
+    def cli(self, service, port):
+        """The CLI runs as a sibling of the target (not its ancestor), as `hg` does on the phone."""
         repo = Path(__file__).resolve().parents[2]
         env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
         done = subprocess.run([sys.executable, "-B", "-m", "hg.assistant.attest", "--service-dir", str(service),
-                               "--port", str(doc["port"])], cwd=repo, env=env, capture_output=True, timeout=60,
-                              check=False)
+                               "--port", str(port)], cwd=repo, env=env, capture_output=True, timeout=60, check=False)
         self.assertTrue(done.stdout, done.stderr.decode("utf-8", "replace")[-400:])
-        report = json.loads(done.stdout)
-        self.assertEqual(done.returncode, 1)                       # shipped anchor is empty -> not verified
-        self.assertEqual(report["layers"]["L5_listener"]["status"], "PASS")
+        return done.returncode, json.loads(done.stdout)
+
+    def test_cli_reports_json_and_exit_code(self):
+        service, doc = self.lab.start("listen", ptracer_any=True)
+        code, report = self.cli(service, doc["port"])
+        self.assertEqual(code, 1)                                  # shipped anchor is empty -> not verified
+        self.assertEqual(report["layers"]["L5_listener"]["status"], "PASS", report["layers"]["L5_listener"])
         self.assertEqual(report["capability"]["code"], "AVAILABLE")
+
+    def test_cli_non_ancestor_under_yama_is_blocked_not_passed(self):
+        if yama_scope() != 1:
+            self.skipTest("Yama ptrace_scope is not 1 here: a non-ancestor attester is not restricted")
+        service, doc = self.lab.start("listen")                    # no PR_SET_PTRACER exception
+        code, report = self.cli(service, doc["port"])
+        self.assertEqual(code, 1)
+        self.assertEqual((report["layers"]["L5_listener"]["status"], report["layers"]["L5_listener"]["code"]),
+                         ("BLOCKED", "PIDFD_GETFD_EPERM"))
+        self.assertEqual(report["status"], "BLOCKED")
 
 
 class AttestL1Tests(_LabCase):
