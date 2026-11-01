@@ -63,7 +63,7 @@ Every route requires Authorization: Bearer token and a Host header identifying t
 |---|---|---|---|
 | GET | /ui/, /ui/index.html, /ui/app.js, /ui/styles.css | not required | The web UI shipped in the release (`hg/ui/`), read once at startup from the verified release root. Headers: `Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store`, same-origin COOP/CORP |
 | GET | /v1/health/live | required | Liveness only; not a readiness assertion |
-| GET | /v1/health/ready | required | 200 only if installed release integrity is VERIFIED and current owner authority is LOADED |
+| GET | /v1/health/ready | required | 200 only if installed release integrity is VERIFIED, current owner authority is LOADED and the idempotency store is not UNUSABLE; the body's `idempotency` is USABLE, UNUSABLE or NOT_CONFIGURED |
 | GET | /v1/integrity | required | Installed release integrity and release_id |
 | GET | /v1/tasks/<task_id> | required | Read-only task snapshot |
 | POST | /v1/tasks | required | Submit one constrained task through the canonical HG runtime |
@@ -86,11 +86,19 @@ Transport limits: each socket read times out after 5 s; reading the whole reques
 
 For the initial submission API, the task must declare one mandatory AC-READBACK criterion accepting TEST_RESULT evidence and at least one fs.write step. After the tool completes, the verifier reads every planned file back within the runtime root and compares actual content to planned content. Only the real TaskStore and AcceptanceGate can authorize CLOSED_VERIFIED.
 
-Idempotency:
-- First key/body: record STARTED durably before runtime execution.
+Idempotency (revision 2026-11-02, H1.3.1: additive, except that a POST whose STARTED receipt cannot be recorded now answers 503 `idempotency_unavailable` instead of 500 `internal_error`):
+- Receipts live in `http-idempotency.sqlite3` in the state directory, states STARTED, COMPLETE, IN_DOUBT.
+- First key/body: record STARTED durably (WAL, `synchronous=FULL`) before runtime execution. If STARTED cannot be recorded with certainty (database locked, store UNUSABLE or closed): 503 `idempotency_unavailable`; nothing is executed.
+- Same key and body while the original request is active in this service process: 409 `request_in_progress`; the caller may retry later with the same key and body. No second execution is started.
 - Same key and body after a durable response: replay the stored response.
-- Same key with another body: 409 idempotency_conflict.
-- Ambiguous STARTED request after failure: 409 outcome_in_doubt; never automatically execute the effect again.
+- Same key with another body: 409 `idempotency_conflict`, whatever the receipt state (STARTED active or orphaned, COMPLETE, IN_DOUBT). A different body is never treated as a new request.
+- IN_DOUBT, answered 409 `outcome_in_doubt`: a STARTED receipt not owned by an active request in the current service process (after a crash or restart), or a request whose execution or receipt recording failed after STARTED -- any exception, including BaseException such as SystemExit. Such a key is never executed again automatically: the effect may already have happened (the process can die after the side effect and before the COMPLETE receipt is committed) and the store cannot tell. Deciding what happened (task snapshot, action ledger, the file itself) and whether to submit new work under a new key is the owner's reconciliation, not an automatic retry.
+- The active-request marker is process-local and is not a lease or a persisted authority claim. On restart, the in-memory marker is absent, so an orphaned durable STARTED receipt fails closed as IN_DOUBT. It is not shared between processes: correctness assumes one service process per state directory (the writer flock) and one store per database in that process.
+- Guarantee: the HTTP layer never starts a second execution for a key that already has a receipt. This is not exactly-once delivery: effects (files under out/) are outside the SQLite transaction, so a crash can leave an effect with no COMPLETE receipt; that is exactly the IN_DOUBT case. Nothing here is distributed-safe.
+- A request that ends with BaseException records IN_DOUBT (best effort), releases its ownership and lets the exception end the handler thread: no HTTP response is written and the connection is closed. A failure while recording IN_DOUBT never replaces the original exception.
+- Store failures: every receipt write is one BEGIN IMMEDIATE transaction, rolled back on any failure. The store becomes UNUSABLE -- no new request (503 `idempotency_unavailable`), readiness 503 with `idempotency: UNUSABLE` -- when the outcome is unknown: rollback failed, a transaction is still or already open, or the failure is not a SQLite OperationalError (database file replaced or unbound, corruption, closed connection, an owned receipt that is no longer STARTED). A transient OperationalError that rolled back cleanly (e.g. `database is locked`) leaves it usable. Receipts are never deleted or rewritten by recovery; durable STARTED receipts answer IN_DOUBT after the restart. Operator action: find the cause (storage, permissions, a replaced file), then restart the service.
+- Shutdown: SIGTERM/SIGINT stops accepting connections; `server_close()` then closes the listener, waits for every handler thread and only then closes the store, so a request running at shutdown still records its receipt. Shutdown adds no timeout to a running execution: it is bounded by the request-read deadline plus that execution's own duration (non-daemon handler threads would keep the process alive anyway).
+- Durability scope: tests kill the process (`os._exit`) after the side effect; power loss depends on the device honoring fsync and is UNVERIFIED on the phone.
 - A result that was not verified must not be reported as CLOSED_VERIFIED.
 
 ## 6. Deployment, smoke and rollback gates

@@ -211,11 +211,44 @@ def planned_write_readback_verifier(root):
     return verify
 
 
+class IdempotencyUnavailable(RuntimeError):
+    """The store cannot record a new request (closed or failed closed); nothing was executed."""
+
+
+class IdempotencyStateError(RuntimeError):
+    """A receipt owned by an active request is no longer STARTED: the durable state is unknown."""
+
+
 class IdempotencyStore:
-    """SQLite-backed idempotency receipts; ambiguous crashes remain IN_DOUBT."""
+    """SQLite-backed idempotency receipts; ambiguous outcomes remain IN_DOUBT.
+
+    Receipt states: STARTED (durable before execution), COMPLETE (response stored), IN_DOUBT.
+
+    Ownership. ``begin()`` returning NEW makes the calling request the owner of the key in this
+    process (``_active_keys``) until it calls ``finish()`` (success) or ``in_doubt()``. The caller
+    must call ``in_doubt()`` on every other exit -- Exception or BaseException, including a
+    failed ``finish()``; ``in_doubt()`` always releases ownership and never raises. Ownership is
+    process-local, not a lease: one store instance per database per process (the service's
+    writer flock admits one process per state directory). After a restart every durable STARTED
+    receipt is an orphan and answers IN_DOUBT.
+
+    Failures. Every write is one explicit BEGIN IMMEDIATE transaction, ended by COMMIT or, on any
+    failure, ROLLBACK. The store fails closed (``status == "UNUSABLE"``: no new request, no
+    further write, until the process restarts) when the outcome is unknown: the rollback failed,
+    the connection still reports an open transaction, a transaction was found open before BEGIN,
+    or the failure is not a ``sqlite3.OperationalError`` (database binding broken, corruption,
+    a closed connection, an owned receipt that is no longer STARTED). An OperationalError that
+    rolled back cleanly (e.g. "database is locked") leaves the store usable.
+    """
     def __init__(self, path):
         self.path = str(path)
         self._lock = threading.Lock()
+        # Keys claimed by requests currently executing in this service process.
+        # This is intentionally process-local: after a restart the set is empty,
+        # so a durable STARTED receipt is treated as an orphan and fails closed.
+        self._active_keys = set()
+        self._unusable = None            # reason, once the store has failed closed or closed
+        self._closed = False
         self._db = connect_nofollow(sqlite3, self.path, timeout=5, check_same_thread=False)
         self._db.execute("PRAGMA journal_mode=WAL")
         self._db.execute("PRAGMA synchronous=FULL")
@@ -230,51 +263,128 @@ class IdempotencyStore:
         """)
         self._db.commit()
 
-    def begin(self, key, digest):
-        with self._lock:
+    @property
+    def status(self):
+        """USABLE, or UNUSABLE once the store has failed closed or been closed."""
+        return "USABLE" if self._unusable is None else "UNUSABLE"
+
+    @property
+    def unusable_reason(self):
+        return self._unusable
+
+    def _fail_closed(self, reason):
+        if self._unusable is None:
+            self._unusable = reason
+
+    def _write(self, operation):
+        """Run operation() in one BEGIN IMMEDIATE transaction. The caller holds self._lock."""
+        if self._unusable is not None:
+            raise IdempotencyUnavailable("idempotency store is unusable")
+        if self._db.in_transaction:
+            # No write leaves a transaction open; one found here has unknown content.
+            self._fail_closed("transaction found open")
+            raise IdempotencyUnavailable("idempotency store is unusable")
+        try:
             self._db.execute("BEGIN IMMEDIATE")
-            try:
-                row = self._db.execute(
-                    "SELECT digest,state,response_json FROM requests WHERE idem_key=?", (key,)
-                ).fetchone()
-                if row:
-                    self._db.commit()
-                    old_digest, state, response = row
-                    if old_digest != digest:
-                        return "CONFLICT", None
-                    if state == "COMPLETE":
-                        return "REPLAY", json.loads(response)
-                    return "IN_DOUBT", None
+            result = operation()
+            self._db.commit()
+            return result
+        except BaseException as exc:
+            self._end_failed_transaction(exc)
+            raise
+
+    def _end_failed_transaction(self, exc):
+        """Roll back after a failed step, or fail closed if the outcome is unknown.
+
+        Never replaces `exc`: a rollback failure is absorbed into the UNUSABLE state.
+        """
+        clean = False
+        try:
+            if self._db.in_transaction:
+                self._db.rollback()
+            clean = not self._db.in_transaction
+        except Exception:
+            clean = False
+        finally:
+            if not clean:
+                self._fail_closed("rollback failed or transaction still open")
+            elif not isinstance(exc, sqlite3.OperationalError):
+                self._fail_closed(type(exc).__name__)
+
+    def begin(self, key, digest):
+        """NEW (this request now owns `key`), REPLAY, CONFLICT, IN_PROGRESS or IN_DOUBT."""
+        def claim():
+            row = self._db.execute(
+                "SELECT digest,state,response_json FROM requests WHERE idem_key=?", (key,)
+            ).fetchone()
+            if row is None:
                 self._db.execute(
                     "INSERT INTO requests(idem_key,digest,state) VALUES(?,?, 'STARTED')",
                     (key, digest))
-                self._db.commit()
                 return "NEW", None
-            except Exception:
-                self._db.rollback()
-                raise
+            old_digest, state, response = row
+            if old_digest != digest:
+                return "CONFLICT", None
+            if state == "COMPLETE":
+                return "REPLAY", response
+            if state == "STARTED":
+                # The same store instance is shared by all handler threads
+                # in the one admitted service process. A key absent from
+                # this process-local set is an orphaned durable claim.
+                return ("IN_PROGRESS" if key in self._active_keys else "IN_DOUBT"), None
+            return "IN_DOUBT", None
+
+        with self._lock:
+            mode, prior = self._write(claim)
+            if mode == "NEW":
+                # Add while still holding _lock: another handler cannot observe
+                # STARTED between the durable commit and active registration.
+                self._active_keys.add(key)
+        return mode, (json.loads(prior) if mode == "REPLAY" else None)
 
     def finish(self, key, response):
+        """STARTED -> COMPLETE and release ownership. On failure ownership is kept: call in_doubt()."""
         raw = canonical_json(response).decode("utf-8")
+
+        def complete():
+            cursor = self._db.execute(
+                "UPDATE requests SET state='COMPLETE',response_json=? WHERE idem_key=? AND state='STARTED'",
+                (raw, key))
+            if cursor.rowcount != 1:
+                raise IdempotencyStateError("idempotency receipt transition failed")
+
         with self._lock:
-            self._db.execute("BEGIN IMMEDIATE")
-            try:
-                cursor = self._db.execute("UPDATE requests SET state='COMPLETE',response_json=? WHERE idem_key=? AND state='STARTED'",
-                                          (raw, key))
-                if cursor.rowcount != 1:
-                    raise RuntimeError("idempotency receipt transition failed")
-                self._db.commit()
-            except Exception:
-                self._db.rollback()
-                raise
+            self._write(complete)
+            self._active_keys.discard(key)
 
     def in_doubt(self, key):
+        """STARTED -> IN_DOUBT if possible; always release ownership; never raise an Exception.
+
+        Called while another exception may be propagating, so it must not replace it. Returns
+        True if the transition (or an already-final state) is durable, False if not recorded:
+        the durable STARTED receipt then answers IN_DOUBT to every later begin() because no
+        request owns it, and a store that could not end its transaction is UNUSABLE.
+        """
         with self._lock:
-            self._db.execute("UPDATE requests SET state='IN_DOUBT' WHERE idem_key=? AND state='STARTED'", (key,))
-            self._db.commit()
+            try:
+                if self._unusable is not None:
+                    return False
+                self._write(lambda: self._db.execute(
+                    "UPDATE requests SET state='IN_DOUBT' WHERE idem_key=? AND state='STARTED'", (key,)))
+                return True
+            except Exception:
+                return False
+            finally:
+                self._active_keys.discard(key)
 
     def close(self):
+        """Close the connection; idempotent. Only after every request that may use it has ended."""
         with self._lock:
+            self._active_keys.clear()
+            if self._closed:
+                return
+            self._closed = True
+            self._fail_closed("closed")
             self._db.close()
 
 
@@ -511,7 +621,12 @@ class HGHTTPServer(http.server.ThreadingHTTPServer):
                             trust = outer.trust_report()
                         except Exception:
                             trust = {"result": "BLOCKED"}
-                        ok = release.get("result") == "VERIFIED" and trust.get("result") == "LOADED"
+                        # A store that failed closed cannot accept a task: not ready. Without a
+                        # configured store the service keeps its prior readiness (POST answers 503).
+                        idempotency = ("NOT_CONFIGURED" if outer.idempotency is None
+                                       else outer.idempotency.status)
+                        ok = (release.get("result") == "VERIFIED" and trust.get("result") == "LOADED"
+                              and idempotency != "UNUSABLE")
                         self._send(200 if ok else 503, {
                             "status": "READY" if ok else "NOT_READY",
                             "repository": "OAI-GIANG/HG",
@@ -519,6 +634,7 @@ class HGHTTPServer(http.server.ThreadingHTTPServer):
                             "integrity": release.get("result"),
                             "trust": trust.get("result"),
                             "trust_commit": (trust.get("provenance") or {}).get("commit"),
+                            "idempotency": idempotency,
                         })
                         return
                     match = re.fullmatch(r"/v1/tasks/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})", parsed.path)
@@ -588,23 +704,36 @@ class HGHTTPServer(http.server.ThreadingHTTPServer):
                     digest = hashlib.sha256(canonical).hexdigest()
                     if outer.idempotency is None:
                         raise HTTPBoundaryError(503, "idempotency_unavailable", "durable idempotency ledger is unavailable")
-                    mode, prior = outer.idempotency.begin(idem, digest)
+                    try:
+                        mode, prior = outer.idempotency.begin(idem, digest)
+                    except Exception as exc:
+                        # STARTED was not recorded (or not with certainty): nothing is executed.
+                        raise HTTPBoundaryError(503, "idempotency_unavailable",
+                                                "durable idempotency ledger is unavailable") from exc
                     if mode == "CONFLICT":
                         raise HTTPBoundaryError(409, "idempotency_conflict", "key was already used with different content")
                     if mode == "REPLAY":
                         self._send(200, {"replayed": True, "result": prior})
                         return
-                    if mode == "IN_DOUBT":
+                    if mode == "IN_PROGRESS":
+                        raise HTTPBoundaryError(409, "request_in_progress",
+                                                "matching request is still being processed; retry with the same key later")
+                    if mode != "NEW":
                         raise HTTPBoundaryError(409, "outcome_in_doubt", "prior request outcome is ambiguous; reconcile before retry")
+                    # This request owns the key until finish() succeeds. Every other exit --
+                    # Exception or BaseException, from execute_task or from finish() -- runs
+                    # in_doubt(), which releases ownership and never raises, so the original
+                    # exception is the one that propagates (BaseException is not answered).
+                    completed = False
                     try:
                         with outer._request_lock:
                             result = outer.runtime.orch.execute_task(task, steps)
-                        response = {"replayed": False, "result": result}
                         outer.idempotency.finish(idem, result)
-                    except Exception:
-                        outer.idempotency.in_doubt(idem)
-                        raise
-                    self._send(200, response)
+                        completed = True
+                    finally:
+                        if not completed:
+                            outer.idempotency.in_doubt(idem)
+                    self._send(200, {"replayed": False, "result": result})
                 except HTTPBoundaryError as exc:
                     self._fail(exc)
                 except Exception:
@@ -647,8 +776,13 @@ class HGHTTPServer(http.server.ThreadingHTTPServer):
         return self.server_address
 
     def server_close(self):
-        try:
-            if self.idempotency is not None:
-                self.idempotency.close()
-        finally:
-            super().server_close()
+        """Close the listener, wait for every handler thread, then close the idempotency store.
+
+        ThreadingMixIn.server_close() closes the listening socket and, with block_on_close,
+        joins all handler threads. Only then is the store closed, so a running request can
+        still record its outcome. If the join is interrupted the store is left open (closed at
+        process exit) rather than closed under a running handler.
+        """
+        super().server_close()
+        if self.idempotency is not None:
+            self.idempotency.close()
