@@ -110,8 +110,8 @@ def selfcheck(workdir):
 def status(workdir):
     """Read-only: replays both ledgers without writing to either."""
     tasks_path, actions_path = workdir / "tasks.jsonl", workdir / "actions.jsonl"
-    store = TaskStore.restore(tasks_path)
-    pending = pending_from_events(EventLog(actions_path).events())
+    store = TaskStore.restore(tasks_path, read_only=True)
+    pending = pending_from_events(EventLog(actions_path, read_only=True).events())
     report = []
     task_ids = sorted({e["task_id"] for e in read_events(tasks_path) if e.get("type") == "TASK_CREATED"})
     for task_id in task_ids:

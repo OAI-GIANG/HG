@@ -16,6 +16,8 @@ from datetime import datetime, timezone
 
 from maep import ledger
 from maep.core import MAEPError, POLICY_VERSION, _nonempty_string, evaluate_gate, validate_closure
+from maep.admission import require_writer_session
+from hg.assistant.home import home_for_path, locked
 
 
 def utcnow():
@@ -25,11 +27,20 @@ def utcnow():
 class EventLog:
     """Single writer over one ledger file. A corrupt or non-contiguous ledger fails at construction."""
 
-    def __init__(self, path, *, clock=utcnow):
+    def __init__(self, path, *, clock=utcnow, writer_session=None, read_only=False):
+        # A read-only view needs no writer admission because it can never append (operator
+        # status/health tools and the switch precheck read state the service may own).
+        self._read_only = bool(read_only)
+        self._writer_session = None if self._read_only else require_writer_session(path, writer_session)
         self._path = path
+        self._home = home_for_path(path)
         self._clock = clock
-        self._lock = threading.RLock()   # seq assignment and the file append are one step
-        self._events = ledger.read_events(path)
+        self._lock = threading.RLock()
+        if self._home is None:
+            self._events = ledger.read_events(path)
+        else:
+            with locked(self._home, exclusive=False):
+                self._events = ledger.read_events(path)
         for event in self._events:
             if not isinstance(event.get("kind"), str) or not isinstance(event.get("seq"), int):
                 raise MAEPError(f"ledger event {event['event_id']} lacks kind/seq")
@@ -44,28 +55,53 @@ class EventLog:
         return self._clock()
 
     def next_seq(self):
-        with self._lock:
-            return len(self._events) + 1
+        return len(self.events()) + 1
 
     def events(self, kind=None):
         with self._lock:
+            if self._home is None:
+                current = ledger.read_events(self._path)
+            else:
+                with locked(self._home, exclusive=False):
+                    current = ledger.read_events(self._path)
+            self._events = current
             selected = self._events if kind is None else [e for e in self._events if e["kind"] == kind]
             return copy.deepcopy(selected)
 
-    def append(self, kind, task_id, payload):
+    def append(self, kind, task_id, payload=None, *, payload_factory=None, task_id_factory=None):
         """Write one event to disk before it becomes visible in memory.
 
         Two writers that assign the same sequence number would leave a ledger that no longer
         loads (the constructor refuses a non-contiguous sequence), so the number and the
         append happen under one lock.
         """
+        if self._read_only:
+            raise MAEPError("read-only ledger view refuses appends")
         if not _nonempty_string(kind):
             raise MAEPError("event kind must be non-empty")
+        if payload_factory is not None and not callable(payload_factory):
+            raise MAEPError("payload_factory must be callable")
         with self._lock:
-            event = {"event_id": uuid.uuid4().hex, "seq": len(self._events) + 1, "kind": kind,
-                     "task_id": task_id, "at": self._clock().isoformat(), "payload": copy.deepcopy(payload)}
-            ledger.append_event(self._path, event)
-            self._events.append(event)
+            latest = []
+
+            def build(current):
+                if [e.get("seq") for e in current] != list(range(1, len(current) + 1)):
+                    raise MAEPError("ledger sequence numbers are not contiguous")
+                current_payload = payload_factory(current) if payload_factory is not None else payload
+                current_task_id = task_id_factory(current) if task_id_factory is not None else task_id
+                event = {"event_id": uuid.uuid4().hex, "seq": len(current) + 1, "kind": kind,
+                         "task_id": current_task_id, "at": self._clock().isoformat(),
+                         "payload": copy.deepcopy(current_payload)}
+                latest[:] = current
+                latest.append(event)
+                return event
+
+            if self._home is None:
+                event = ledger.append_generated(self._path, build)
+            else:
+                with locked(self._home, exclusive=True):
+                    event = ledger.append_generated(self._path, build)
+            self._events = latest
             return copy.deepcopy(event)
 
 
