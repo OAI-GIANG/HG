@@ -112,10 +112,15 @@ class EvidenceArtifactStoreTests(unittest.TestCase):
         self.assertEqual(self.store.get(orphan["payload_ref"]), b"orphan")
 
     def test_unpublished_temporary_file_is_reported_separately(self):
-        prefix = self.state / "evidence-artifacts" / "sha256" / "aa"
-        prefix.mkdir(parents=True, mode=0o700)
+        root = self.state / "evidence-artifacts"
+        namespace = root / "sha256"
+        prefix = namespace / "aa"
+        root.mkdir(mode=0o700)
+        namespace.mkdir(mode=0o700)
+        prefix.mkdir(mode=0o700)
         temp = prefix / ".tmp-interrupted-write"
         temp.write_bytes(b"partial")
+        temp.chmod(0o600)
         self.assertEqual(self.store.find_temporary_artifacts(), ["sha256/aa/.tmp-interrupted-write"])
         self.assertEqual(self.store.find_orphans([]), [])
         self.assertTrue(temp.exists())

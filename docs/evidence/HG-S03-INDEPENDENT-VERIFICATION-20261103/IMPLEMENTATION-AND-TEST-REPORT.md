@@ -45,6 +45,8 @@ After a final security review added broken-symlink, namespace-symlink, G1 writer
 
 Result: 81 tests, OK. The 497-test full-suite run above preceded these last narrow hardening edits; GitHub CI must run the full suite on the pushed head before merge.
 
+The first GitHub Actions run identified an environment-sensitive test fixture: it relied on the runner default umask to create a private directory and file. The fixture now explicitly creates every parent directory with mode 0700 and the interrupted temporary payload with mode 0600. Re-run under umask 022 on Termux passed all 81 targeted tests. The corrected pushed head must still pass the full GitHub Actions matrix.
+
 Static checks at candidate review:
 - git diff --check: PASS.
 - Python AST parse of all changed Python modules: PASS.
