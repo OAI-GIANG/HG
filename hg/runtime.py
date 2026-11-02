@@ -26,6 +26,7 @@ from hg.brain.orchestrator import BrainOrchestrator
 from hg.tools.code import CodeDiffAdapter, CodeSearchAdapter, SymbolIndexAdapter, TestRunAdapter, UrlReadAdapter
 from hg.tools.gateway import ActionGateway, LocalFileReadAdapter, LocalFileWriteAdapter
 from hg.verification.evidence import AcceptanceGate, EventLog
+from hg.verification.artifacts import EvidenceArtifactStore
 
 DEFAULT_PRINCIPAL = "STT"
 
@@ -77,13 +78,14 @@ def build_runtime(workdir, grants, *, principal=DEFAULT_PRINCIPAL, mode="AUTHORI
     store = open_task_store(workdir / "tasks.jsonl", evaluator, clock, history_versions,
                             writer_session=writer_session)
     actions = EventLog(workdir / "actions.jsonl", clock=clock, writer_session=writer_session)
+    evidence_artifacts = EvidenceArtifactStore(workdir / "evidence-artifacts", writer_session=writer_session)
     adapters = [LocalFileWriteAdapter(root), LocalFileReadAdapter(root), CodeSearchAdapter(root),
                 SymbolIndexAdapter(root), CodeDiffAdapter(root), TestRunAdapter(root), UrlReadAdapter(),
                 *extra_adapters]
     gateway = ActionGateway(store, evaluator, actions, adapters, principal=principal, mode=mode)
     gate = AcceptanceGate(clock=clock)
     orchestrator = BrainOrchestrator(store, gateway, gate, principal=principal, verifiers=verifiers,
-                                     issuer=issuer, memory=memory)
+                                     issuer=issuer, memory=memory, evidence_artifacts=evidence_artifacts)
     return SimpleNamespace(workdir=workdir, root=root, clock=clock, evaluator=evaluator, trust=trust, memory=memory,
-                           store=store,
+                           store=store, evidence_artifacts=evidence_artifacts,
                            actions=actions, gateway=gateway, gate=gate, orch=orchestrator)

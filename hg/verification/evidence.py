@@ -129,10 +129,14 @@ class AcceptanceGate:
                         and ev["evidence_type"] in criterion.get("evidence_types", [])]
             if not matching:
                 status = "NOT_RUN"
-            elif any(ev["result"] != "PASS" for ev in matching):
+            elif any(ev["result"] == "FAIL" for ev in matching):
                 status = "FAIL"
-            else:
+            elif any(ev["result"] in {"BLOCKED", "INCONCLUSIVE", "STALE"} for ev in matching):
+                status = "BLOCKED"
+            elif all(ev["result"] == "PASS" for ev in matching):
                 status = "PASS"
+            else:
+                status = "FAIL"
             gates.append({"gate_id": f"GATE-{cid}", "task_id": task["task_id"], "candidate_ref": candidate,
                           "required": criterion.get("mandatory") is True, "status": status,
                           "criteria_refs": [cid], "evidence_refs": [ev["evidence_id"] for ev in matching]})
