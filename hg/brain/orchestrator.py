@@ -41,7 +41,8 @@ def _candidate_ref(outcomes):
 
 
 class BrainOrchestrator:
-    def __init__(self, store, gateway, acceptance_gate, *, principal, verifiers=None, issuer=None, memory=None):
+    def __init__(self, store, gateway, acceptance_gate, *, principal, verifiers=None, issuer=None, memory=None,
+                 evidence_artifacts=None):
         if not _nonempty_string(principal):
             raise MAEPError("orchestrator principal must be non-empty")
         verifiers = dict(verifiers or {})
@@ -55,6 +56,7 @@ class BrainOrchestrator:
         self._verifiers = verifiers
         self._issuer = issuer          # TaskGrantIssuer: per-task grants derived from the owner manifest
         self._memory = memory          # MemoryStore: outcomes recorded as episodic memory
+        self._evidence_artifacts = evidence_artifacts
         self._outcomes = {}            # task_id -> full step outcomes of the last run (in memory only)
 
     # ---------- helpers ----------
@@ -69,7 +71,7 @@ class BrainOrchestrator:
         return self._writer.apply_transition(task_id, target, expected_version=self._version(task_id))
 
     def _evidence(self, task_id, *, evidence_type, source_ref, candidate_ref, method, result,
-                  limitations, criterion_id=None, detail=None):
+                  limitations, criterion_id=None, detail=None, integrity_metadata=None):
         record = {
             "evidence_id": f"EV-{uuid.uuid4().hex[:12]}", "evidence_type": evidence_type,
             "source_ref": source_ref, "candidate_ref": candidate_ref,
@@ -78,10 +80,41 @@ class BrainOrchestrator:
         }
         if criterion_id is not None:
             record["test_ids"] = [criterion_id]
+        metadata = dict(integrity_metadata or {})
         if detail is not None:
-            record["integrity_metadata"] = {"detail": str(detail)[:500]}
+            metadata["detail"] = str(detail)[:500]
+        if metadata:
+            record["integrity_metadata"] = metadata
         self._writer.record_evidence(task_id, record, expected_version=self._version(task_id))
         return record["evidence_id"]
+
+    def record_artifact_evidence(self, task_id, payload, *, evidence_type, source_ref, candidate_ref,
+                                 method, result, payload_kind="application/octet-stream",
+                                 limitations=(), criterion_id=None):
+        """Persist raw bytes first, then append their immutable reference to the MAEP task ledger.
+
+        A crash between the two writes can leave an orphan blob, which is safe and discoverable.
+        A ledger reference is never considered verified until the payload hash and size are checked.
+        """
+        if self._evidence_artifacts is None:
+            raise MAEPError("evidence artifact storage is not configured")
+        if not isinstance(payload_kind, str) or not payload_kind.strip():
+            raise MAEPError("payload_kind must be a non-empty string")
+        metadata = self._evidence_artifacts.put(payload)
+        metadata["payload_kind"] = payload_kind[:120]
+        return self._evidence(
+            task_id, evidence_type=evidence_type, source_ref=source_ref,
+            candidate_ref=candidate_ref, method=method, result=result,
+            limitations=limitations, criterion_id=criterion_id,
+            integrity_metadata=metadata,
+        )
+
+    def verify_artifact_evidence(self, evidence):
+        if self._evidence_artifacts is None:
+            raise MAEPError("evidence artifact storage is not configured")
+        if not isinstance(evidence, dict):
+            raise MAEPError("evidence record must be an object")
+        return self._evidence_artifacts.verify_metadata(evidence.get("integrity_metadata"))
 
     def record_observation(self, task_id, *, source_ref, method, result, limitations=()):
         """Evidence not tied to an acceptance criterion (e.g. a denial or a blocker resolution)."""
@@ -182,14 +215,30 @@ class BrainOrchestrator:
             if verifier is None:
                 continue                      # gate stays NOT_RUN; never assumed PASS (MAEP-024)
             try:
-                passed, detail = verifier(dict(self._store.snapshot(task_id),
-                                               outcomes=list(self._outcomes.get(task_id, []))))
-                result = "PASS" if passed is True else "FAIL"
+                outcome = verifier(dict(self._store.snapshot(task_id),
+                                         outcomes=list(self._outcomes.get(task_id, []))))
+                if isinstance(outcome, tuple) and len(outcome) == 2 and isinstance(outcome[0], bool):
+                    passed, detail = outcome
+                    result = "PASS" if passed is True else "FAIL"
+                elif isinstance(outcome, dict) and outcome.get("status") in {
+                        "PASS", "FAIL", "BLOCKED", "INCONCLUSIVE", "STALE"}:
+                    result = outcome["status"]
+                    detail = json.dumps(outcome, sort_keys=True, separators=(",", ":"), default=str)
+                else:
+                    raise MAEPError("verifier must return (bool, detail) or a structured verification result")
+                boundary = getattr(verifier, "__hg_verification_boundary__", None)
+                if boundary == "separate-process-same-uid-not-an-os-sandbox":
+                    limitations = [
+                        "separate Python process; same OS UID and filesystem privileges; not an OS sandbox"
+                    ]
+                else:
+                    limitations = [INTERNAL_LIMITATION]
             except Exception as exc:
                 result, detail = "FAIL", f"verifier raised {type(exc).__name__}: {exc}"
+                limitations = [INTERNAL_LIMITATION]
             self._evidence(task_id, evidence_type="TEST_RESULT", source_ref=f"verifier:{cid}",
                            candidate_ref=candidate, method=getattr(verifier, "__name__", "verifier"),
-                           result=result, limitations=[INTERNAL_LIMITATION], criterion_id=cid, detail=detail)
+                           result=result, limitations=limitations, criterion_id=cid, detail=detail)
         report = self._gate.evaluate(self._store.snapshot(task_id))
         if not report["passed"]:
             self._move(task_id, "UNVERIFIED")

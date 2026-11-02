@@ -4,6 +4,7 @@ This module is not a complete JSON Schema validator and does not itself authenti
 principals. Callers must supply a trusted policy decision and authenticated identity.
 """
 from datetime import datetime, timezone
+import math
 
 POLICY_VERSION = "MAEP-1.1.0"
 STATES = {
@@ -101,6 +102,17 @@ def validate_evidence(evidence, candidate_ref=None):
             raise MAEPError(f"{field} must be a non-empty string")
     if candidate_ref is not None and evidence["candidate_ref"] != candidate_ref:
         raise MAEPError("evidence candidate mismatch")
+    metadata = evidence.get("integrity_metadata")
+    if metadata is not None:
+        if not isinstance(metadata, dict):
+            raise MAEPError("integrity_metadata must be an object")
+        for key, value in metadata.items():
+            if not _nonempty_string(key):
+                raise MAEPError("integrity_metadata keys must be non-empty strings")
+            if isinstance(value, float) and not math.isfinite(value):
+                raise MAEPError("integrity_metadata numbers must be finite")
+            if value is not None and not isinstance(value, (str, int, float, bool)):
+                raise MAEPError("integrity_metadata values must be scalar")
     return True
 
 
