@@ -53,6 +53,19 @@ Proceed only on PREFLIGHT_PASS. A missing, inaccessible, invalid or revoked owne
 
 Only the dedicated HG runit service is a candidate for activation. Do not enable two service entries against the same state directory: the second should be refused by the writer lock. Before altering a run script or symlink, record the original file, hash, permissions, runit status and exact rollback command. Do not stop or overwrite unrelated processes.
 
+### 4.1 Writer admission and read-only views (G1)
+
+- The service holds the `.writer.lock` flock for its whole life and registers a `RuntimeWriterSession` (`maep/admission.py`). Below a directory that contains `.writer.lock`, a writable `TaskStore`, `EventLog`, `MemoryStore` or `IdempotencyStore` is constructed only with that active session; otherwise construction raises. The marker file stays after the service exits, so this also covers an offline state directory.
+- This is an application-level capability inside one trusted interpreter. It is not a sandbox: code in the same interpreter, or any process of the same UID writing files directly, is outside it.
+- Operator reads (`hg status`, `hg health`) and the switch precheck open read-only views (`read_only=True`). They need no session and every write path on them raises.
+- Every JSONL append runs under a lock on the ledger inode (thread lock + `flock`) around read → validate → append, so sequence numbers, task event IDs and Memory conflict decisions have one winner across processes. A failed append whose bytes reached the file is "outcome unknown" to the caller; the next append still numbers from the file, never from memory. A ledger another user could write is refused.
+- Assistant HOME: config load/save and HOME ledgers take the common HOME lock; a shared hold is never upgraded to exclusive in place (refused at once, no deadlock).
+- Not provided: atomicity across stores (JSONL ledgers, the idempotency SQLite store and the filesystem commit separately) and exactly-once effects; an effect interrupted mid-way is `IN_DOUBT` (§5).
+
+### 4.2 State copy precheck
+
+`deploy/termux/switch_service.sh` backs up the stopped state under its writer lock and writes `.hg-state-copy.json` (inventory of every regular file: path, bytes, SHA-256; `assurance: OPERATIONAL_INTEGRITY_UNAUTHENTICATED`). `state_precheck.py` refuses a copy without that attestation, with a missing/extra/modified file or a symlink, or one that overlaps the live state named by `HG_RUNTIME_STATE_DIR`, the service config `state_dir` (`HG_SERVICE_CONFIG`, default `~/.config/hg/runtime-service.json`) or the documented default path; it then loads the copy with read-only views and opens SQLite with `mode=ro` + `quick_check`. The attestation detects accidental change between copy and load; it is not a signature and does not prove where the copy came from. A restored copy's attestation is removed before it becomes live state.
+
 ## 5. HTTP contract
 
 Contract revision 2026-10-29 (owner instruction of 2026-10-29: the web UI's Chat must reach this service with valid authentication and get an answer from HG Brain end to end). The revision is additive: every route that existed keeps its behavior. It adds the web UI files and `POST /v1/chat`. It changes no policy, grant or trust root (MAEP-1.1.0, Q4).

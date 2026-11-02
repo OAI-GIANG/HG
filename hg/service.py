@@ -12,6 +12,7 @@ import stat
 import sys
 import threading
 
+from maep.admission import RuntimeWriterSession
 from hg.http_api import HGHTTPServer, planned_write_readback_verifier
 from hg.release import ReleaseError, verify_root
 
@@ -164,7 +165,7 @@ def trust_report(authority):
     return {"result": "LOADED", "provenance": provenance, "policy_version": doc["policy_version"]}
 
 
-def create_service(config, *, token, authority, release_report, assistant_home=None):
+def create_service(config, *, token, authority, release_report, assistant_home=None, writer_session=None):
     """The production server: runtime, idempotency ledger and the chat route.
 
     Chat (POST /v1/chat) answers from the owner's assistant home -- the same directory the `hg`
@@ -177,16 +178,19 @@ def create_service(config, *, token, authority, release_report, assistant_home=N
     from hg.runtime import build_runtime
     state = Path(config["state_dir"])
     runtime = build_runtime(state, [], authority=authority, issue_task_grants=True, memory=True,
-                            verifiers={"AC-READBACK": planned_write_readback_verifier(state / "root")})
+                            verifiers={"AC-READBACK": planned_write_readback_verifier(state / "root")},
+                            writer_session=writer_session)
     chat = ChatService(assistant_home or default_home(), release_id=config["release_id"])
     return HGHTTPServer(runtime=runtime, token=token, host=config["host"], port=config["port"],
                         max_body_bytes=config["max_body_bytes"], release_report=release_report,
                         trust_report=lambda: trust_report(authority),
-                        idempotency_path=state / "http-idempotency.sqlite3", chat=chat)
+                        idempotency_path=state / "http-idempotency.sqlite3", chat=chat,
+                        writer_session=writer_session)
 
 
 def run(config_path: str | Path, *, check=False) -> int:
     lock_fd = None
+    writer_session = None
     server = None
     try:
         config = load_config(config_path)
@@ -202,16 +206,21 @@ def run(config_path: str | Path, *, check=False) -> int:
                               "trust": trust}, sort_keys=True))
             return 0
         lock_fd = _open_writer_lock(Path(config["state_dir"]))
+        writer_session = RuntimeWriterSession(Path(config["state_dir"]), lock_fd)
+        lock_fd = None
         # All state, SQLite journals and newly-created files are private to this UID.
         os.umask(0o077)
         release_report = lambda: verify_root(
             config["release_root"], config["release_manifest"], config["release_id"])
         report["release"] = release_report()
         trust_report(authority)
-        server = create_service(config, token=token, authority=authority, release_report=release_report)
+        server = create_service(config, token=token, authority=authority, release_report=release_report,
+                                 writer_session=writer_session)
     except Exception as exc:
         print(f"HG_BLOCKED: startup validation failed ({type(exc).__name__})", file=sys.stderr)
-        if lock_fd is not None:
+        if writer_session is not None:
+            writer_session.close()
+        elif lock_fd is not None:
             os.close(lock_fd)
         return BLOCKED_EXIT
 
@@ -232,7 +241,9 @@ def run(config_path: str | Path, *, check=False) -> int:
         stop(signal.SIGINT, None)
     finally:
         server.server_close()
-        if lock_fd is not None:
+        if writer_session is not None:
+            writer_session.close()
+        elif lock_fd is not None:
             os.close(lock_fd)
         for sig, handler in previous.items():
             signal.signal(sig, handler)

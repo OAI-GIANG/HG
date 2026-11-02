@@ -17,6 +17,7 @@ from urllib.parse import urlsplit
 
 from maep.core import MAEPError
 from maep.sqlite_nofollow import connect_nofollow
+from maep.admission import require_writer_session
 
 
 # Reading one request (request line, headers, body) is bounded twice:
@@ -240,7 +241,8 @@ class IdempotencyStore:
     a closed connection, an owned receipt that is no longer STARTED). An OperationalError that
     rolled back cleanly (e.g. "database is locked") leaves the store usable.
     """
-    def __init__(self, path):
+    def __init__(self, path, *, writer_session=None):
+        self._writer_session = require_writer_session(path, writer_session)
         self.path = str(path)
         self._lock = threading.Lock()
         # Keys claimed by requests currently executing in this service process.
@@ -397,7 +399,7 @@ class HGHTTPServer(http.server.ThreadingHTTPServer):
     allow_reuse_address = True
 
     def __init__(self, *, runtime, token, host="127.0.0.1", port=8765, max_body_bytes=262144,
-                 release_report=None, trust_report=None, idempotency_path=None,
+                 release_report=None, trust_report=None, idempotency_path=None, writer_session=None,
                  request_timeout_seconds=REQUEST_TIMEOUT_SECONDS,
                  request_deadline_seconds=REQUEST_DEADLINE_SECONDS, max_connections=MAX_CONNECTIONS,
                  chat=None, ui_dir=UI_DIR):
@@ -428,7 +430,8 @@ class HGHTTPServer(http.server.ThreadingHTTPServer):
         self.max_body_bytes = max_body_bytes
         self.release_report = release_report or (lambda: {"result": "UNVERIFIED"})
         self.trust_report = trust_report or (lambda: {"result": "UNVERIFIED"})
-        self.idempotency = IdempotencyStore(idempotency_path) if idempotency_path else None
+        self.idempotency = (IdempotencyStore(idempotency_path, writer_session=writer_session)
+                            if idempotency_path else None)
         self.chat = chat                       # hg.chat.ChatService in production (hg/service.py)
         self.ui_assets = load_ui_assets(ui_dir) if ui_dir is not None else {}
         self._request_lock = threading.Lock()

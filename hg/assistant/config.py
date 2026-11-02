@@ -21,6 +21,7 @@ import stat
 from pathlib import Path
 
 from hg.brain.providers import AnthropicProvider, ModelRouter, OllamaProvider, ProviderError
+from hg.assistant.home import locked
 
 DEFAULTS = {
     "ollama_url": "http://127.0.0.1:11434",
@@ -41,36 +42,38 @@ class ConfigError(Exception):
     """Unusable settings or an untrusted local model (exit 78)."""
 
 
-def load(home):
-    path = Path(home) / "config.json"
-    config = dict(DEFAULTS)
-    if path.exists():
-        st = path.lstat()
-        if stat.S_ISLNK(st.st_mode) or not stat.S_ISREG(st.st_mode) or st.st_uid != os.getuid():
-            raise ConfigError("config.json must be a regular file owned by this user")
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except ValueError as exc:
-            raise ConfigError(f"config.json is not valid JSON: {exc}") from exc
-        if not isinstance(data, dict) or set(data) - set(DEFAULTS):
-            raise ConfigError("config.json keys must be among: " + ", ".join(sorted(DEFAULTS)))
-        config.update(data)
-    env_model = os.environ.get("HG_MODEL")
-    if env_model and env_model != config["model"]:
-        config["model"], config["model_digest"] = env_model, None     # a pin belongs to one model
-    return config
+def load(home, *, wait_s=5.0):
+    with locked(home, exclusive=False, wait_s=wait_s):
+        path = Path(home) / "config.json"
+        config = dict(DEFAULTS)
+        if path.exists():
+            st = path.lstat()
+            if stat.S_ISLNK(st.st_mode) or not stat.S_ISREG(st.st_mode) or st.st_uid != os.getuid():
+                raise ConfigError("config.json must be a regular file owned by this user")
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except ValueError as exc:
+                raise ConfigError(f"config.json is not valid JSON: {exc}") from exc
+            if not isinstance(data, dict) or set(data) - set(DEFAULTS):
+                raise ConfigError("config.json keys must be among: " + ", ".join(sorted(DEFAULTS)))
+            config.update(data)
+        env_model = os.environ.get("HG_MODEL")
+        if env_model and env_model != config["model"]:
+            config["model"], config["model_digest"] = env_model, None
+        return config
 
 
 def save(home, config):
-    data = {k: v for k, v in config.items() if k in DEFAULTS and v != DEFAULTS[k]}
-    path = Path(home) / "config.json"
-    tmp = path.with_suffix(".json.tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0), 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as stream:
-        json.dump(data, stream, ensure_ascii=False, indent=2, sort_keys=True)
-        stream.write("\n")
-    os.replace(tmp, path)
-    return path
+    with locked(home, exclusive=True):
+        data = {k: v for k, v in config.items() if k in DEFAULTS and v != DEFAULTS[k]}
+        path = Path(home) / "config.json"
+        tmp = path.with_suffix(".json.tmp")
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump(data, stream, ensure_ascii=False, indent=2, sort_keys=True)
+            stream.write("\n")
+        os.replace(tmp, path)
+        return path
 
 
 def ollama(config):

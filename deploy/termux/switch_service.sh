@@ -118,7 +118,7 @@ space_ok() {   # room for two copies of the state dir plus 1 MB
 
 backup_state() {   # backup_state <dest>: copy the stopped state dir under its writer lock, hash both trees
   python3 -I - "$STATE" "$1" <<'PY'
-import fcntl, hashlib, os, subprocess, sys
+import datetime, fcntl, hashlib, json, os, subprocess, sys, uuid
 src, dst = sys.argv[1], sys.argv[2]
 fd = os.open(os.path.join(src, ".writer.lock"), os.O_RDWR | getattr(os, "O_NOFOLLOW", 0))
 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)          # fails if any writer still holds the state
@@ -128,6 +128,8 @@ def tree(root):
     for base, _dirs, files in os.walk(root):
         for name in files:
             p = os.path.join(base, name)
+            if os.path.relpath(p, root) == ".hg-state-copy.json":
+                continue                   # a copy attestation is not state
             if os.path.islink(p):
                 out[os.path.relpath(p, root)] = "symlink"
                 continue
@@ -137,7 +139,36 @@ def tree(root):
 a, b = tree(src), tree(dst)
 os.close(fd)
 if a != b:
-    sys.exit("state copy differs from the live state")
+    sys.exit("state copy differs from the source state")
+if any(value == "symlink" for value in a.values()):
+    sys.exit("state copy contains a symlink; manual review required")
+inventory = []
+for base, _dirs, files in os.walk(dst):
+    for name in files:
+        p = os.path.join(base, name)
+        if os.path.islink(p) or os.path.basename(p) == ".hg-state-copy.json":
+            continue
+        with open(p, "rb") as stream:
+            raw = stream.read()
+        inventory.append({"path": os.path.relpath(p, dst), "bytes": len(raw),
+                          "sha256": hashlib.sha256(raw).hexdigest()})
+stale = os.path.join(dst, ".hg-state-copy.json")
+if os.path.lexists(stale):        # an attestation copied from the source describes another copy
+    os.unlink(stale)
+required = {"tasks.jsonl", "actions.jsonl", "memory.jsonl", "http-idempotency.sqlite3"}
+if not required.issubset({item["path"] for item in inventory}):
+    sys.exit("state copy lacks one or more required runtime domains")
+attestation = {
+    "schema": "hg-state-copy-attestation-v1",
+    "copy_id": uuid.uuid4().hex,
+    "source_ref": "service-runtime-state-copy",
+    "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    "assurance": "OPERATIONAL_INTEGRITY_UNAUTHENTICATED",
+    "inventory": sorted(inventory, key=lambda item: item["path"]),
+}
+with open(os.path.join(dst, ".hg-state-copy.json"), "x", encoding="utf-8") as stream:
+    json.dump(attestation, stream, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    stream.write("\n")
 with open(dst + ".sha256", "w") as f:
     for k in sorted(a):
         f.write(f"{a[k]}  {k}\n")
@@ -147,7 +178,9 @@ PY
 
 precheck_with() {   # precheck_with <release root> <state dir> <report>: load a COPY with that release's code
   cp -a "$2" "$2.precheck"
-  python3 -I -B "$PRECHECK" "$1" "$2.precheck" > "$3" || { cat "$3"; rm -rf "$2.precheck"; return 1; }
+  # Name the real live state (from the service config) so the precheck refuses to load it.
+  HG_RUNTIME_STATE_DIR="$STATE" HG_SERVICE_CONFIG="$OLDCONF" \
+    python3 -I -B "$PRECHECK" "$1" "$2.precheck" > "$3" || { cat "$3"; rm -rf "$2.precheck"; return 1; }
   rm -rf "$2.precheck"
 }
 
@@ -199,6 +232,7 @@ if [ "${1:-}" = "--restore" ] || [ "${1:-}" = "--restore-state" ]; then
   if [ "$MODE" = "--restore-state" ]; then
     cp -a "$SRC/state" "$STATE.incoming-$TS"
     precheck_with "$OLD_ROOT" "$STATE.incoming-$TS" "$BK/state-precheck.json"
+    rm -f "$STATE.incoming-$TS/.hg-state-copy.json"   # the copy attestation must not become live state
     mv "$STATE" "$STATE.prev-$TS"
     STATE_SWAPPED=1
     mv "$STATE.incoming-$TS" "$STATE"

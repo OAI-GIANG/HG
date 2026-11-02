@@ -52,8 +52,10 @@ def _norm(record):
 
 
 class MemoryStore:
-    def __init__(self, path, *, clock=None):
-        self._log = EventLog(path, clock=clock or (lambda: datetime.now(timezone.utc)))
+    def __init__(self, path, *, clock=None, writer_session=None, read_only=False):
+        self._read_only = bool(read_only)
+        self._log = EventLog(path, clock=clock or (lambda: datetime.now(timezone.utc)),
+                             writer_session=writer_session, read_only=self._read_only)
         self._records = {}
         self._working = {}
         self._index = Index()
@@ -62,32 +64,63 @@ class MemoryStore:
             self._replay(event)
         self.restore_conflicts = self.conflicts()
 
+    def _refresh_from_events(self, events):
+        """Rebuild this view from the latest ledger snapshot while its writer lock is held."""
+        self._records = {}
+        self._index = Index()
+        for event in events:
+            self._replay(event)
+        self.restore_conflicts = self._compute_conflicts()
+
+    def _refresh(self):
+        self._refresh_from_events(self._log.events())
+
     # ---------- write ----------
 
     def remember(self, *, layer, kind, subject, content, source, source_ref, evidence_refs=(), limitations=(),
                  value=None, task_id=None, supersedes=None):
-        record = {
-            "memory_id": f"M-{self._log.next_seq():06d}-{uuid.uuid4().hex[:6]}", "layer": layer, "kind": kind,
-            "subject": subject, "content": content, "value": copy.deepcopy(value), "source": source,
-            "source_ref": source_ref, "evidence_refs": list(evidence_refs), "limitations": list(limitations),
-            "task_id": task_id, "supersedes": supersedes, "status": "ACTIVE", "version": 1,
-            "created_at": self._log.now().isoformat(),
-        }
-        self._validate(record)
+        if self._read_only:
+            raise MAEPError("read-only memory view refuses writes")
         if layer == "WORKING":
+            record = {
+                "memory_id": f"M-{self._log.next_seq():06d}-{uuid.uuid4().hex[:6]}", "layer": layer, "kind": kind,
+                "subject": subject, "content": content, "value": copy.deepcopy(value), "source": source,
+                "source_ref": source_ref, "evidence_refs": list(evidence_refs), "limitations": list(limitations),
+                "task_id": task_id, "supersedes": supersedes, "status": "ACTIVE", "version": 1,
+                "created_at": self._log.now().isoformat(),
+            }
+            self._validate(record)
             if not _nonempty_string(task_id):
                 raise MAEPError("WORKING memory needs a task_id")
             self._working.setdefault(task_id, []).append(record)
             return copy.deepcopy(record)
-        previous = self._check_supersession_and_conflict(record)
-        if previous is not None:
-            record["version"] = previous["version"] + 1
-        self._log.append("MEMORY_WRITE", task_id, {"record": record})
+
+        created = {}
+
+        def build(current):
+            self._refresh_from_events(current)
+            record = {
+                "memory_id": f"M-{len(current) + 1:06d}-{uuid.uuid4().hex[:6]}", "layer": layer, "kind": kind,
+                "subject": subject, "content": content, "value": copy.deepcopy(value), "source": source,
+                "source_ref": source_ref, "evidence_refs": list(evidence_refs), "limitations": list(limitations),
+                "task_id": task_id, "supersedes": supersedes, "status": "ACTIVE", "version": 1,
+                "created_at": self._log.now().isoformat(),
+            }
+            self._validate(record)
+            previous = self._check_supersession_and_conflict(record)
+            if previous is not None:
+                record["version"] = previous["version"] + 1
+            created["record"] = record
+            return {"record": record}
+
+        self._log.append("MEMORY_WRITE", task_id, payload_factory=build)
+        record = created["record"]
         self._apply_write(record)
         return copy.deepcopy(record)
 
     def promote(self, memory_id, *, evidence_refs, source_ref):
         """HYPOTHESIS/INFERENCE -> FACT, only with evidence; the old record is superseded, not edited."""
+        self._refresh()
         old = self._active(memory_id)
         if old["kind"] not in {"HYPOTHESIS", "INFERENCE"}:
             raise MAEPError("only a HYPOTHESIS or INFERENCE can be promoted")
@@ -98,12 +131,21 @@ class MemoryStore:
                              evidence_refs=evidence_refs, task_id=old["task_id"], supersedes=memory_id)
 
     def retract(self, memory_id, *, reason):
-        self._active(memory_id)
         if not _nonempty_string(reason):
             raise MAEPError("retraction needs a reason")
-        payload = {"memory_id": memory_id, "status": "RETRACTED", "reason": reason}
-        self._log.append("MEMORY_STATUS", self._records[memory_id]["task_id"], payload)
-        self._apply_status(payload)
+        prepared = {}
+
+        def build(current):
+            self._refresh_from_events(current)
+            record = self._active(memory_id)
+            prepared["task_id"] = record["task_id"]
+            payload = {"memory_id": memory_id, "status": "RETRACTED", "reason": reason}
+            prepared["payload"] = payload
+            return payload
+
+        self._log.append("MEMORY_STATUS", None, payload_factory=build,
+                         task_id_factory=lambda current: prepared["task_id"])
+        self._apply_status(prepared["payload"])
 
     def clear_working(self, task_id):
         self._working.pop(task_id, None)
@@ -111,6 +153,7 @@ class MemoryStore:
     # ---------- read ----------
 
     def get(self, memory_id):
+        self._refresh()
         if memory_id not in self._records:
             raise MAEPError("unknown memory_id")
         return copy.deepcopy(self._records[memory_id])
@@ -119,27 +162,30 @@ class MemoryStore:
         return copy.deepcopy(self._working.get(task_id, []))
 
     def active(self, *, layer=None, kind=None, subject=None):
+        self._refresh()
         return [copy.deepcopy(r) for r in self._records.values() if r["status"] == "ACTIVE"
                 and (layer is None or r["layer"] == layer) and (kind is None or r["kind"] == kind)
                 and (subject is None or r["subject"] == subject)]
 
     def all_records(self):
         """Every record in any status, in ledger order."""
+        self._refresh()
         return [copy.deepcopy(r) for r in self._records.values()]
 
     def history(self, subject):
+        self._refresh()
         return sorted((copy.deepcopy(r) for r in self._records.values() if r["subject"] == subject),
                       key=lambda r: (r["version"], r["created_at"]))
 
     def search(self, query, *, layers=None, kinds=None, include_inactive=False, limit=8):
+        self._refresh()
         allowed = {mid for mid, r in self._records.items()
                    if (include_inactive or r["status"] == "ACTIVE")
                    and (layers is None or r["layer"] in layers) and (kinds is None or r["kind"] in kinds)}
         return [dict(copy.deepcopy(self._records[mid]), score=round(score, 4))
                 for mid, score in self._index.search(query, limit=limit, allowed=allowed)]
 
-    def conflicts(self):
-        """Subjects with more than one differing ACTIVE FACT/DECISION (should only follow tampering)."""
+    def _compute_conflicts(self):
         by_subject = {}
         for r in self._records.values():
             if r["status"] == "ACTIVE" and r["layer"] in CONFLICT_LAYERS and r["kind"] in CONFLICT_KINDS:
@@ -147,7 +193,13 @@ class MemoryStore:
         return [{"subject": s, "memory_ids": sorted(x["memory_id"] for x in rs)}
                 for s, rs in sorted(by_subject.items()) if len({_norm(x) for x in rs}) > 1]
 
+    def conflicts(self):
+        """Subjects with more than one differing ACTIVE FACT/DECISION (should only follow tampering)."""
+        self._refresh()
+        return self._compute_conflicts()
+
     def stats(self):
+        self._refresh()
         counts = {}
         for r in self._records.values():
             key = f"{r['layer']}/{r['status']}"

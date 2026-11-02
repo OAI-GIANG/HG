@@ -35,6 +35,7 @@ from .core import (
     validate_blocker, validate_closure, validate_evidence, validate_linked_task, validate_task,
 )
 from .ledger import append_event, read_events
+from .admission import require_writer_session
 
 RESULT_STATES = {"RUNNING", "UNVERIFIED"}
 
@@ -127,7 +128,13 @@ def _utc_now():
 class TaskStore:
     """Owns task records; every change is versioned, ledgered first and guard-checked."""
 
-    def __init__(self, ledger_path, *, policy_evaluator=None, clock=None, ledger_append=None, _restoring=False):
+    def __init__(self, ledger_path, *, policy_evaluator=None, clock=None, ledger_append=None,
+                 writer_session=None, read_only=False, _restoring=False):
+        self._read_only = bool(read_only)
+        if self._read_only and not _restoring:
+            raise MAEPError("a read-only task store is a restored view; use TaskStore.restore(read_only=True)")
+        # A read-only view needs no writer admission: every mutation path refuses it.
+        self._writer_session = None if self._read_only else require_writer_session(ledger_path, writer_session)
         if not _restoring and read_events(ledger_path):
             raise MAEPError("ledger already holds events; use TaskStore.restore to resume from it (RT-05)")
         self._ledger_path = ledger_path
@@ -138,10 +145,17 @@ class TaskStore:
         self._lock = threading.RLock()
         self._writer_key = None
         self._active_writer = None
+        self._history_versions = frozenset()
+
+    def _refresh_from_disk(self):
+        events = read_events(self._ledger_path)
+        self._records = {}
+        for event in events:
+            self._replay(event, self._history_versions)
 
     @classmethod
     def restore(cls, ledger_path, *, policy_evaluator=None, clock=None, ledger_append=None,
-                history_versions=()):
+                history_versions=(), writer_session=None, read_only=False):
         """Rebuild a store from its ledger (RT-05). Inconsistent history fails closed.
 
         Stored authorization decisions are history only: every guard that needs authority
@@ -151,9 +165,10 @@ class TaskStore:
         """
         accepted = _history_versions(history_versions)
         store = cls(ledger_path, policy_evaluator=policy_evaluator, clock=clock,
-                    ledger_append=ledger_append, _restoring=True)
-        for event in read_events(ledger_path):
-            store._replay(event, accepted)
+                    ledger_append=ledger_append, writer_session=writer_session, read_only=read_only,
+                    _restoring=True)
+        store._history_versions = accepted
+        store._refresh_from_disk()
         return store
 
     def _replay(self, event, history_versions=frozenset()):
@@ -190,12 +205,16 @@ class TaskStore:
     def claim_writer(self):
         """Issue the only TaskWriter. After this, mutations without it are refused (MAEP-006)."""
         with self._lock:
+            if self._read_only:
+                raise MAEPError("read-only task store view has no writer")
             if self._writer_key is not None:
                 raise MAEPError("task-state writer already claimed; BrainOrchestrator is the sole coordinator")
             self._writer_key = object()
             return TaskWriter(self, self._writer_key)
 
     def _require_writer(self):
+        if self._read_only:
+            raise MAEPError("read-only task store view refuses changes")
         if self._writer_key is not None and self._active_writer is not self._writer_key:
             raise MAEPError("task-state writer is claimed; mutate only through it (MAEP-006)")
 
@@ -215,6 +234,7 @@ class TaskStore:
         """Register a new DRAFT task. Returns its version (1)."""
         with self._lock:
             self._require_writer()
+            self._refresh_from_disk()
             validate_task(task)
             task = copy.deepcopy(task)
             if task["state"] != "DRAFT":
@@ -415,6 +435,7 @@ class TaskStore:
     # ----- internals ---------------------------------------------------------------
 
     def _record(self, task_id):
+        self._refresh_from_disk()
         if task_id not in self._records:
             raise MAEPError("unknown task_id")
         return self._records[task_id]
@@ -438,6 +459,8 @@ class TaskStore:
 
         Live mutations use the same applier as restore() unless one is passed explicitly.
         """
+        if self._read_only:
+            raise MAEPError("read-only task store view refuses changes")
         if record.get("policy_status") == "STALE":
             raise MAEPError(f"task was recorded under {record.get('recorded_policy_version')}; it is read-only "
                             f"history under {POLICY_VERSION} (MAEP-012)")
