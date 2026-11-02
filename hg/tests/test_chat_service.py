@@ -195,9 +195,22 @@ class ChatServiceTests(ChatServiceBase):
 
     def test_home_locked_by_another_writer_is_busy(self):
         service = ChatService(self.home, release_id="r" * 64, clock=lambda: NOW, lock_wait_s=0.2)
-        with locked(self.home, exclusive=True):
+        ready, release = threading.Event(), threading.Event()
+
+        def hold():
+            with locked(self.home, exclusive=True):
+                ready.set()
+                release.wait(2)
+
+        worker = threading.Thread(target=hold)
+        worker.start()
+        self.assertTrue(ready.wait(2))
+        try:
             with self.assertRaises(HTTPBoundaryError) as ctx:
                 service("Thủ đô của Pháp là gì?", general=True)
+        finally:
+            release.set()
+            worker.join(3)
         self.assertEqual((ctx.exception.status, ctx.exception.code), (503, "assistant_busy"))
 
     def test_one_chat_at_a_time(self):

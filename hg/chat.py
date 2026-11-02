@@ -89,7 +89,9 @@ class ChatService:
     def _model_parts(self):
         try:
             home = ensure_home(self.home, create=False)
-            conf = cfg.load(home)
+            conf = cfg.load(home, wait_s=self._wait)
+        except Busy as exc:
+            raise HTTPBoundaryError(503, "assistant_busy", "another HG command is using the assistant home; try again") from exc
         except (HomeError, cfg.ConfigError, OSError) as exc:
             raise HTTPBoundaryError(503, "assistant_unavailable", f"assistant home is not usable: {exc}") from exc
         try:
