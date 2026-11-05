@@ -146,3 +146,15 @@ directories removed; read-only source clones kept only in the session scratchpad
 3. Current runtime on the phone (PRoot vs Termux package, F-6) → UNKNOWN until 1.
 
 ## N. Next action — the NEXT ACTION COMMAND in the task's final report.
+
+
+## Round 3 — Termux device validation (2026-11-06)
+
+The earlier Round 2 statement that the phone was offline remains accurate for the 2026-10-31 run only. A later Termux pass was performed on 2026-11-06 against an isolated candidate derived from PR head 90c106967d24f4ff754fb0325f1a4a28fa8ad42b; its redacted evidence is in probe-v3/.
+
+- Device: Android 17, runtime SDK 37, arm64-v8a; Python 3.14.8, sys.platform=android, build-time API level 24. This build does not expose os.pidfd_open (Python documents Android availability only at build-time API level 31 or later).
+- Candidate probe-v3 uses raw syscall 434 for pidfd_open only on aarch64/x86_64 when the Python wrapper is absent and only after the disposable-child capability probe. pidfd_getfd syscall 438 remains behind the same SIGSYS-safe child check.
+- Termux self-process capability: PASS/AVAILABLE. L5 self-test: PASS, 12/12 checks. test_l5_probe.py: 12 run, 11 PASS, 1 SKIP (Yama-specific case; no ptrace_scope=1). Focused attestor fallback/capability tests: 5 PASS.
+- Synthetic child target-mode tests passed for owned listener, wrong-port rejection and duplicate descriptors. These do not establish access to the actual Ollama service.
+- Actual Ollama target PID, production service, trust-anchor provenance, benchmark and end-to-end five-layer attestation remain NOT_RUN. trusted_runtimes.json remains empty; L3 and overall VERIFIED remain BLOCKED/UNVERIFIED.
+- The candidate patch has not been pushed by the connected GitHub integration (write permission denied). No merge or deployment occurred. PR #77 still requires an independent review and reconciliation of its branch being 14 commits behind main.

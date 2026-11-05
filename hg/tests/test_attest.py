@@ -9,6 +9,7 @@ failure (CI sets it, so a missing capability cannot pass silently).
 """
 import errno
 import hashlib
+import errno
 import json
 import os
 import shlex
@@ -31,7 +32,7 @@ from hg.assistant import config as cfg
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "attest"
 REQUIRE = os.environ.get("HG_REQUIRE_PROC_TESTS") == "1"
 SUPERVISOR = "runit" if shutil.which("runsv") else "double"
-LINUX = sys.platform.startswith("linux") and os.path.isdir("/proc/self/fd")
+PROC_PLATFORM = sys.platform in ("linux", "android") and os.path.isdir("/proc/self/fd")
 
 
 def yama_scope():
@@ -179,7 +180,7 @@ class ParserTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             at.parse_stat(good, 13)
 
-    @unittest.skipUnless(LINUX, "Linux /proc required")
+    @unittest.skipUnless(PROC_PLATFORM, "Linux /proc required")
     def test_real_self_stat(self):
         st = at.read_stat(os.getpid())
         self.assertEqual((st.pid, st.ppid), (os.getpid(), os.getppid()))
@@ -273,6 +274,39 @@ class TrustAnchorTests(unittest.TestCase):
             at.load_trust_anchor(self.tmp / "missing.json")
 
 
+
+
+class PidfdOpenFallbackTests(unittest.TestCase):
+    def test_raw_syscall_fallback_when_python_wrapper_is_missing(self):
+        class FakeSyscall:
+            def __init__(self):
+                self.restype = None
+                self.args = None
+
+            def __call__(self, *args):
+                self.args = args
+                return 123
+
+        class FakeLib:
+            def __init__(self):
+                self.syscall = FakeSyscall()
+
+        fake = FakeLib()
+        with mock.patch.object(at.os, "pidfd_open", None, create=True), \
+             mock.patch.object(at.os, "uname", return_value=mock.Mock(machine="aarch64")), \
+             mock.patch.object(at, "_libc", return_value=fake):
+            self.assertEqual(at.pidfd_open(77), 123)
+        self.assertEqual(fake.syscall.args[0].value, at.SYS_PIDFD_OPEN)
+        self.assertEqual(fake.syscall.args[1].value, 77)
+        self.assertEqual(fake.syscall.args[2].value, 0)
+
+    def test_unknown_architecture_fails_closed(self):
+        with mock.patch.object(at.os, "pidfd_open", None, create=True), \
+             mock.patch.object(at.os, "uname", return_value=mock.Mock(machine="riscv64")):
+            with self.assertRaises(OSError) as raised:
+                at.pidfd_open(77)
+        self.assertEqual(raised.exception.errno, errno.ENOSYS)
+
 class CapabilityTests(unittest.TestCase):
     def fake(self, returncode, out=b""):
         return lambda *a, **k: subprocess.CompletedProcess(a, returncode, out, b"")
@@ -287,6 +321,12 @@ class CapabilityTests(unittest.TestCase):
                 self.assertEqual((result["status"], result["code"]), (status, name))
         finally:
             at.capability(refresh=True)
+
+    def test_capability_does_not_require_python_pidfd_wrapper(self):
+        with mock.patch.object(at.os, "pidfd_open", None, create=True):
+            result = at.capability(refresh=True, runner=self.fake(0, b"0\n"))
+        self.assertEqual((result["status"], result["code"]), (at.PASS, "AVAILABLE"))
+        at._CAPABILITY = None
 
     def test_overall_status_precedence(self):
         att = at.Attestation("/x", "127.0.0.1", 1, "/proc", None, "ollama")
@@ -369,7 +409,7 @@ class SharingScanTests(unittest.TestCase):
         result = self.scan(exclude=(600, 100), mountinfo=self.MOUNT_PLAIN)
         self.assertEqual(result["holders"], [])
 
-    @unittest.skipUnless(LINUX, "Linux /proc required")
+    @unittest.skipUnless(PROC_PLATFORM, "Linux /proc required")
     def test_real_proc_scan_reports_its_own_limits(self):
         result = at.socket_holders(0, exclude={os.getpid()})
         self.assertEqual(result["holders"], [])
@@ -378,7 +418,7 @@ class SharingScanTests(unittest.TestCase):
         self.assertEqual(result["scope"], "ALL_PROCESSES_INSPECTED" if complete else "PARTIAL")
 
 
-@unittest.skipUnless(LINUX, "Linux /proc required")
+@unittest.skipUnless(PROC_PLATFORM, "Linux /proc required")
 class PidFileTests(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="hg-pidfile-"))
@@ -788,7 +828,7 @@ class AttestBracketTests(_LabCase):
         self.assertEqual(att.reverify()["code"], "EXEC_SINCE_ATTESTATION")
 
 
-@unittest.skipUnless(LINUX, "Linux required")
+@unittest.skipUnless(PROC_PLATFORM, "Linux required")
 class KernelBindSemanticsTests(unittest.TestCase):
     """The L5 uniqueness argument: while a LISTEN socket without SO_REUSEPORT holds 127.0.0.1:P, no other
     socket can bind 127.0.0.1:P or 0.0.0.0:P, even with SO_REUSEADDR or SO_REUSEPORT of its own."""

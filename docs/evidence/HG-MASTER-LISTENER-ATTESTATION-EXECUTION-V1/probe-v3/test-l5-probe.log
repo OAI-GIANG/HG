@@ -1,0 +1,18 @@
+test_holder_scan_marks_unexpected_oserror_partial (hg.tests.test_l5_probe.ProbeDecisionTests.test_holder_scan_marks_unexpected_oserror_partial) ... ok
+test_platform_gate_accepts_android_and_linux_only (hg.tests.test_l5_probe.ProbeDecisionTests.test_platform_gate_accepts_android_and_linux_only) ... ok
+test_target_blocks_partial_descriptor_inspection (hg.tests.test_l5_probe.ProbeDecisionTests.test_target_blocks_partial_descriptor_inspection) ... ok
+test_target_blocks_unknown_holder_scan (hg.tests.test_l5_probe.ProbeDecisionTests.test_target_blocks_unknown_holder_scan) ... ok
+test_target_requires_tcp_not_only_stream (hg.tests.test_l5_probe.ProbeDecisionTests.test_target_requires_tcp_not_only_stream) ... ok
+test_probe_imports_only_the_standard_library (hg.tests.test_l5_probe.ProbeIndependenceTests.test_probe_imports_only_the_standard_library) ... ok
+test_usage_error (hg.tests.test_l5_probe.ProbeIndependenceTests.test_usage_error) ... ok
+test_port_hex_constant (hg.tests.test_l5_probe.ProbeRunTests.test_port_hex_constant) ... ok
+test_self_test_passes_every_check (hg.tests.test_l5_probe.ProbeRunTests.test_self_test_passes_every_check) ... ok
+test_target_mode_finds_owned_listener_and_rejects_wrong_port (hg.tests.test_l5_probe.ProbeRunTests.test_target_mode_finds_owned_listener_and_rejects_wrong_port) ... ok
+test_target_mode_under_yama_without_exception_is_blocked (hg.tests.test_l5_probe.ProbeRunTests.test_target_mode_under_yama_without_exception_is_blocked) ... skipped 'Yama ptrace_scope is not 1 here'
+test_target_with_duplicated_descriptor_is_one_listener (hg.tests.test_l5_probe.ProbeRunTests.test_target_with_duplicated_descriptor_is_one_listener)
+F-9 in the probe: two descriptors of one socket must not read as 'no unique listener'. ... ok
+
+----------------------------------------------------------------------
+Ran 12 tests in 1.161s
+
+OK (skipped=1)

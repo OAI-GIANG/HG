@@ -36,8 +36,16 @@ import subprocess
 import sys
 import time
 
+SYS_PIDFD_OPEN = 434             # unified syscall table: same number on arm64 and x86_64
 SYS_PIDFD_GETFD = 438            # unified syscall table: same number on arm64 and x86_64
-PROBE_VERSION = "hg-l5-probe-1"
+PROBE_VERSION = "hg-l5-probe-3"
+
+
+def supported_platform(value=None):
+    value = sys.platform if value is None else value
+    return value == "android" or value.startswith("linux")
+
+
 SOCKET_LINK = re.compile(r"socket:\[([0-9]+)\]")
 
 
@@ -54,6 +62,21 @@ def libc():
         except (OSError, AttributeError):
             continue
     raise OSError(errno.ENOSYS, "no libc syscall()")
+
+
+def pidfd_open(pid):
+    """Open a pidfd, using syscall 434 when Android's Python build omits os.pidfd_open."""
+    opener = getattr(os, "pidfd_open", None)
+    if callable(opener):
+        return opener(pid)
+    machine = getattr(os.uname(), "machine", "")
+    if machine not in ("aarch64", "x86_64"):
+        raise OSError(errno.ENOSYS, "pidfd_open syscall number is not defined for this architecture")
+    res = libc().syscall(ctypes.c_long(SYS_PIDFD_OPEN), ctypes.c_long(pid), ctypes.c_long(0))
+    if res < 0:
+        err = ctypes.get_errno()
+        raise OSError(err, os.strerror(err))
+    return int(res)
 
 
 def pidfd_getfd(pidfd, fd):
@@ -115,12 +138,17 @@ def environment():
 
 
 SYSCALL_CHILD = r"""
-import ctypes, os, sys
+import ctypes, errno, os, sys
 lib = ctypes.CDLL(None, use_errno=True); lib.syscall.restype = ctypes.c_long
 try:
-    pidfd = os.pidfd_open(os.getpid())
-except AttributeError:
-    print("pidfd_open:NO_PYTHON_SUPPORT"); sys.exit(4)
+    if callable(getattr(os, "pidfd_open", None)):
+        pidfd = os.pidfd_open(os.getpid())
+    elif getattr(os.uname(), "machine", "") in ("aarch64", "x86_64"):
+        pidfd = lib.syscall(ctypes.c_long(434), ctypes.c_long(os.getpid()), ctypes.c_long(0))
+        if pidfd < 0:
+            raise OSError(ctypes.get_errno(), "pidfd_open syscall failed")
+    else:
+        raise OSError(errno.ENOSYS, "pidfd_open syscall number unknown for architecture")
 except OSError as exc:
     print("pidfd_open:%d" % exc.errno); sys.exit(4)
 fd = lib.syscall(ctypes.c_long(438), ctypes.c_long(pidfd), ctypes.c_long(0), ctypes.c_long(0))
@@ -158,6 +186,13 @@ def describe(fd):
         return info
     finally:
         sock.detach()
+
+
+def is_tcp_listener(row):
+    return (row.get("family") in ("AF_INET", "AF_INET6")
+            and row.get("type") == "SOCK_STREAM"
+            and row.get("proto") == socket.IPPROTO_TCP
+            and row.get("listening") is True)
 
 
 def inspect(pid, pidfd, before_getfd=None):
@@ -219,6 +254,7 @@ def holders(inode, exclude):
     among inspected processes."""
     euid, found, unreadable = os.geteuid(), [], 0
     uninspectable = {"same_uid": 0, "root": 0, "other_uid": 0, "unknown": 0}
+    scan_errors = []
     for name in os.listdir("/proc"):
         if not name.isdigit() or int(name) in exclude:
             continue
@@ -233,7 +269,15 @@ def holders(inode, exclude):
                 kind = "unknown"
             uninspectable[kind] += 1
             continue
-        except OSError:
+        except FileNotFoundError:
+            if not os.path.exists(f"/proc/{name}"):
+                continue
+            uninspectable["unknown"] += 1
+            scan_errors.append({"pid": int(name), "stage": "list_fd", "errno": "ENOENT"})
+            continue
+        except OSError as exc:
+            uninspectable["unknown"] += 1
+            scan_errors.append({"pid": int(name), "stage": "list_fd", "errno": errname(exc.errno)})
             continue
         for entry in entries:
             try:
@@ -249,6 +293,7 @@ def holders(inode, exclude):
     hidepid = proc_hidepid()
     complete = not any(uninspectable.values()) and not unreadable and hidepid is None
     return found, {"uninspectable": uninspectable, "unreadable_descriptors": unreadable, "proc_hidepid": hidepid,
+                   "scan_errors": scan_errors,
                    "scope": "ALL_PROCESSES_INSPECTED" if complete else "PARTIAL"}
 
 
@@ -299,7 +344,7 @@ def self_test(report):
         report["child"] = info
         pid = info["pid"]
         t0 = starttime(pid)
-        pidfd = os.pidfd_open(pid)
+        pidfd = pidfd_open(pid)
         checks["pid_reuse_guard"] = t0 is not None and starttime(pid) == t0 and not exited(pidfd)
         rows, errors = inspect(pid, pidfd)
         report["sockets"], report["errors"] = rows, errors
@@ -318,7 +363,9 @@ def self_test(report):
         checks["exactly_one_tcp_listener"] = sum(1 for row in rows if row.get("listening")
                                                  and row.get("type") == "SOCK_STREAM") == 1
         found, sharing = holders(lst.get("inode_dup", -1), exclude={pid, os.getpid()})
-        checks["listener_not_shared"] = not found
+        checks["listener_not_shared"] = (not found and not sharing["uninspectable"]["unknown"]
+                                         and not sharing["unreadable_descriptors"]
+                                         and sharing["proc_hidepid"] != "UNKNOWN")
         report["sharing"] = sharing
 
         def swap(number):                     # close + reuse the descriptor between listing and getfd
@@ -371,7 +418,7 @@ def target(report, pid, expect):
                         "selinux": read_text(f"/proc/{pid}/attr/current", 4096)}
     t0 = starttime(pid)
     try:
-        pidfd = os.pidfd_open(pid)
+        pidfd = pidfd_open(pid)
     except OSError as exc:
         report["result"] = {"status": "FAIL", "code": "PIDFD_OPEN_" + errname(exc.errno)}
         return 1
@@ -398,14 +445,26 @@ def target(report, pid, expect):
         if denied and not rows:
             report["result"] = {"status": "BLOCKED", "code": "PIDFD_GETFD_" + denied[0]["errno"]}
             return 2
-        matches = [r for r in rows if r.get("listening") and r.get("type") == "SOCK_STREAM" and r.get("consistent")
+        incomplete_rows = [r for r in rows if not r.get("consistent") or r.get("describe_error")]
+        if errors or incomplete_rows:
+            report["result"] = {"status": "BLOCKED", "code": "INSPECTION_INCOMPLETE",
+                                "error_count": len(errors),
+                                "incomplete_fds": sorted(r["fd"] for r in incomplete_rows)}
+            return 2
+        matches = [r for r in rows if is_tcp_listener(r) and r.get("consistent")
                    and r.get("address") == host and r.get("port") == port]
-        same_port = [r for r in rows if r.get("listening") and r.get("port") == port and r.get("address") != host]
+        same_port = [r for r in rows if r.get("family") in ("AF_INET", "AF_INET6")
+                     and r.get("listening") and r.get("port") == port and r.get("address") != host]
         sockets = sorted({r["inode_dup"] for r in matches})   # a listener is a socket; dup() adds descriptors
         alive = starttime(pid) == t0 and not exited(pidfd)
         if len(sockets) == 1 and not same_port and not any(r["reuseport"] for r in matches) and alive:
             found, sharing = holders(sockets[0], exclude={pid, os.getpid()})
             report["holders"], report["sharing"] = found, sharing
+            if (sharing.get("uninspectable", {}).get("unknown", 0)
+                    or sharing.get("unreadable_descriptors", 0)
+                    or sharing.get("proc_hidepid") == "UNKNOWN"):
+                report["result"] = {"status": "BLOCKED", "code": "SHARING_SCAN_INCOMPLETE"}
+                return 2
             if not found:
                 report["result"] = {"status": "PASS", "code": "LISTENER_OWNED",
                                     "fd": min(r["fd"] for r in matches), "fds": sorted(r["fd"] for r in matches),
@@ -431,7 +490,7 @@ def main(argv):
         else:
             print(__doc__, file=sys.stderr)
             return 3
-    if not sys.platform.startswith("linux"):
+    if not supported_platform():
         print(json.dumps({"result": {"status": "BLOCKED", "code": "NOT_LINUX"}}))
         return 3
 
@@ -443,7 +502,7 @@ def main(argv):
     report = {"environment": environment()}
     try:
         report["syscalls"] = syscall_check()
-        if report["syscalls"]["status"] != "AVAILABLE" or not hasattr(os, "pidfd_open"):
+        if report["syscalls"]["status"] != "AVAILABLE":
             report["result"] = {"status": "BLOCKED", "code": report["syscalls"].get("code", "NO_PIDFD_OPEN")}
             code = 2
         elif args.get("--target-pid"):

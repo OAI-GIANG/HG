@@ -157,6 +157,7 @@ what it does not:
   non-dumpable, hence uninspectable even for the same UID (the sandbox already shows `PARTIAL`: root cannot read
   PID 1's descriptors there).
 - So `hidden > 0` is not, by itself, grounds for PASS: the PASS rests on the bind rules plus Q3, and it says so.
+- An unknown UID class, unreadable descriptor, or `UNKNOWN` hidepid state is not covered by Q3 and blocks L5. `PARTIAL` is accepted only when all uninspectable processes are classified into known UID classes and no unreadable descriptor or unknown mount observation remains.
 
 ## 5. Post-check (`Attestation.reverify`)
 
@@ -300,9 +301,18 @@ owner; an anchor entry without the §9 evidence.
   closed immediately and never kept across the bracket (re-duplicated in `reverify`).
 - Correctness — uniqueness rests on bind-conflict rules: verified empirically, kept as a test.
 - TOCTOU — a single check proves nothing about the later connection: added the post-check (§5).
-- Android — a SIGSYS would kill `hg serve`: first call in a throwaway interpreter.
+- Android — a SIGSYS would kill `hg serve`: first call in a throwaway interpreter. Android Python builds targeting API <31 may omit `os.pidfd_open`; on arm64/x86_64 use syscall 434 only after the throwaway capability probe confirms it is safe. The same gate applies to pidfd_getfd syscall 438.
 - Coverage — stopping at L3 while the anchor is empty would hide L5 on the device: L3/L4 no longer stop the run;
   overall status unchanged.
 - Honesty — the legacy check's "port is ours" reason was false (F-1): reason corrected, behaviour kept, because
   refusing every call before the device evidence exists would break the owner's v1 assistant.
 - Scope — wiring, runtime switch on the phone and option B are separate, gated work.
+
+
+## 13. Termux validation and fail-closed remediation (2026-11-06)
+
+Observed on the connected Termux device: Python 3.14.8, `sys.platform=android`, machine `aarch64`, runtime Android SDK 37, Python build API level 24, and `os.pidfd_open` is not exported by this Python build. A disposable child process successfully exercised raw syscall 434 (`pidfd_open`) and syscall 438 (`pidfd_getfd`) against its own process. This proves syscall availability for the self-process capability check only; it does not prove access to the actual Ollama service process.
+
+The remediation candidate therefore: (1) recognizes Python's distinct `android` platform value; (2) uses syscall 434 only on `aarch64`/ `x86_64` when the Python wrapper is absent and only after the disposable-child capability probe; (3) keeps syscall 438 behind the same SIGSYS-safe probe; (4) blocks target PASS when descriptor inspection has errors or inconsistent rows; (5) requires AF_INET/AF_INET6 + SOCK_STREAM + IPPROTO_TCP; (6) classifies unexpected `/proc/PID/fd` OSErrors as unknown/partial and blocks on unknown UID, unreadable descriptors, or unknown hidepid; (7) runs probe tests on Android as well as Linux.
+
+Candidate verification on this device: `test_l5_probe.py` — 11 PASS, 1 SKIP (Yama-specific case; no Yama ptrace_scope=1); focused attestor fallback/capability tests — 5 PASS; L5 self-test — 12/12 checks PASS. Synthetic child target-mode tests passed. Actual Ollama target PID, production service, trust anchor, benchmark, and end-to-end five-layer attestation were NOT_RUN. `trusted_runtimes.json` remains empty; L3 and overall VERIFIED status remain BLOCKED/UNVERIFIED. No protected file was opened or modified.

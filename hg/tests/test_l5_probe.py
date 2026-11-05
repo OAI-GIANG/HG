@@ -2,6 +2,8 @@
 
 It must stay independent of HG (no `hg` import) so it can run on the phone from any checkout."""
 import ast
+import errno
+import importlib.util
 import json
 import os
 import socket
@@ -9,13 +11,17 @@ import subprocess
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from hg.assistant import attest as at
 from hg.tests.test_attest import yama_scope
 
 PROBE = Path(__file__).resolve().parents[2] / "deploy" / "termux" / "l5_probe.py"
+PROBE_SPEC = importlib.util.spec_from_file_location("hg_l5_probe_standalone", PROBE)
+PROBE_MODULE = importlib.util.module_from_spec(PROBE_SPEC)
+PROBE_SPEC.loader.exec_module(PROBE_MODULE)
 REQUIRE = os.environ.get("HG_REQUIRE_PROC_TESTS") == "1"
-LINUX = sys.platform.startswith("linux") and os.path.isdir("/proc/self/fd")
+PROC_PLATFORM = sys.platform in ("linux", "android") and os.path.isdir("/proc/self/fd")
 
 
 def run_probe(*args, timeout=90):
@@ -40,7 +46,74 @@ class ProbeIndependenceTests(unittest.TestCase):
         self.assertEqual((code, report), (3, None))
 
 
-@unittest.skipUnless(LINUX, "Linux /proc required")
+
+
+class ProbeDecisionTests(unittest.TestCase):
+    def row(self, proto=socket.IPPROTO_TCP):
+        return {"fd": 5, "inode_listed": 555, "inode_dup": 555, "consistent": True,
+                "family": "AF_INET", "type": "SOCK_STREAM", "proto": proto,
+                "listening": True, "reuseport": False, "address": "127.0.0.1", "port": 11434}
+
+    def run_target(self, row=None, errors=None, sharing=None):
+        row = self.row() if row is None else row
+        errors = [] if errors is None else errors
+        sharing = ({"uninspectable": {"same_uid": 0, "root": 0, "other_uid": 0, "unknown": 0},
+                    "unreadable_descriptors": 0, "proc_hidepid": None, "scope": "ALL_PROCESSES_INSPECTED"}
+                   if sharing is None else sharing)
+        report = {}
+        with mock.patch.object(PROBE_MODULE.os, "readlink", return_value="/usr/bin/ollama"), \
+             mock.patch.object(PROBE_MODULE, "status_fields", return_value={}), \
+             mock.patch.object(PROBE_MODULE, "starttime", return_value=77), \
+             mock.patch.object(PROBE_MODULE, "pidfd_open", return_value=999), \
+             mock.patch.object(PROBE_MODULE.os, "close"), \
+             mock.patch.object(PROBE_MODULE, "inspect", return_value=([row], errors)), \
+             mock.patch.object(PROBE_MODULE, "exited", return_value=False), \
+             mock.patch.object(PROBE_MODULE, "holders", return_value=([], sharing)):
+            code = PROBE_MODULE.target(report, 123, "127.0.0.1:11434")
+        return code, report
+
+    def test_platform_gate_accepts_android_and_linux_only(self):
+        self.assertTrue(PROBE_MODULE.supported_platform("android"))
+        self.assertTrue(PROBE_MODULE.supported_platform("linux"))
+        self.assertFalse(PROBE_MODULE.supported_platform("darwin"))
+
+    def test_target_blocks_partial_descriptor_inspection(self):
+        code, report = self.run_target(errors=[{"fd": 8, "stage": "readlink", "errno": "EIO"}])
+        self.assertEqual(code, 2)
+        self.assertEqual(report["result"]["code"], "INSPECTION_INCOMPLETE")
+
+    def test_target_requires_tcp_not_only_stream(self):
+        sctp = getattr(socket, "IPPROTO_SCTP", 132)
+        code, report = self.run_target(row=self.row(proto=sctp))
+        self.assertEqual(code, 1)
+        self.assertEqual(report["result"]["code"], "NO_UNIQUE_LISTENER")
+
+    def test_holder_scan_marks_unexpected_oserror_partial(self):
+        def listdir(path):
+            if path == "/proc":
+                return ["321"]
+            if path == "/proc/321/fd":
+                raise OSError(errno.EIO, "simulated fd-table read error")
+            raise AssertionError(path)
+
+        with mock.patch.object(PROBE_MODULE.os, "geteuid", return_value=1000), \
+             mock.patch.object(PROBE_MODULE.os, "listdir", side_effect=listdir), \
+             mock.patch.object(PROBE_MODULE.os.path, "exists", return_value=True), \
+             mock.patch.object(PROBE_MODULE, "proc_hidepid", return_value=None):
+            found, sharing = PROBE_MODULE.holders(555, set())
+        self.assertEqual(found, [])
+        self.assertEqual(sharing["scope"], "PARTIAL")
+        self.assertEqual(sharing["uninspectable"]["unknown"], 1)
+
+    def test_target_blocks_unknown_holder_scan(self):
+        sharing = {"uninspectable": {"same_uid": 0, "root": 0, "other_uid": 0, "unknown": 1},
+                   "unreadable_descriptors": 0, "proc_hidepid": None, "scope": "PARTIAL"}
+        code, report = self.run_target(sharing=sharing)
+        self.assertEqual(code, 2)
+        self.assertEqual(report["result"]["code"], "SHARING_SCAN_INCOMPLETE")
+
+
+@unittest.skipUnless(PROC_PLATFORM, "Linux/Android /proc required")
 class ProbeRunTests(unittest.TestCase):
     def setUp(self):
         cap = at.capability()

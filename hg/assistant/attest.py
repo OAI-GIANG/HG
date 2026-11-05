@@ -52,7 +52,8 @@ from pathlib import Path
 PASS, FAIL, BLOCKED, UNVERIFIED = "PASS", "FAIL", "BLOCKED", "UNVERIFIED"
 VERIFIED_LISTENER = "VERIFIED_LISTENER"
 LAYERS = ("L1_supervision", "L2_identity", "L3_integrity", "L4_credentials", "L5_listener")
-# pidfd_getfd is in the unified syscall table (asm-generic numbers >= 424): 438 on arm64 and x86_64.
+# pidfd_open/pidfd_getfd use the unified syscall table on the supported 64-bit targets.
+SYS_PIDFD_OPEN = 434
 SYS_PIDFD_GETFD = 438
 PID_MAX = 4194304
 ANCHOR_PATH = Path(__file__).with_name("trusted_runtimes.json")
@@ -167,20 +168,25 @@ def _exited(pidfd):
 _LIBC = None
 _CAPABILITY = None
 _CAPABILITY_CODE = r"""
-import ctypes, os, sys
+import ctypes, errno, os, sys
+libc = ctypes.CDLL(None, use_errno=True)
+libc.syscall.restype = ctypes.c_long
 try:
-    libc = ctypes.CDLL(None, use_errno=True)
-    libc.syscall.restype = ctypes.c_long
-    pidfd = os.pidfd_open(os.getpid())
-except AttributeError:
-    print("NO_PIDFD_OPEN"); sys.exit(4)
+    if callable(getattr(os, "pidfd_open", None)):
+        pidfd = os.pidfd_open(os.getpid())
+    elif getattr(os.uname(), "machine", "") in ("aarch64", "x86_64"):
+        pidfd = libc.syscall(ctypes.c_long(%d), ctypes.c_long(os.getpid()), ctypes.c_long(0))
+        if pidfd < 0:
+            raise OSError(ctypes.get_errno(), "pidfd_open syscall failed")
+    else:
+        raise OSError(errno.ENOSYS, "pidfd_open syscall number unknown for architecture")
 except OSError as exc:
     print(exc.errno); sys.exit(4)
 fd = libc.syscall(ctypes.c_long(%d), ctypes.c_long(pidfd), ctypes.c_long(0), ctypes.c_long(0))
 if fd < 0:
     print(ctypes.get_errno()); sys.exit(3)
 print(0)
-""" % SYS_PIDFD_GETFD
+""" % (SYS_PIDFD_OPEN, SYS_PIDFD_GETFD)
 
 
 def _libc():
@@ -197,6 +203,21 @@ def _libc():
         else:
             raise OSError(errno.ENOSYS, "no libc syscall() entry point")
     return _LIBC
+
+
+def pidfd_open(pid):
+    """Open a pidfd; Android builds below API 31 may need the raw syscall fallback."""
+    opener = getattr(os, "pidfd_open", None)
+    if callable(opener):
+        return opener(pid)
+    machine = getattr(os.uname(), "machine", "")
+    if machine not in ("aarch64", "x86_64"):
+        raise OSError(errno.ENOSYS, "pidfd_open syscall number is not defined for this architecture")
+    fd = _libc().syscall(ctypes.c_long(SYS_PIDFD_OPEN), ctypes.c_long(pid), ctypes.c_long(0))
+    if fd < 0:
+        err = ctypes.get_errno()
+        raise OSError(err, os.strerror(err))
+    return int(fd)
 
 
 def pidfd_getfd(pidfd, targetfd):
@@ -219,9 +240,6 @@ def capability(*, refresh=False, runner=subprocess.run):
     """
     global _CAPABILITY
     if _CAPABILITY is not None and not refresh:
-        return _CAPABILITY
-    if not hasattr(os, "pidfd_open"):
-        _CAPABILITY = _result(BLOCKED, "PIDFD_OPEN_UNSUPPORTED_BY_PYTHON")
         return _CAPABILITY
     try:
         done = runner([sys.executable, "-I", "-S", "-c", _CAPABILITY_CODE], stdin=subprocess.DEVNULL,
@@ -341,10 +359,8 @@ def _supervision(service_dir, proc, hooks):
         raise _LayerFail("STALE_PID", pid=pid, error=_errname(exc)) from exc
     if first.state in ("Z", "X", "x"):
         raise _LayerFail("PROCESS_DEAD", pid=pid, state=first.state)
-    if not hasattr(os, "pidfd_open"):
-        raise _LayerFail("PIDFD_OPEN_UNSUPPORTED_BY_PYTHON", status=BLOCKED, pid=pid)
     try:
-        pidfd = os.pidfd_open(pid)
+        pidfd = pidfd_open(pid)
     except OSError as exc:
         if exc.errno == errno.ESRCH:
             raise _LayerFail("STALE_PID", pid=pid) from exc
