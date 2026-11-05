@@ -63,7 +63,7 @@ class Lab:
     """Temporary service directories, supervisors and targets; everything is torn down."""
 
     def __init__(self, test):
-        if not LINUX:
+        if not PROC_PLATFORM:
             _skip("Linux /proc required")
         self.tmp = Path(tempfile.mkdtemp(prefix="hg-attest-"))
         self.bin = self.tmp / "bin"
