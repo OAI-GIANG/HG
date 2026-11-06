@@ -297,7 +297,9 @@ class ConfigTests(unittest.TestCase):
         (proc / "4242").mkdir(parents=True)
         (proc / "4242" / "exe").symlink_to("/usr/bin/ollama")
         conf = dict(cfg.DEFAULTS, ollama_service_dir=str(service))
-        self.assertEqual(cfg.attest_listener(conf, proc=proc)["status"], "VERIFIED_PROCESS")
+        legacy = cfg.attest_listener(conf, proc=proc)
+        self.assertEqual((legacy["status"], legacy["listener"]), ("VERIFIED_PROCESS", "UNVERIFIED"))
+        self.assertNotIn("bind its port", legacy["reason"])      # F-1: liveness is not port ownership
         (proc / "4242" / "exe").unlink()
         (proc / "4242" / "exe").symlink_to("/usr/bin/nc")
         with self.assertRaisesRegex(cfg.ConfigError, "not this user's ollama"):

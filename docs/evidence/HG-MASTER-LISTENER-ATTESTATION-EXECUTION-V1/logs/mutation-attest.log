@@ -1,0 +1,14 @@
+M0 control (no mutation) | AttestHappyPathTests | CONTROL_PASS | OK
+M1 reuseport check removed | AttestL5Tests.test_reuseport_single_and_double | KILLED(assertion) | FAILED (failures=1)
+M2 inode consistency removed | AttestL5Tests.test_descriptor_closed_and_reused_between_listing_and_getfd | KILLED(assertion) | FAILED (failures=1)
+M3 sharing scan ignored | AttestL5Tests.test_listener_shared_with_another_process | KILLED(assertion) | FAILED (failures=1)
+M4 runsv cwd binding removed | AttestL1Tests.test_runsv_of_another_service | KILLED(assertion) | FAILED (failures=1)
+M5 starttime compare removed (L1) | AttestL1Tests.test_pid_reuse_between_reads_is_detected | KILLED(assertion) | FAILED (failures=1)
+M6 ctime/size recheck removed | AttestL2L3Tests.test_executable_metadata_changed_during_hash | KILLED(assertion) | FAILED (failures=1)
+M7 LISTEN state ignored | AttestL5Tests.test_not_listening_udp_wrong_port | KILLED(assertion) | FAILED (failures=1)
+M8 reverify inode check removed | AttestBracketTests.test_listener_replaced_after_attestation | KILLED(assertion) | FAILED (failures=1)
+M9 UNVERIFIED counted as verified | AttestHappyPathTests.test_shipped_empty_anchor_keeps_overall_unverified_but_collects_l5 | KILLED(assertion) | FAILED (failures=1)
+M10 other binds on port ignored | AttestL5Tests.test_wrong_bind_address | KILLED(assertion) | FAILED (failures=1)
+M11 exec re-open check removed | AttestL2L3Tests.test_execve_during_attestation | KILLED(assertion) | FAILED (failures=1)
+M12 pid file O_NOFOLLOW dropped | PidFileTests.test_not_regular_symlink_and_modes | KILLED(assertion) | FAILED (failures=1)
+survivors: 0 invalid: 0

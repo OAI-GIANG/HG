@@ -1,0 +1,5 @@
+selftest-root exit=0
+selftest-nonroot exit=0
+target-sameuid exit=0
+target-wrongport exit=1
+target-crossuid exit=2

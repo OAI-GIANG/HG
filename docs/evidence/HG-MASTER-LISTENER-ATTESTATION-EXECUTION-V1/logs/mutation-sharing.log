@@ -1,0 +1,9 @@
+C0 control | CONTROL_PASS | OK
+M13 listeners counted per descriptor | KILLED(assertion) | FAILED (failures=1)
+M14 scope always complete | KILLED(assertion) | FAILED (failures=3)
+M15 uninspectable not classified | KILLED(assertion) | FAILED (failures=1)
+M16 unreadable fd ignored | KILLED(assertion) | FAILED (failures=1)
+M17 hidepid ignored | KILLED(assertion) | FAILED (failures=1)
+M18 reverify no fallback fd | KILLED(assertion) | FAILED (failures=1)
+M19 probe per-descriptor uniqueness | KILLED(assertion) | FAILED (failures=1)
+survivors: 0 invalid: 0
