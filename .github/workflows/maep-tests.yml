@@ -113,4 +113,3 @@ jobs:
         env:
           HG_REQUIRE_PROC_TESTS: "1"
         run: python -m unittest -v hg.tests.test_l5_probe.ProbeRunTests
-
