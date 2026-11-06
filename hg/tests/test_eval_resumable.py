@@ -129,7 +129,8 @@ class EvalResumableTests(unittest.TestCase):
         self.assertEqual(self._script().returncode, 0)
         notes = (self.work / "home" / "notes.jsonl").read_text(encoding="utf-8").splitlines()
         self.assertEqual(len(notes), len(SPEC["notes"]))
-        self.assertEqual(sorted(p.name for p in (self.home / ".local/share/hg/assistant").iterdir()), ["config.json"])
+        self.assertEqual(sorted(p.name for p in (self.home / ".local/share/hg/assistant").iterdir()),
+                         [".lock", "config.json"])
 
 
 if __name__ == "__main__":

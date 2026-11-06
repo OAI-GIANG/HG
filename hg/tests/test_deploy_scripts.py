@@ -123,20 +123,163 @@ class DeployScriptTests(unittest.TestCase):
         shutil.copytree(fixture, good)
         for path in [good, *good.rglob("*")]:
             os.chmod(path, 0o700 if path.is_dir() else 0o600)
+        def attest(state):
+            import hashlib
+            import time
+            inventory = []
+            for path in sorted(state.rglob("*")):
+                if path.is_file() and path.name != ".hg-state-copy.json":
+                    raw = path.read_bytes()
+                    inventory.append({"path": path.relative_to(state).as_posix(), "bytes": len(raw),
+                                      "sha256": hashlib.sha256(raw).hexdigest()})
+            (state / ".hg-state-copy.json").write_text(json.dumps({
+                "schema": "hg-state-copy-attestation-v1", "copy_id": "synthetic-" + state.name,
+                "source_ref": "synthetic-fixture/state_f3dac34",
+                "created_at": "2026-11-02T00:00:00+00:00",
+                "assurance": "OPERATIONAL_INTEGRITY_UNAUTHENTICATED", "inventory": inventory,
+            }, sort_keys=True), encoding="utf-8")
+
+        attest(good)
+        env = {k: v for k, v in os.environ.items() if k != "HG_RUNTIME_STATE_DIR"}
+        env["HG_SERVICE_CONFIG"] = str(tmp / "no-service-config.json")     # never the owner's real config
         run = lambda state: subprocess.run([sys.executable, "-I", "-B", str(DEPLOY / "state_precheck.py"), str(repo),
-                                            str(state)], capture_output=True, text=True, timeout=60)
+                                            str(state)], capture_output=True, text=True, timeout=60, env=env)
         proc = run(good)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         report = json.loads(proc.stdout)
         self.assertEqual((report["result"], sorted(report["checks"])),
                          ("PASS", ["actions", "idempotency", "memory", "tasks"]))
+        self.assertEqual(report["assurance"], "OPERATIONAL_INTEGRITY_UNAUTHENTICATED")
+        empty = tmp / "empty"
+        empty.mkdir()
+        proc = run(empty)
+        self.assertEqual(proc.returncode, 1)
+        self.assertNotEqual(json.loads(proc.stdout).get("result"), "PASS")
         bad = tmp / "bad"
         shutil.copytree(good, bad)
         with (bad / "tasks.jsonl").open("ab") as stream:
             stream.write(b'{"event_id": "x"')
+        attest(bad)
         proc = run(bad)
         self.assertEqual(proc.returncode, 1)
         self.assertFalse(json.loads(proc.stdout)["checks"]["tasks"]["ok"])
+
+    # ---- G1: copy admission, live-root protection and the real backup step ----------------
+
+    def _state_copy(self, tmp, name, *, marker=True):
+        import os
+        state = tmp / name
+        shutil.copytree(DEPLOY.parents[1] / "hg" / "tests" / "fixtures" / "state_f3dac34", state)
+        if marker:                                  # backup_state copies the live .writer.lock too
+            (state / ".writer.lock").touch()
+        for path in [state, *state.rglob("*")]:
+            os.chmod(path, 0o700 if path.is_dir() else 0o600)
+        return state
+
+    @staticmethod
+    def _attest(state):
+        import hashlib
+        import json
+        inventory = [{"path": p.relative_to(state).as_posix(), "bytes": p.stat().st_size,
+                      "sha256": hashlib.sha256(p.read_bytes()).hexdigest()}
+                     for p in sorted(state.rglob("*")) if p.is_file() and p.name != ".hg-state-copy.json"]
+        (state / ".hg-state-copy.json").write_text(json.dumps({
+            "schema": "hg-state-copy-attestation-v1", "copy_id": "synthetic-" + state.name,
+            "source_ref": "synthetic-fixture/state_f3dac34", "created_at": "2026-11-03T00:00:00+00:00",
+            "assurance": "OPERATIONAL_INTEGRITY_UNAUTHENTICATED", "inventory": inventory}), encoding="utf-8")
+
+    def _precheck(self, tmp, state, **env):
+        import json
+        import os
+        base = {k: v for k, v in os.environ.items() if k not in ("HG_RUNTIME_STATE_DIR", "HG_SERVICE_CONFIG")}
+        base["HG_SERVICE_CONFIG"] = str(tmp / "no-service-config.json")     # never the owner's real config
+        base.update({k: str(v) for k, v in env.items()})
+        proc = subprocess.run([sys.executable, "-I", "-B", str(DEPLOY / "state_precheck.py"), str(DEPLOY.parents[1]),
+                               str(state)], capture_output=True, text=True, timeout=60, env=base)
+        return proc.returncode, json.loads(proc.stdout)
+
+    def _tmp(self):
+        import tempfile
+        tmp = Path(tempfile.mkdtemp(prefix="hg-g1-precheck-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        return tmp
+
+    def test_state_precheck_loads_a_copy_that_carries_the_writer_marker(self):
+        tmp = self._tmp()
+        good = self._state_copy(tmp, "good")
+        self._attest(good)
+        rc, report = self._precheck(tmp, good)
+        self.assertEqual((rc, report["result"]), (0, "PASS"), report)
+        self.assertTrue(all(c["ok"] for c in report["checks"].values()), report)
+
+    def test_state_precheck_detects_modified_missing_extra_and_symlinked_files(self):
+        import os
+        tmp = self._tmp()
+        cases = {
+            "modified": lambda s: (s / "memory.jsonl").write_bytes((s / "memory.jsonl").read_bytes() + b" "),
+            "missing": lambda s: (s / "actions.jsonl").unlink(),
+            "extra": lambda s: (s / "stray.bin").write_bytes(b"x"),
+            "symlink": lambda s: os.symlink(s / "tasks.jsonl", s / "link.jsonl"),
+        }
+        for name, damage in cases.items():
+            state = self._state_copy(tmp, name)
+            self._attest(state)
+            damage(state)
+            rc, report = self._precheck(tmp, state)
+            self.assertEqual((rc, report["result"]), (1, "FAIL"), name)
+            self.assertIn("copy admission", report["reason"], name)
+            self.assertNotIn("checks", report, name)        # nothing is loaded from a bad copy
+
+    def test_state_precheck_refuses_custom_live_roots_from_env_and_service_config(self):
+        import json
+        tmp = self._tmp()
+        live_env = self._state_copy(tmp, "custom-live-env")
+        self._attest(live_env)
+        rc, report = self._precheck(tmp, live_env, HG_RUNTIME_STATE_DIR=live_env)
+        self.assertEqual(rc, 1)
+        self.assertIn("overlaps the protected live runtime-state root", report["reason"])
+        live_conf = self._state_copy(tmp, "custom-live-config")
+        nested = self._state_copy(live_conf, "copy-inside-live")
+        self._attest(nested)
+        config = tmp / "runtime-service.json"
+        config.write_text(json.dumps({"state_dir": str(live_conf)}), encoding="utf-8")
+        rc, report = self._precheck(tmp, nested, HG_SERVICE_CONFIG=config)
+        self.assertEqual(rc, 1)
+        self.assertIn("overlaps the protected live runtime-state root", report["reason"])
+        config.write_text(json.dumps({"port": 8765}), encoding="utf-8")     # names no state_dir
+        good = self._state_copy(tmp, "good")
+        self._attest(good)
+        rc, report = self._precheck(tmp, good, HG_SERVICE_CONFIG=config)
+        self.assertEqual(rc, 1)
+        self.assertIn("names no absolute state_dir", report["reason"])
+
+    def test_backup_state_replaces_a_stale_attestation_and_the_copy_passes_precheck(self):
+        import json
+        import os
+        text = (DEPLOY / "switch_service.sh").read_text(encoding="utf-8")
+        body = text.split("backup_state() {", 1)[1].split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
+        tmp = self._tmp()
+        live = self._state_copy(tmp, "live")
+        (live / ".hg-state-copy.json").write_text('{"copy_id": "stale-from-a-restore"}', encoding="utf-8")
+        os.chmod(live / ".hg-state-copy.json", 0o600)
+        (tmp / "bk").mkdir()
+        dst = tmp / "bk" / "state"
+        proc = subprocess.run([sys.executable, "-I", "-", str(live), str(dst)], input=body, text=True,
+                              capture_output=True, timeout=60)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        doc = json.loads((dst / ".hg-state-copy.json").read_text(encoding="utf-8"))
+        self.assertNotEqual(doc.get("copy_id"), "stale-from-a-restore")
+        self.assertNotIn(".hg-state-copy.json", {i["path"] for i in doc["inventory"]})
+        self.assertNotIn(".hg-state-copy.json", Path(str(dst) + ".sha256").read_text(encoding="utf-8"))
+        rc, report = self._precheck(tmp, dst)
+        self.assertEqual((rc, report["result"]), (0, "PASS"), report)
+
+    def test_restore_state_never_makes_a_copy_attestation_live(self):
+        text = (DEPLOY / "switch_service.sh").read_text(encoding="utf-8")
+        branch = text.split('if [ "$MODE" = "--restore-state" ]; then', 1)[1].split("else", 1)[0]
+        self.assertLess(branch.index("precheck_with"), branch.index('rm -f "$STATE.incoming-$TS/.hg-state-copy.json"'))
+        self.assertLess(branch.index(".hg-state-copy.json"), branch.index('mv "$STATE.incoming-$TS" "$STATE"'))
+        self.assertIn('HG_RUNTIME_STATE_DIR="$STATE" HG_SERVICE_CONFIG="$OLDCONF"', text)
 
     def test_install_never_overwrites_a_foreign_hg_command(self):
         text = (DEPLOY / "install_release.sh").read_text(encoding="utf-8")

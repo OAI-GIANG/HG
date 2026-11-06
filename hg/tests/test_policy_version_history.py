@@ -16,7 +16,7 @@ from unittest.mock import patch
 
 from maep.core import MAEPError, POLICY_VERSION
 from maep.task_store import TaskStore
-from hg.tests.support import make_task, write_step
+from hg.tests.support import grant, make_task, write_step
 from hg.tests.test_gateway import GatewayFixture
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -140,13 +140,33 @@ class PolicyVersionHistoryTests(unittest.TestCase):
 
 class StaleTaskEffectTests(GatewayFixture):
     def test_gateway_refuses_effects_for_historical_tasks(self):
-        gw = self.running([write_step()])
-        self.rt.store._records["T-1"]["policy_status"] = "STALE"      # as restore marks history
-        self.rt.store._records["T-1"]["recorded_policy_version"] = "MAEP-1.0.0"
-        outcome = gw.execute("T-1", "S-1")
+        # T-1 is left RUNNING with a planned write; its events are durable in tasks.jsonl
+        # under the current policy. The store re-reads that ledger on every read, so the
+        # historical state must come from the ledger itself, not from an in-memory record.
+        self.running([write_step()])
+        ledger = self.workdir / "tasks.jsonl"
+        before = ledger.read_bytes()
+        # The policy then moves on: restart over the same ledgers, declaring the old version
+        # as read-only history -- the production path that marks a task STALE (_replay).
+        with patch("maep.task_store.POLICY_VERSION", NEXT):
+            rt = self.build((grant(),), history_versions={POLICY_VERSION})
+            view = rt.store.snapshot("T-1")
+            self.assertEqual((view["policy_status"], view["recorded_policy_version"]),
+                             ("STALE", POLICY_VERSION))
+            self.assertEqual(view["task"]["state"], "RUNNING")
+            outcome = rt.gateway.execute("T-1", "S-1")
         self.assertEqual(outcome["status"], "BLOCKED")
         self.assertIn("earlier policy", outcome["reason"])
         self.assertFalse(self.target_file().exists())
+        self.assertEqual(ledger.read_bytes(), before)        # history stays read-only on disk
+
+    def test_current_policy_task_is_not_blocked_by_the_history_check(self):
+        # Control: the same durable task under the unchanged policy is CURRENT and executes.
+        self.running([write_step()])
+        rt = self.build((grant(),))
+        self.assertEqual(rt.store.snapshot("T-1").get("policy_status", "CURRENT"), "CURRENT")
+        self.assertEqual(rt.gateway.execute("T-1", "S-1")["status"], "SUCCEEDED")
+        self.assertTrue(self.target_file().exists())
 
 
 if __name__ == "__main__":

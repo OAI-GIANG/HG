@@ -20,9 +20,12 @@ import errno
 import fcntl
 import os
 import stat
+import threading
 import time
 from contextlib import contextmanager
 from pathlib import Path
+
+_LOCK_LOCAL = threading.local()
 
 SHARED_STORAGE = ("/sdcard", "/storage", "/mnt/sdcard")
 
@@ -86,8 +89,30 @@ def _open_lock(home):
 
 @contextmanager
 def locked(home, *, exclusive, wait_s=5.0, poll_s=0.05, monotonic=time.monotonic, sleep=time.sleep):
-    """Hold the home lock; raise Busy if it cannot be had within wait_s."""
-    fd = _open_lock(Path(home))
+    """Hold the common HOME lock; safely reuse an existing same-thread lease."""
+    home = Path(home).resolve()
+    held = getattr(_LOCK_LOCAL, "held", None)
+    if held is None:
+        held = {}
+        _LOCK_LOCAL.held = held
+    key = str(home)
+    current = held.get(key)
+    if current is not None:
+        fd, current_exclusive, depth = current
+        if exclusive and not current_exclusive:
+            raise Busy("cannot upgrade a shared HG_HOME lease to exclusive")
+        held[key] = (fd, current_exclusive, depth + 1)
+        try:
+            yield
+        finally:
+            fd, mode, depth = held[key]
+            if depth <= 1:
+                held.pop(key, None)
+            else:
+                held[key] = (fd, mode, depth - 1)
+        return
+
+    fd = _open_lock(home)
     mode = (fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH) | fcntl.LOCK_NB
     deadline = monotonic() + wait_s
     try:
@@ -99,9 +124,30 @@ def locked(home, *, exclusive, wait_s=5.0, poll_s=0.05, monotonic=time.monotonic
                 if exc.errno not in (errno.EAGAIN, errno.EACCES, errno.EWOULDBLOCK) or monotonic() >= deadline:
                     raise Busy("another HG process is using HG_HOME; try again") from exc
                 sleep(poll_s)
-        yield
+        held[key] = (fd, exclusive, 1)
+        try:
+            yield
+        finally:
+            held.pop(key, None)
     finally:
         os.close(fd)      # closing the descriptor releases the flock
+
+
+def home_for_path(path):
+    """Return the configured Assistant HOME when path is inside it, otherwise None."""
+    path = Path(path).resolve()
+    candidates = [default_home()]
+    for parent in path.parents:
+        if (parent / ".lock").exists():
+            candidates.append(parent)
+    for candidate in candidates:
+        try:
+            root = Path(candidate).resolve()
+            if path == root or root in path.parents:
+                return root
+        except OSError:
+            continue
+    return None
 
 
 def private_file(path):

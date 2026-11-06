@@ -21,7 +21,7 @@ def health(workdir, *, router=None, trust_loader=None):
         checks.append({"name": name, "status": status, "detail": detail})
 
     try:
-        store = TaskStore.restore(workdir / "tasks.jsonl")
+        store = TaskStore.restore(workdir / "tasks.jsonl", read_only=True)
         task_ids = sorted({e["task_id"] for e in read_events(workdir / "tasks.jsonl") if e["type"] == "TASK_CREATED"})
         states = Counter(store.snapshot(t)["task"]["state"] for t in task_ids)
         report["tasks"] = dict(sorted(states.items()))
@@ -31,7 +31,7 @@ def health(workdir, *, router=None, trust_loader=None):
     except Exception as exc:
         check("task ledger", "FAILING", f"{type(exc).__name__}: {exc}")
     try:
-        actions = EventLog(workdir / "actions.jsonl").events()
+        actions = EventLog(workdir / "actions.jsonl", read_only=True).events()
         pending = pending_from_events(actions)
         report["actions"] = dict(Counter(e["payload"].get("status") for e in actions if e["kind"] == "ACTION_COMPLETED"))
         report["refusals"] = dict(Counter(e["payload"].get("status") for e in actions if e["kind"] == "ACTION_REFUSED"))
@@ -44,7 +44,7 @@ def health(workdir, *, router=None, trust_loader=None):
     models = workdir / "models.jsonl"
     if models.exists():
         try:
-            calls = [e["payload"] for e in EventLog(models).events("MODEL_CALL")]
+            calls = [e["payload"] for e in EventLog(models, read_only=True).events("MODEL_CALL")]
             report["model_calls"] = {"total": len(calls), "errors": dict(Counter(c["error"] for c in calls if c["error"]))}
         except Exception as exc:
             check("model ledger", "FAILING", f"{type(exc).__name__}: {exc}")
@@ -52,7 +52,7 @@ def health(workdir, *, router=None, trust_loader=None):
     if memory.exists():
         try:
             from hg.memory.store import MemoryStore
-            stats = MemoryStore(memory).stats()
+            stats = MemoryStore(memory, read_only=True).stats()
             report["memory"] = stats
             check("memory", "DEGRADED" if stats["conflicts"] else "OK",
                   f"{stats['records']} record(s), {stats['conflicts']} conflict(s)")
