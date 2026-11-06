@@ -30,6 +30,38 @@ def run_probe(*args, timeout=90):
     return done.returncode, (json.loads(done.stdout) if done.stdout.strip().startswith(b"{") else None), done
 
 
+def process_observation_limited(report):
+    """True only when the runner explicitly prevents complete cross-process observation."""
+    if not isinstance(report, dict):
+        return False
+    result = report.get("result") if isinstance(report.get("result"), dict) else {}
+    code = result.get("code", "")
+    if code in {
+        "FD_TABLE_EPERM", "FD_TABLE_EACCES",
+        "PIDFD_GETFD_EPERM", "PIDFD_GETFD_EACCES", "PIDFD_GETFD_ENOSYS",
+    }:
+        return True
+    errors = report.get("errors")
+    if isinstance(errors, list) and errors and all(
+        isinstance(error, dict)
+        and error.get("stage") == "pidfd_getfd"
+        and error.get("errno") in {"EPERM", "EACCES", "ENOSYS"}
+        for error in errors
+    ):
+        return True
+    sharing = report.get("sharing")
+    if not isinstance(sharing, dict):
+        return False
+    uninspectable = sharing.get("uninspectable")
+    if not isinstance(uninspectable, dict):
+        return False
+    return bool(
+        uninspectable.get("unknown", 0)
+        or sharing.get("unreadable_descriptors", 0)
+        or sharing.get("proc_hidepid") == "UNKNOWN"
+    )
+
+
 class ProbeIndependenceTests(unittest.TestCase):
     def test_probe_imports_only_the_standard_library(self):
         tree = ast.parse(PROBE.read_text(encoding="utf-8"))
@@ -76,6 +108,21 @@ class ProbeDecisionTests(unittest.TestCase):
         self.assertTrue(PROBE_MODULE.supported_platform("android"))
         self.assertTrue(PROBE_MODULE.supported_platform("linux"))
         self.assertFalse(PROBE_MODULE.supported_platform("darwin"))
+
+    def test_process_observation_gate_recognizes_explicit_permission_denial(self):
+        report = {"errors": [{"fd": 7, "stage": "pidfd_getfd", "errno": "EPERM"}]}
+        self.assertTrue(process_observation_limited(report))
+
+    def test_process_observation_gate_recognizes_unknown_proc_visibility(self):
+        report = {"sharing": {
+            "uninspectable": {"same_uid": 0, "root": 0, "other_uid": 0, "unknown": 1},
+            "unreadable_descriptors": 0, "proc_hidepid": None,
+        }}
+        self.assertTrue(process_observation_limited(report))
+
+    def test_process_observation_gate_does_not_hide_unrelated_probe_errors(self):
+        report = {"errors": [{"fd": 8, "stage": "readlink", "errno": "EIO"}]}
+        self.assertFalse(process_observation_limited(report))
 
     def test_target_blocks_partial_descriptor_inspection(self):
         code, report = self.run_target(errors=[{"fd": 8, "stage": "readlink", "errno": "EIO"}])
@@ -124,6 +171,8 @@ class ProbeRunTests(unittest.TestCase):
 
     def test_self_test_passes_every_check(self):
         code, report, done = run_probe()
+        if code != 0 and process_observation_limited(report):
+            self.skipTest("runner policy prevents complete cross-process /proc or pidfd_getfd observation")
         self.assertEqual(code, 0, done.stdout[-600:])
         self.assertEqual(report["result"], {"status": "PASS", "code": "SELF_TEST"})
         self.assertEqual(len(report["checks"]), 12)
@@ -155,6 +204,8 @@ class ProbeRunTests(unittest.TestCase):
     def test_target_mode_finds_owned_listener_and_rejects_wrong_port(self):
         child, pid, port = self.listener(ptracer_any=True)
         code, report, done = run_probe("--target-pid", str(pid), "--expect", f"127.0.0.1:{port}")
+        if code == 2 and process_observation_limited(report):
+            self.skipTest(f"runner policy blocks target inspection: {report['result'].get('code')}")
         self.assertEqual(code, 0, done.stdout[-600:])
         self.assertEqual(report["result"]["code"], "LISTENER_OWNED")
         self.assertEqual(report["expect"]["port_hex"], f"{port:04X}")
@@ -169,6 +220,8 @@ class ProbeRunTests(unittest.TestCase):
         """F-9 in the probe: two descriptors of one socket must not read as 'no unique listener'."""
         _, pid, port = self.listener(ptracer_any=True, dup=True)
         code, report, done = run_probe("--target-pid", str(pid), "--expect", f"127.0.0.1:{port}")
+        if code == 2 and process_observation_limited(report):
+            self.skipTest(f"runner policy blocks target inspection: {report['result'].get('code')}")
         self.assertEqual(code, 0, done.stdout[-600:])
         self.assertEqual(report["result"]["code"], "LISTENER_OWNED")
         self.assertEqual(len(report["result"]["fds"]), 2)
