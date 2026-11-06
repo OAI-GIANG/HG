@@ -247,6 +247,47 @@ def proc_hidepid():
     return "UNKNOWN"
 
 
+UNINSPECTABLE_KEYS = ("same_uid", "root", "other_uid", "unknown")
+
+
+def hidepid_unrestricted(value):
+    """Only a /proc mount shown to have no hidepid option (None) or hidepid=0/off lets this process list
+    every other process. Everything else (1, 2, noaccess, invisible, ptraceable, UNKNOWN, garbage) restricts."""
+    return value is None or value in ("0", "off")
+
+
+def _zero_count(value):
+    return isinstance(value, int) and not isinstance(value, bool) and value == 0
+
+
+def scan_gaps(sharing):
+    """Reasons a holder scan cannot support a claim of exclusive ownership. Empty list = nothing was missed.
+    Fail-closed: a missing or malformed field is a gap, never an absence of one."""
+    if not isinstance(sharing, dict):
+        return ["SHARING_REPORT_MISSING"]
+    gaps = []
+    uninspectable = sharing.get("uninspectable")
+    if not isinstance(uninspectable, dict) or set(uninspectable) != set(UNINSPECTABLE_KEYS):
+        gaps.append("UNINSPECTABLE_COUNTERS_MALFORMED")
+    else:
+        gaps += [f"UNINSPECTABLE_{key.upper()}" for key in UNINSPECTABLE_KEYS if not _zero_count(uninspectable[key])]
+    if not _zero_count(sharing.get("unreadable_descriptors")):
+        gaps.append("UNREADABLE_DESCRIPTORS")
+    if "proc_hidepid" not in sharing or not hidepid_unrestricted(sharing["proc_hidepid"]):
+        gaps.append("PROC_HIDEPID_RESTRICTED_OR_UNKNOWN")
+    if sharing.get("scan_errors"):
+        gaps.append("SCAN_ERRORS")
+    return gaps
+
+
+def observation_gaps(sharing):
+    """scan_gaps plus the scope the scan itself declared: scope PARTIAL always blocks, even if every counter is 0."""
+    gaps = scan_gaps(sharing)
+    if isinstance(sharing, dict) and sharing.get("scope") != "ALL_PROCESSES_INSPECTED":
+        gaps.append("SCOPE_PARTIAL")
+    return gaps
+
+
 def holders(inode, exclude):
     """Holders of socket `inode` among listed processes, plus the limits of that observation:
     uninspectable processes by UID class (from the status Uid line: /proc/PID of a non-dumpable process
@@ -290,11 +331,10 @@ def holders(inode, exclude):
             if link == f"socket:[{inode}]":
                 found.append(int(name))
                 break
-    hidepid = proc_hidepid()
-    complete = not any(uninspectable.values()) and not unreadable and hidepid is None
-    return found, {"uninspectable": uninspectable, "unreadable_descriptors": unreadable, "proc_hidepid": hidepid,
-                   "scan_errors": scan_errors,
-                   "scope": "ALL_PROCESSES_INSPECTED" if complete else "PARTIAL"}
+    sharing = {"uninspectable": uninspectable, "unreadable_descriptors": unreadable,
+               "proc_hidepid": proc_hidepid(), "scan_errors": scan_errors}
+    sharing["scope"] = "PARTIAL" if scan_gaps(sharing) else "ALL_PROCESSES_INSPECTED"
+    return found, sharing
 
 
 def exited(pidfd):
@@ -363,10 +403,10 @@ def self_test(report):
         checks["exactly_one_tcp_listener"] = sum(1 for row in rows if row.get("listening")
                                                  and row.get("type") == "SOCK_STREAM") == 1
         found, sharing = holders(lst.get("inode_dup", -1), exclude={pid, os.getpid()})
-        checks["listener_not_shared"] = (not found and not sharing["uninspectable"]["unknown"]
-                                         and not sharing["unreadable_descriptors"]
-                                         and sharing["proc_hidepid"] != "UNKNOWN")
+        gaps = observation_gaps(sharing)
+        checks["listener_not_shared"] = not found and not gaps
         report["sharing"] = sharing
+        report["observation_gaps"] = gaps
 
         def swap(number):                     # close + reuse the descriptor between listing and getfd
             if number == info["listener_fd"]:
@@ -402,7 +442,18 @@ def self_test(report):
         if child.poll() is None:
             child.kill()
             child.wait(5)
-    return 0 if all(checks.values()) else 1
+    return self_test_verdict(checks, found, gaps)
+
+
+def self_test_verdict(checks, found, gaps):
+    """0 PASS only if every check holds (listener_not_shared needs no holder AND no observation gap).
+    2 BLOCKED if the only failure is an incomplete scan that saw no holder; anything else is 1 FAIL."""
+    failed = [name for name, ok in checks.items() if not ok]
+    if not failed:
+        return 0
+    if failed == ["listener_not_shared"] and not found and gaps:
+        return 2          # nothing shared was seen, but the scan could not see everything: BLOCKED, never PASS
+    return 1
 
 
 def target(report, pid, expect):
@@ -460,18 +511,35 @@ def target(report, pid, expect):
         if len(sockets) == 1 and not same_port and not any(r["reuseport"] for r in matches) and alive:
             found, sharing = holders(sockets[0], exclude={pid, os.getpid()})
             report["holders"], report["sharing"] = found, sharing
-            if (sharing.get("uninspectable", {}).get("unknown", 0)
-                    or sharing.get("unreadable_descriptors", 0)
-                    or sharing.get("proc_hidepid") == "UNKNOWN"):
-                report["result"] = {"status": "BLOCKED", "code": "SHARING_SCAN_INCOMPLETE"}
+            if found:                       # observed evidence of sharing outranks an incomplete scan
+                report["result"] = {"status": "FAIL", "code": "LISTENER_SHARED"}
+                return 1
+            gaps = observation_gaps(sharing)
+            if gaps:                        # no holder seen, but not everything could be seen: never PASS
+                report["result"] = {"status": "BLOCKED", "code": "SHARING_SCAN_INCOMPLETE", "gaps": gaps}
                 return 2
-            if not found:
-                report["result"] = {"status": "PASS", "code": "LISTENER_OWNED",
-                                    "fd": min(r["fd"] for r in matches), "fds": sorted(r["fd"] for r in matches),
-                                    "inode": sockets[0], "sharing_scope": sharing["scope"]}
-                return 0
-            report["result"] = {"status": "FAIL", "code": "LISTENER_SHARED"}
-            return 1
+            # Post-check: the same process, pidfd and listener socket must still be what was scanned.
+            if starttime(pid) != t0 or exited(pidfd):
+                report["result"] = {"status": "FAIL", "code": "PID_REUSED_OR_EXITED"}
+                return 1
+            try:
+                rows_after, errors_after = inspect(pid, pidfd)
+            except OSError as exc:
+                report["result"] = {"status": "BLOCKED", "code": "POST_CHECK_" + errname(exc.errno)}
+                return 2
+            if errors_after:
+                report["result"] = {"status": "BLOCKED", "code": "POST_CHECK_INCOMPLETE",
+                                    "error_count": len(errors_after)}
+                return 2
+            sockets_after = sorted({r["inode_dup"] for r in rows_after if is_tcp_listener(r) and r.get("consistent")
+                                    and r.get("address") == host and r.get("port") == port})
+            if sockets_after != sockets:
+                report["result"] = {"status": "FAIL", "code": "LISTENER_CHANGED"}
+                return 1
+            report["result"] = {"status": "PASS", "code": "LISTENER_OWNED",
+                                "fd": min(r["fd"] for r in matches), "fds": sorted(r["fd"] for r in matches),
+                                "inode": sockets[0], "sharing_scope": sharing["scope"]}
+            return 0
         report["result"] = {"status": "FAIL", "code": "NO_UNIQUE_LISTENER", "listening_sockets": len(sockets),
                             "descriptors": len(matches), "other_binds_on_port": len(same_port), "alive": alive}
         return 1
@@ -509,7 +577,13 @@ def main(argv):
             code = target(report, int(args["--target-pid"]), args["--expect"])
         else:
             code = self_test(report)
-            report["result"] = {"status": "PASS" if code == 0 else "FAIL", "code": "SELF_TEST"}
+            if code == 0:
+                report["result"] = {"status": "PASS", "code": "SELF_TEST"}
+            elif code == 2:
+                report["result"] = {"status": "BLOCKED", "code": "SELF_TEST_OBSERVATION_INCOMPLETE",
+                                    "gaps": report.get("observation_gaps", [])}
+            else:
+                report["result"] = {"status": "FAIL", "code": "SELF_TEST"}
     except TimeoutError:
         report["result"] = {"status": "FAIL", "code": "TIMEOUT"}
         code = 1
