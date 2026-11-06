@@ -318,6 +318,26 @@ class ProbeDecisionTests(unittest.TestCase):
             with self.subTest(name):
                 self.assertEqual(PROBE_MODULE.self_test_verdict(checks, found, gaps), want)
 
+    def test_external_gate_variable_only_deselects_the_real_kernel_tests(self):
+        module = sys.modules[__name__]
+
+        def names(env):
+            with mock.patch.dict(os.environ, env, clear=False):
+                if "HG_L5_REAL_KERNEL_GATE" not in env:
+                    os.environ.pop("HG_L5_REAL_KERNEL_GATE", None)
+                suite = unittest.defaultTestLoader.loadTestsFromModule(module)
+            return {type(test).__name__ for test in _flatten(suite)}, len(list(_flatten(suite)))
+
+        default, default_count = names({})
+        external, external_count = names({"HG_L5_REAL_KERNEL_GATE": "external"})
+        self.assertIn("ProbeRunTests", default)
+        self.assertNotIn("ProbeRunTests", external)
+        self.assertLessEqual(external, default)
+        self.assertEqual(default_count - external_count, 5)          # exactly the five real-kernel tests
+        self.assertIn("ProbeDecisionTests", external)                 # the decision table always runs
+        other, _ = names({"HG_L5_REAL_KERNEL_GATE": "anything-else"})
+        self.assertIn("ProbeRunTests", other)                         # only the exact value deselects
+
     def test_missing_capability_follows_the_require_policy(self):
         """HG_REQUIRE_PROC_TESTS=1 turns any environment limit into a failure; otherwise it is an explicit skip."""
         with mock.patch(f"{__name__}.REQUIRE", True), self.assertRaises(AssertionError) as caught:
@@ -425,6 +445,24 @@ class ProbeRunTests(unittest.TestCase):
 
     def test_port_hex_constant(self):
         self.assertEqual(f"{11434:04X}", "2CAA")
+
+
+def _flatten(suite):
+    for item in suite:
+        if isinstance(item, unittest.TestSuite):
+            yield from _flatten(item)
+        else:
+            yield item
+
+
+def load_tests(loader, standard_tests, pattern):
+    """HG_L5_REAL_KERNEL_GATE=external leaves the real-kernel ProbeRunTests out of a discover run: they belong to
+    the separate capability-gated CI job (`l5-capability-gate`, HG_REQUIRE_PROC_TESTS=1) and are reported there,
+    honestly, as BLOCKED when the runner cannot observe every process. They are NOT_RUN in this run: neither
+    skipped nor passed. Default (variable unset): everything is collected, as before."""
+    if os.environ.get("HG_L5_REAL_KERNEL_GATE") != "external":
+        return standard_tests
+    return unittest.TestSuite(test for test in _flatten(standard_tests) if not isinstance(test, ProbeRunTests))
 
 
 if __name__ == "__main__":
