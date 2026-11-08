@@ -4,6 +4,7 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from hg.runtime import build_runtime
 from hg.tests.support import TempDirMixin, grant, make_task, write_step
@@ -210,6 +211,102 @@ class RuntimeEvidenceIntegrationTests(unittest.TestCase):
             replayed = restored.snapshot("S03-EVIDENCE-1")["evidence"][evidence_id]
             self.assertEqual(replayed["integrity_metadata"]["sha256"], checked["sha256"])
             self.assertEqual(runtime.evidence_artifacts.verify_metadata(replayed["integrity_metadata"])["status"], "PASS")
+
+    def test_failed_metadata_append_leaves_recoverable_orphan_then_retry_links_it(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workdir = Path(tmp) / "runtime"
+            runtime = build_runtime(workdir, [], allow_fixture_grants=True)
+            runtime.orch.submit_task(_task())
+            runtime.orch.assess("S03-EVIDENCE-1")
+            raw = b"published before an injected MAEP append failure\n"
+
+            with mock.patch.object(
+                runtime.orch._writer,
+                "record_evidence",
+                side_effect=MAEPError("injected pre-append failure"),
+            ):
+                with self.assertRaisesRegex(MAEPError, "injected pre-append failure"):
+                    runtime.orch.record_artifact_evidence(
+                        "S03-EVIDENCE-1", raw,
+                        evidence_type="ARTIFACT",
+                        source_ref="test://s03/append-failure",
+                        candidate_ref="candidate:sha256:pre-append",
+                        method="test_cross_store_recovery",
+                        result="CAPTURED",
+                        payload_kind="text/plain",
+                        limitations=["synthetic failure injection; not production evidence"],
+                    )
+
+            from maep.task_store import TaskStore
+            restored = TaskStore.restore(workdir / "tasks.jsonl", policy_evaluator=runtime.evaluator)
+            self.assertEqual(restored.snapshot("S03-EVIDENCE-1")["evidence"], {})
+            orphans = runtime.evidence_artifacts.find_orphans([])
+            self.assertEqual(len(orphans), 1)
+            self.assertEqual(runtime.evidence_artifacts.get(orphans[0]), raw)
+            self.assertEqual(runtime.evidence_artifacts.find_temporary_artifacts(), [])
+
+            # A retry of identical bytes reuses the content-addressed blob and links it
+            # exactly once in MAEP; recovery never deletes the previously published payload.
+            evidence_id = runtime.orch.record_artifact_evidence(
+                "S03-EVIDENCE-1", raw,
+                evidence_type="ARTIFACT",
+                source_ref="test://s03/append-retry",
+                candidate_ref="candidate:sha256:pre-append",
+                method="test_cross_store_recovery_retry",
+                result="CAPTURED",
+                payload_kind="text/plain",
+                limitations=["synthetic retry; not production evidence"],
+            )
+            snapshot = runtime.store.snapshot("S03-EVIDENCE-1")
+            record = snapshot["evidence"][evidence_id]
+            self.assertEqual(runtime.orch.verify_artifact_evidence(record)["status"], "PASS")
+            self.assertEqual(runtime.evidence_artifacts.find_orphans([record["integrity_metadata"]["payload_ref"]]), [])
+            restored_after_retry = TaskStore.restore(
+                workdir / "tasks.jsonl", policy_evaluator=runtime.evaluator
+            )
+            self.assertIn(evidence_id, restored_after_retry.snapshot("S03-EVIDENCE-1")["evidence"])
+
+    def test_lost_metadata_acknowledgement_is_reconciled_from_restored_ledger(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workdir = Path(tmp) / "runtime"
+            runtime = build_runtime(workdir, [], allow_fixture_grants=True)
+            runtime.orch.submit_task(_task())
+            runtime.orch.assess("S03-EVIDENCE-1")
+            raw = b"MAEP append committed but acknowledgement was lost\n"
+            original_record_evidence = runtime.orch._writer.record_evidence
+
+            def commit_then_lose_acknowledgement(*args, **kwargs):
+                original_record_evidence(*args, **kwargs)
+                raise MAEPError("injected post-commit acknowledgement loss")
+
+            with mock.patch.object(
+                runtime.orch._writer,
+                "record_evidence",
+                side_effect=commit_then_lose_acknowledgement,
+            ):
+                with self.assertRaisesRegex(MAEPError, "post-commit acknowledgement loss"):
+                    runtime.orch.record_artifact_evidence(
+                        "S03-EVIDENCE-1", raw,
+                        evidence_type="ARTIFACT",
+                        source_ref="test://s03/ack-loss",
+                        candidate_ref="candidate:sha256:ack-loss",
+                        method="test_cross_store_ack_reconciliation",
+                        result="CAPTURED",
+                        payload_kind="text/plain",
+                        limitations=["synthetic lost-ack injection; not production evidence"],
+                    )
+
+            # The caller saw an exception, but recovery must inspect the authoritative
+            # ledger before retrying; it must not create a duplicate or classify the blob as orphaned.
+            from maep.task_store import TaskStore
+            restored = TaskStore.restore(workdir / "tasks.jsonl", policy_evaluator=runtime.evaluator)
+            evidence = restored.snapshot("S03-EVIDENCE-1")["evidence"]
+            self.assertEqual(len(evidence), 1)
+            record = next(iter(evidence.values()))
+            checked = runtime.evidence_artifacts.verify_metadata(record["integrity_metadata"])
+            self.assertEqual(checked["status"], "PASS")
+            self.assertEqual(runtime.evidence_artifacts.get(checked["payload_ref"]), raw)
+            self.assertEqual(runtime.evidence_artifacts.find_orphans([checked["payload_ref"]]), [])
 
 
 class IndependentVerifierTests(unittest.TestCase):
