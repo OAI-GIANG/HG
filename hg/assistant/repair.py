@@ -37,7 +37,10 @@ def inspect(path):
     if lines and lines[-1] == b"":
         lines = lines[:-1]
     bad = [i for i, line in enumerate(lines) if not _valid(line.decode("utf-8", errors="replace"))]
-    if bad == [len(lines) - 1]:
+    # A last line without its "\n" was never committed (maep.ledger refuses it), even if it
+    # parses; with every earlier line valid it is the same unambiguous torn tail.
+    unterminated = bool(lines) and not raw.endswith(b"\n")
+    if bad == [len(lines) - 1] or (unterminated and not bad):
         return {"file": path.name, "status": "TORN_LAST_LINE", "reason": reason, "line": len(lines),
                 "bytes_removed": len(lines[-1]) + (1 if raw.endswith(b"\n") else 0)}
     return {"file": path.name, "status": "DAMAGED", "reason": reason, "bad_lines": [i + 1 for i in bad][:10]}
