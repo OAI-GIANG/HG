@@ -101,6 +101,27 @@ class LedgerTornTailTests(unittest.TestCase):
         self.write(b'{"event_id":"EV-1"}\r\n{"event_id":"EV-2"}\r\n')
         self.assertEqual([e["event_id"] for e in read_events(self.path)], ["EV-1", "EV-2"])
 
+    def test_lone_carriage_return_tail_is_torn_on_read_and_append(self):
+        before = self.write(b'{"event_id":"EV-1"}\n{"event_id":"EV-2"}\r')
+        with self.assertRaisesRegex(MAEPError, "torn ledger tail at line 2"):
+            read_events(self.path)
+        with self.assertRaisesRegex(MAEPError, "torn ledger tail"):
+            append_event(self.path, {"event_id": "EV-3"})
+        self.assertEqual(self.digest(), before)
+
+    def test_lone_carriage_return_does_not_split_a_record(self):
+        self.write(b'{"event_id":"EV-1"}\r{"event_id":"EV-2"}\n')
+        with self.assertRaisesRegex(MAEPError, "invalid ledger JSON at line 1"):
+            read_events(self.path)
+
+    def test_split_utf8_tail_is_a_ledger_error(self):
+        before = self.write(b'{"event_id":"EV-1"}\n{"event_id":"EV-2","note":"\xe1\xbb')
+        with self.assertRaisesRegex(MAEPError, "invalid ledger encoding"):
+            read_events(self.path)
+        with self.assertRaisesRegex(MAEPError, "invalid ledger encoding"):
+            append_event(self.path, {"event_id": "EV-3"})
+        self.assertEqual(self.digest(), before)
+
     def test_pre_append_tail_check_refuses_even_if_reader_misses_it(self):
         # Defence in depth: the append path checks the last byte itself.
         before = self.write(b'{"event_id":"EV-1"}')
