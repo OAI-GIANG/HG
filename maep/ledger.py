@@ -113,6 +113,10 @@ def _read_events_unlocked(path, fd=None):
                 event = json.loads(line)
             except json.JSONDecodeError as exc:
                 raise MAEPError(f"invalid ledger JSON at line {line_number}") from exc
+            if not line.endswith("\n"):
+                # A record is committed only with its terminator (C1). A parseable final line
+                # without one is a torn write: refuse it, never repair or truncate here.
+                raise MAEPError(f"torn ledger tail at line {line_number}: missing record terminator")
             if not isinstance(event, dict) or not isinstance(event.get("event_id"), str) or not event["event_id"]:
                 raise MAEPError(f"invalid event record at line {line_number}")
             if event["event_id"] in seen:
@@ -129,6 +133,15 @@ def read_events(path):
         return []
     with ledger_lock(path, exclusive=False, create=False) as fd:
         return _read_events_unlocked(path, fd)
+
+
+def _require_terminated_tail(fd):
+    """Refuse to append onto a ledger whose last byte is not a record terminator."""
+    size = os.fstat(fd).st_size
+    if size == 0:
+        return
+    if os.pread(fd, 1, size - 1) != b"\n":
+        raise MAEPError("torn ledger tail: missing record terminator; refusing to append")
 
 
 def _append_unlocked(fd, event):
@@ -149,6 +162,7 @@ def append_event(path, event):
     path = Path(path)
     with ledger_lock(path, exclusive=True, create=True) as fd:
         current = _read_events_unlocked(path, fd)
+        _require_terminated_tail(fd)
         if any(existing["event_id"] == event["event_id"] for existing in current):
             raise MAEPError("event_id already exists; append an amendment with a new ID")
         _append_unlocked(fd, event)
@@ -160,6 +174,7 @@ def append_generated(path, factory):
     path = Path(path)
     with ledger_lock(path, exclusive=True, create=True) as fd:
         current = _read_events_unlocked(path, fd)
+        _require_terminated_tail(fd)
         event = factory(current)
         if (not isinstance(event, dict) or not isinstance(event.get("event_id"), str)
                 or not event["event_id"]):
