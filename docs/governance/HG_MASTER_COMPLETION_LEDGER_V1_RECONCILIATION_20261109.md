@@ -15,7 +15,8 @@
 | `main` tip | `61d26cf8259ecbc94121f953b3a9d22406ac0853` (snapshot tip was `63f9e120858bca0371eb43986da40c56b1b1b811`) | FACT, `git rev-parse origin/main` |
 | PR #82 | MERGED. Merge commit `5536c598f3dae40c6fe9eade4fc75fd8ebd0c3c9`, head `71566ea55ee3641febe15eba3cd351cb0c443859`. Title: `test(s03): exercise evidence cross-store failure recovery` | FACT, REST `pulls/82` |
 | PR #83 | MERGED. Merge commit `61d26cf8259ecbc94121f953b3a9d22406ac0853`, head `d03ae464e32413009a901c8e2a6db4526d2ae449`. Title: `fix(ledger): refuse a torn final record instead of reading it as committed (C1)`. PR body states that evidence idempotency (`evidence_operation_id`, EC07 part 2) is out of scope and follows in a separate PR. | FACT, REST `pulls/83` |
-| PR #81 (this ledger) | OPEN, **HOLD: do not merge** (owner direction 2026-11-09). Base `63f9e120…` (behind main, no file overlap). Head at snapshot `b207f3bcd493156173eb8f1d545546ad267007f7`; this reconciliation adds a commit on top. Formal reviews: 0. | FACT, REST `pulls/81`, `/reviews` |
+| PR #81 (this ledger) | OPEN. Owner direction 2026-11-09 11:32 +07: HOLD. Superseded by owner directive "STT — HG AUTONOMOUS MASTER EXECUTION V2.0" (2026-11-09 11:45 +07): merge authorized through the normal GitHub flow once diff, checksums, CI and integration conditions pass. Snapshot head `b207f3bcd493156173eb8f1d545546ad267007f7`; this reconciliation adds commits on top, including a merge of `main` `61d26cf` (no history rewrite). Formal GitHub reviews: 0. | FACT, REST `pulls/81`, `/reviews`; owner directives in the session record |
+| Production runtime (owner's Termux phone) | `hg-runtime` running release `363fbc3a82d08a2d68652a9254796ff54970fa35c4100984b0264b3e2f5f411f`, `trust_commit` `61d26cf8259ecbc94121f953b3a9d22406ac0853`. `switch_service.sh` log ends `SWITCH_OK` (2026-11-09 11:18 +07); last `HG_RUNTIME_READY` line carries the same release_id; `sv status` pid 8676 stable across two reads 2 s apart (2026-11-09 11:46 +07). Evidence on device: `~/hg-v1-evidence/20261109-deploy-61d26cf/` (with SHA256SUMS) and `~/hg-v1-evidence/switch-20261109T041759Z/`. | FACT, Desktop Commander on device `22e6ee74-…` |
 | PR #77 (listener attestation HG-LA-2) | OPEN, **HOLD**. Head `c096cbf18d1e42623827e73585fda9929e4d69f9`. Compare with `main` `61d26cf`: `diverged`, ahead 16, behind 5, 67 files changed. Formal reviews: 0. Review comments: 0. Issue comments: 1 (2026-10-31, posted under the owner's GitHub account by an agent session; it is agent-authored and is NOT owner approval). | FACT, REST `compare/main...feat/listener-attestation-hg-la-2-20261031`, `pulls/77/reviews`, `issues/77/comments` |
 | PR #77 checks on head `c096cbf` | `unittest (3.13)` SUCCESS; `unittest (3.14)` SUCCESS; `rt06-anchor (3.13)` SUCCESS; `rt06-anchor (3.14)` SUCCESS; `l5-capability-gate (real kernel; red = BLOCKED)` FAILURE. Run `42260873155`, job `128040142435`. | FACT, REST `commits/c096cbf…/check-runs` |
 | Open PRs (2026-11-09) | #81 (ledger, HOLD); #77 (listener attestation, HOLD); #64 (opt-in policy v2, base `stt/maep-v1-20261022`, frozen branch); #55 (Claude setup, base main, last update 2026-10-26); #11 (draft, audit-only execution host, last update 2026-10-25) | FACT, REST `pulls?state=open` |
@@ -32,7 +33,7 @@
 - Evidence deltas per workstream (status unchanged; see CSV companion file):
   - **WS-01:** PR #83 merged (torn final record refused, C1). Still IN_PROGRESS: state-owner inventory and EC03–EC06 open.
   - **WS-04:** PR #82 merged (cross-store failure recovery tests); PR #83 touches ledger refusal. Still IN_PROGRESS: independent false-accept oracle, cross-store recovery acceptance, and evidence idempotency (EC07 part 2) are not implemented.
-  - **WS-12:** PR #77 head moved to `c096cbf`; unit and RT06 checks green; L5 gate BLOCKED; zero formal reviews. Still IN_PROGRESS. PR #77 remains HOLD.
+  - **WS-12:** PR #77 head moved to `c096cbf`; unit and RT06 checks green; L5 gate BLOCKED; zero formal reviews. PR #77 remains HOLD. `main` `61d26cf` is deployed on the phone (release `363fbc3a…`, `SWITCH_OK`). Still IN_PROGRESS: G1 and listener attestation remain open.
 
 ---
 
@@ -49,7 +50,7 @@
 ## 4. Change control in this reconciliation
 
 - No source code changed. No merge, close, deploy, branch deletion or ruleset change was performed.
-- PR #81 remains HOLD. PR #77 remains OPEN/HOLD.
+- PR #81: merge authorized by owner directive V2.0 once gates pass (see section 1). PR #77 remains OPEN/HOLD.
 - Review status: **owner review is requested.** Verdicts from agent sessions or same-model-family councils are recorded as analysis only and are not counted as owner approval or independent review.
 
 ---
