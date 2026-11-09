@@ -249,6 +249,46 @@ def _tree_digest(root):
     return {"ino": root.stat().st_ino, "sha256": h.hexdigest()}
 
 
+def _link_or_copy(src, dst):
+    """copy_function for disposable release fixtures: a hard link where the platform has one
+    (fast), otherwise a copy. Android's Python has no os.link (F-07)."""
+    link = getattr(os, "link", None)
+    if link is not None:
+        try:
+            link(src, dst)
+            return dst
+        except OSError:
+            pass
+    return shutil.copy2(src, dst)
+
+
+def _harness_unavailable():
+    """What the end-to-end switch harness needs and this host lacks, judged by capability — never
+    by platform name: Android/Termux reports sys.platform='android' yet has all of it (F-07)."""
+    missing = []
+    if os.name != "posix":
+        missing.append("POSIX os")
+    if not Path("/proc/self/fd").is_dir():
+        missing.append("/proc/self/fd")                       # the barrier finds inherited lock fds there
+    for name in ("killpg", "setsid", "getppid", "kill", "uname"):
+        if not hasattr(os, name):
+            missing.append(f"os.{name}")                      # process groups, signals to the switch shell
+    if not hasattr(fcntl, "flock"):
+        missing.append("fcntl.flock")
+    for name in ("SIGTERM", "SIGKILL"):
+        if not hasattr(signal, name):
+            missing.append(f"signal.{name}")
+    for tool in ("sh", "date", "sleep", "mv", "cp", "sed", "grep", "sha256sum", "cut", "install",
+                 "du", "df", "awk", "cmp", "cat", "mkdir", "rm", "touch"):
+        if shutil.which(tool) is None:
+            missing.append(tool)                              # the switch script and its stubs run these
+    return ", ".join(missing)
+
+
+HARNESS_UNAVAILABLE = _harness_unavailable()
+HARNESS_SKIP_WHY = f"switch harness needs: {HARNESS_UNAVAILABLE}"
+
+
 def _private_copy(src, dst):
     shutil.copytree(src, dst)
     for path in [dst, *dst.rglob("*")]:
@@ -314,7 +354,7 @@ class SwitchEnv:
                 "token_file": str(self.confdir / "token"), "host": "127.0.0.1", "max_body_bytes": 65536}
         for rid in (OLD, NEW):
             root = self.home / "hg-releases" / rid
-            shutil.copytree(template, root, copy_function=os.link)
+            shutil.copytree(template, root, copy_function=_link_or_copy)
             (self.confdir / "releases" / f"{rid}.json").write_text("{}", encoding="utf-8")
         self.shared_conf = self.confdir / "runtime-service.json"
         self._write_conf(self.shared_conf, base, OLD)
@@ -541,8 +581,7 @@ class SwitchEnv:
         return found[-1] if found else None
 
 
-@unittest.skipUnless(sys.platform.startswith("linux") and shutil.which("sh") and Path("/proc/self/fd").is_dir(),
-                     "needs a POSIX sh and Linux /proc (Termux or Linux CI)")
+@unittest.skipIf(HARNESS_UNAVAILABLE, HARNESS_SKIP_WHY)
 class SwitchLockFaultInjectionTests(unittest.TestCase):
     """F-01: the switch may only back up, precheck, rename or swap while it provably owns the lock."""
 
@@ -711,7 +750,7 @@ class SwitchLockFaultInjectionTests(unittest.TestCase):
         self.assertEqual(_sha(env.svc / "run"), env.original_run_sha)
 
 
-@unittest.skipUnless(sys.platform.startswith("linux") and shutil.which("sh"), "needs a POSIX sh")
+@unittest.skipIf(HARNESS_UNAVAILABLE, HARNESS_SKIP_WHY)
 class SwitchRollbackReadyTests(unittest.TestCase):
     """F-04: an automatic rollback is reported verified only after authenticated READY + stable pid."""
 
@@ -805,7 +844,7 @@ class SwitchRollbackReadyTests(unittest.TestCase):
         self.assertIn("rollback", out)
 
 
-@unittest.skipUnless(sys.platform.startswith("linux") and shutil.which("sh"), "needs a POSIX sh")
+@unittest.skipIf(HARNESS_UNAVAILABLE, HARNESS_SKIP_WHY)
 class SwitchSignalWindowTests(unittest.TestCase):
     """F-05: SIGTERM lands right after a rename completes, before the shell runs its next command
     (the flag or lock-path update). The EXIT trap must judge what changed from the filesystem
@@ -902,8 +941,27 @@ class FaultSuiteAvailabilityTests(unittest.TestCase):
             self.assertFalse(getattr(cls, "__unittest_skip__", False),
                              f"{cls.__name__} would be skipped here ({getattr(cls, '__unittest_skip_why__', '')}); "
                              f"sys.platform={sys.platform!r}")
+        self.assertEqual(HARNESS_UNAVAILABLE, "", "the fault suite cannot run on this Linux kernel")
         names = [n for cls in FAULT_SUITE_CLASSES for n in unittest.defaultTestLoader.getTestCaseNames(cls)]
         self.assertGreaterEqual(len(names), FAULT_SUITE_MIN_TESTS, "fault-injection tests went missing")
+
+    def test_fixture_copy_works_without_hard_links(self):
+        """Android has no os.link: the fixture helper must still produce a usable release copy."""
+        import tempfile
+        with tempfile.TemporaryDirectory(prefix="hg-link-or-copy-") as td:
+            src = Path(td) / "src"
+            src.mkdir()
+            (src / "a.py").write_text("x = 1\n", encoding="utf-8")
+            saved = getattr(os, "link", None)
+            try:
+                if saved is not None:
+                    del os.link                                   # behave like Android's os module
+                shutil.copytree(src, Path(td) / "copy", copy_function=_link_or_copy)
+            finally:
+                if saved is not None:
+                    os.link = saved
+            self.assertEqual((Path(td) / "copy" / "a.py").read_text(encoding="utf-8"), "x = 1\n")
+            self.assertNotEqual((Path(td) / "copy" / "a.py").stat().st_ino, (src / "a.py").stat().st_ino)
 
 
 if __name__ == "__main__":
