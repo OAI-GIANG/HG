@@ -70,3 +70,16 @@ Required status checks remain exactly unittest (3.13) and unittest (3.14). Delet
 ### Prompt automation state
 
 ChatGPT's Master Planned Work Completion and HG G0 Mission Follow-up task prompts were updated to supersede mandatory independent review; both tasks remain disabled as before. This is separate from Claude's hourly task trig_01Ec7zQi4e5TGp7t2arV8rbv. Its prompt was not updated because its schedule control plane is not exposed in this connected session; the V1.2 amendment remains a proposed diff. The owner's latest decision governs, but the separate scheduled prompt itself remains an outstanding administrative update.
+
+
+## Post-merge reconciliation — 2026-11-10 (+07)
+
+PR #89 was subsequently squash-merged after the exact-head checks passed:
+- PR #89 state: MERGED.
+- Exact checked PR head: 36dbb6a2f910df385461278ef2b0bbff90eff9d1.
+- Required unittest (3.13) and unittest (3.14): PASS.
+- RT06 Python 3.13 and 3.14 jobs: PASS.
+- Merge commit on main: c5f9ae6284e1dc778042a4357d4ff1b65dac0bca.
+- Post-merge local check on that main commit: policy suite 8/8 PASS; 67 governing files scanned, 0 mandatory-review findings; AC-14 NOT_APPLICABLE.
+- The GitHub API run-list query for the squash merge commit returned no separate post-merge workflow runs at observation time; the passing evidence above is the exact PR-head check set required by ruleset main-maep.
+- No production deployment.

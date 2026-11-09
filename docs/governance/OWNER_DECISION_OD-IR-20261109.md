@@ -113,3 +113,20 @@ This section records later external changes. Sections 5 and 7 above preserve wha
 | Claude hourly task trig_01Ec7zQi4e5TGp7t2arV8rbv | Still NOT_CHANGED. Its proposed V1.2 prompt amendment remains in docs/evidence/HG-IR-20261109/schedule_prompt_V1.2_proposed.diff; the schedule's control plane was not accessible through the connected tools. The owner's latest decision and this record supersede its older V1.1 wording, but the separate prompt still needs to be updated in its own control plane. |
 
 No PR was merged and no production deployment was performed during this continuation. No changes were made to the original ~/HG worktree or its pre-existing uncommitted files.
+
+
+## 9. Post-merge reconciliation — 2026-11-10
+
+The remediation PR was merged after the pre-merge verification recorded in §8:
+
+| Item | Verified result |
+|---|---|
+| PR #89 | MERGED, squash merge, 2026-11-10 00:06:17 +07 |
+| Merge commit on main | c5f9ae6284e1dc778042a4357d4ff1b65dac0bca |
+| Exact head whose required checks passed | 36dbb6a2f910df385461278ef2b0bbff90eff9d1 |
+| Required CI checks | unittest (3.13), unittest (3.14): PASS; the RT06 workflows also PASS |
+| Post-merge local verification on main | MAEP policy tests 8/8 PASS; governing-file scan 67 files / 0 mandatory-review findings; AC-14 is NOT_APPLICABLE |
+| GitHub ruleset | Read-back still confirms approval count 0, extra unattributed-change approval OFF, no Code Owner/last-push/required reviewer rules; required technical checks unchanged |
+| Production deployment | NOT_PERFORMED |
+
+The sentence in §8 stating that no PR had yet been merged describes the state at the time that pre-merge snapshot was written. This §9 is the later authoritative state.
