@@ -93,6 +93,11 @@ def _sqlite_integrity(root, path):
     opened_stat = os.fstat(fd)
     db = None
     try:
+        # SQLite opens a zero-byte (or header-less) file as an empty database whose
+        # integrity_check is "ok". A snapshot must carry the file header, read from the
+        # descriptor that passed O_NOFOLLOW/fstat.
+        if size < 100 or os.pread(fd, 16, 0) != b"SQLite format 3\x00":
+            raise ValueError("not a SQLite database file: missing or invalid header")
         # Only verify a closed, standalone snapshot. A live/WAL-backed database must be
         # copied consistently before this worker is used.
         for suffix in ("-wal", "-shm", "-journal"):

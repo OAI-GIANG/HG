@@ -138,6 +138,7 @@ The syntax result proves parse/compile acceptance by the current Python interpre
 
 - Allowlisted operation: `sqlite_integrity`.
 - Maximum database file size: 64 MiB; verifier deadline: 5 seconds.
+- Requires the 16-byte SQLite header (`SQLite format 3\0`) and at least 100 bytes, read from the opened descriptor; a zero-byte or header-less file is BLOCKED, because SQLite opens a zero-byte file as an empty database whose `integrity_check` is `ok` (false accept found by `hg/tests/test_false_accept_oracle.py`, 2026-11-10).
 - Rejects adjacent `-wal`, `-shm` and `-journal` files. Only a closed, standalone, consistent snapshot may be checked.
 - Opens using SQLite URI `mode=ro`, sets `PRAGMA query_only=ON` and runs `PRAGMA integrity_check(1)`.
 - Keeps the O_NOFOLLOW-opened file descriptor and compares its device/inode with the pathname after SQLite opens the database, rejecting a changed path.
