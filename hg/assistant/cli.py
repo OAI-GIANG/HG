@@ -44,11 +44,11 @@ def add_parsers(sub):
     for p in (add, search, lst, show, forget, trust):
         p.add_argument("--json", action="store_true")
 
-    ask = sub.add_parser("ask", help="answer from your notes with the local model; HG labels every sentence")
+    ask = sub.add_parser("ask", help="answer from your notes with the selected model (local by default); HG labels every sentence")
     ask.add_argument("question", nargs="*")
     ask.add_argument("--notes-only", action="store_true", help="never call a model")
-    ask.add_argument("--provider", choices=["local", "anthropic"], default="local",
-                     help="'anthropic' is a paid API and is used only when named here")
+    ask.add_argument("--provider", choices=["local", "anthropic", "deepseek"], default="local",
+                     help="select one provider explicitly; paid APIs are never silent fallbacks")
     ask.add_argument("--json", action="store_true", help="print the full receipt instead of the labelled answer")
     ask.add_argument("--general", action="store_true",
                      help="allow the model to answer a general-knowledge question when no note matches (labelled [?])")

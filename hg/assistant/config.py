@@ -1,9 +1,9 @@
 """Assistant settings and the local-model connection.
 
 Settings live in $HG_HOME/config.json (strict keys, optional). Defaults keep everything on
-the phone: Ollama on 127.0.0.1, no paid provider. A paid provider is used only for the one
-call where the owner passes `--provider anthropic` (and the key is set): it is never a
-silent fallback, because the router is built with exactly the chosen provider.
+the phone: Ollama on 127.0.0.1, no paid provider. A remote provider is used only when the owner explicitly selects `--provider anthropic` or
+`--provider deepseek` (and the corresponding key is set): it is never a silent fallback,
+because the router is built with exactly the chosen provider.
 
 Local-model integrity, as far as Android allows:
 - /proc/net/tcp is unreadable for apps on Android 10+, so HG cannot ask the kernel who owns
@@ -20,7 +20,9 @@ import os
 import stat
 from pathlib import Path
 
+from maep.core import MAEPError
 from hg.brain.providers import AnthropicProvider, ModelRouter, OllamaProvider, ProviderError
+from hg.brain.providers_compat import OpenAICompatibleProvider
 from hg.assistant.home import locked
 
 DEFAULTS = {
@@ -35,6 +37,10 @@ DEFAULTS = {
     "timeout_s": 240,
     "max_tokens": 400,
     "anthropic_model": "claude-sonnet-5-5",
+    "deepseek_base_url": "https://api.deepseek.com",
+    "deepseek_model": "deepseek-flash",
+    "deepseek_api_key_env": "DEEPSEEK_API_KEY",
+    "planner_provider": None,
 }
 
 
@@ -57,6 +63,8 @@ def load(home, *, wait_s=5.0):
             if not isinstance(data, dict) or set(data) - set(DEFAULTS):
                 raise ConfigError("config.json keys must be among: " + ", ".join(sorted(DEFAULTS)))
             config.update(data)
+        if config["planner_provider"] not in (None, "local", "anthropic", "deepseek"):
+            raise ConfigError("planner_provider must be null, 'local', 'anthropic' or 'deepseek'")
         env_model = os.environ.get("HG_MODEL")
         if env_model and env_model != config["model"]:
             config["model"], config["model_digest"] = env_model, None
@@ -126,4 +134,26 @@ def router(config, *, provider_choice="local", event_log=None):
         return ModelRouter([ollama(config)], max_retries=0, event_log=event_log)
     if provider_choice == "anthropic":
         return ModelRouter([AnthropicProvider(config["anthropic_model"])], max_retries=1, event_log=event_log)
-    raise ConfigError("provider must be 'local' or 'anthropic'")
+    if provider_choice == "deepseek":
+        try:
+            provider = OpenAICompatibleProvider(
+                config["deepseek_model"], base_url=config["deepseek_base_url"],
+                api_key_env=config["deepseek_api_key_env"], provider_name="deepseek",
+                timeout=config["timeout_s"],
+            )
+        except MAEPError as exc:
+            raise ConfigError(str(exc)) from exc
+        return ModelRouter([provider], max_retries=1, event_log=event_log)
+    raise ConfigError("provider must be 'local', 'anthropic' or 'deepseek'")
+
+
+def build_planner(config, *, provider_choice=None, event_log=None, max_attempts=3):
+    """Build the MAEP ModelPlanner from explicit config; default remains local/offline.
+
+    A remote provider is selected only by an explicit function argument or the
+    planner_provider config field. There is no paid-provider fallback.
+    """
+    from hg.brain.planner import ModelPlanner
+    choice = provider_choice or config.get("planner_provider") or "local"
+    return ModelPlanner(router(config, provider_choice=choice, event_log=event_log),
+                        max_attempts=max_attempts)

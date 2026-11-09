@@ -11,7 +11,7 @@ Assistant (runs as the owner in their own shell, outside the governed runtime pa
 hg/assistant/cli.py for exit codes):
     python -m hg                              interactive prompt (when stdin is a terminal)
     python -m hg note add|search|list|show|forget ...
-    python -m hg ask "câu hỏi" [--notes-only] [--provider local|anthropic] [--json]
+    python -m hg ask "câu hỏi" [--notes-only] [--provider local|anthropic|deepseek] [--json]
     python -m hg check "văn bản"             compare text with the notes, no model
     python -m hg summarize FILE|- [--model] [--strict]
     python -m hg model status | use NAME      local model status / select and pin

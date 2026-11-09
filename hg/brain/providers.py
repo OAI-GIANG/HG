@@ -20,6 +20,7 @@ Providers here:
   `anthropic-version: 2026-10-21` (that version removed temperature/top_p/top_k, so they
   are never sent). Key from ANTHROPIC_API_KEY; never logged.
 - OllamaProvider: a local model server (`POST /api/chat`), offline.
+- OpenAI-compatible adapter: text-only Chat Completions contract in hg/brain/providers_compat.py.
 
 Every call is recorded as a MODEL_CALL event (provider, model, kind, status, usage,
 duration, a hash of the request) -- never the prompt text or any key.
@@ -397,7 +398,8 @@ class ModelRouter:
         self._log = event_log
         self._sleep = sleep
         self._monotonic = monotonic
-        self.usage = {"calls": 0, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0}
+        self.usage = {"calls": 0, "input_tokens": 0, "output_tokens": 0,
+                      "cost_usd": 0.0, "cost_known": True}
 
     def candidates(self, kind):
         names = self._routes.get(kind) or self._routes.get("default") or list(self._providers)
@@ -405,6 +407,14 @@ class ModelRouter:
 
     def available(self, kind="default"):
         return [p.name for p in self.candidates(kind)]
+
+    def catalog(self):
+        """Non-secret provider inventory; capabilities are declared, never inferred."""
+        return [{"provider": p.name, "model": p.model, "offline": bool(p.offline),
+                 "capabilities": {k: list(v) if isinstance(v, tuple) else v
+                                  for k, v in p.capabilities.items()},
+                 "cost_known": p.cost_per_mtok is not None}
+                for p in self._providers.values()]
 
     def complete(self, request, *, kind="default", task_id=None, on_delta=None):
         """Return the first successful response; raise ProviderError(UNAVAILABLE) with attempts otherwise.
@@ -463,11 +473,16 @@ class ModelRouter:
     def _account(self, provider, response):
         usage = response.get("usage") or {}
         tin, tout = int(usage.get("input_tokens", 0)), int(usage.get("output_tokens", 0))
-        cin, cout = provider.cost_per_mtok
         self.usage["calls"] += 1
         self.usage["input_tokens"] += tin
         self.usage["output_tokens"] += tout
-        self.usage["cost_usd"] = round(self.usage["cost_usd"] + (tin * cin + tout * cout) / 1e6, 6)
+        if provider.cost_per_mtok is None:
+            self.usage["cost_known"] = False
+            self.usage["cost_usd"] = None
+        elif self.usage.get("cost_known", True):
+            cin, cout = provider.cost_per_mtok
+            self.usage["cost_usd"] = round((self.usage["cost_usd"] or 0.0)
+                                           + (tin * cin + tout * cout) / 1e6, 6)
 
     def _record(self, task_id, kind, provider, status, response, started, digest, error):
         if self._log is None:
