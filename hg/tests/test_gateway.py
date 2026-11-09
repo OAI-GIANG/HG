@@ -23,6 +23,20 @@ class WritesThenCrashes(LocalFileWriteAdapter):
         raise RuntimeError("process died after the write")
 
 
+class RaisesDuringReconcile(WritesThenCrashes):
+    name = "reconcile.raises"
+
+    def reconcile(self, intent):
+        raise RuntimeError("reconcile inspection failed")
+
+
+class InvalidDuringReconcile(WritesThenCrashes):
+    name = "reconcile.invalid"
+
+    def reconcile(self, intent):
+        return []  # malformed result must not escape the fail-closed boundary
+
+
 class RaisesTimeout(LocalFileWriteAdapter):
     name = "timeout.write"
 
@@ -84,7 +98,8 @@ class GatewayFixture(TempDirMixin):
     def setUp(self):
         super().setUp()
         self.release = threading.Event()
-        self.extra = [WritesThenCrashes(self.root), RaisesTimeout(self.root), Hangs(self.root, self.release),
+        self.extra = [WritesThenCrashes(self.root), RaisesDuringReconcile(self.root),
+                      InvalidDuringReconcile(self.root), RaisesTimeout(self.root), Hangs(self.root, self.release),
                       NeverVerifies(self.root), KnownFailure(self.root)]
 
     def tearDown(self):
@@ -296,6 +311,33 @@ class ReconcileBeforeRetryTests(GatewayFixture):
         gw = self.running([write_step(tool="timeout.write")])
         action_id = gw.execute("T-1", "S-1")["action_id"]
         self.assertEqual(gw.reconcile(action_id)["finding"], "NOT_APPLIED")
+
+    def test_reconcile_exception_maps_to_unknown_and_never_replays(self):
+        gw = self.running([write_step(tool="reconcile.raises"), write_step("S-2")])
+        executed = gw.execute("T-1", "S-1")
+        self.assertEqual(executed["status"], "UNKNOWN")
+        action_id = executed["action_id"]
+
+        result = gw.reconcile(action_id)
+        self.assertEqual(result["finding"], "UNKNOWN")
+        self.assertEqual(len(gw.pending_actions("T-1")), 1)
+        events = self.rt.actions.events()
+        reconciled = [e for e in events if e["kind"] == "ACTION_RECONCILED"]
+        self.assertEqual(len(reconciled), 1)
+        self.assertEqual(reconciled[0]["payload"]["finding"], "UNKNOWN")
+
+        blocked = gw.execute("T-1", "S-2")
+        self.assertEqual(blocked["status"], "BLOCKED")
+        self.assertEqual(self.kinds().count("ACTION_STARTED"), 1)
+        self.assertEqual(self.target_file().read_text(encoding="utf-8"), "xin chao")
+
+    def test_reconcile_unhashable_invalid_result_maps_to_unknown(self):
+        gw = self.running([write_step(tool="reconcile.invalid")])
+        executed = gw.execute("T-1", "S-1")
+        self.assertEqual(executed["status"], "UNKNOWN")
+        result = gw.reconcile(executed["action_id"])
+        self.assertEqual(result["finding"], "UNKNOWN")
+        self.assertEqual(len(gw.pending_actions("T-1")), 1)
 
     def test_reconcile_unknown_action_rejected(self):
         gw = self.running([write_step()])
