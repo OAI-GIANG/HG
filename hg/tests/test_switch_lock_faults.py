@@ -34,7 +34,7 @@ OLD, NEW = "rel-old", "rel-new"
 RUN_PREFIX = 'exec python3 -B -u -m hg serve --config "'
 
 STUB = r'''
-import fcntl, glob, hashlib, json, os, sys, time
+import fcntl, glob, hashlib, json, os, signal, subprocess, sys, time
 from pathlib import Path
 
 CTL = Path(os.environ["HG_FI_CTL"])
@@ -80,13 +80,22 @@ def sv(argv):
             print("down: hg-runtime: 3s, normally up")
         entry = None
     elif "down" in argv:
+        refuse = st.get("refuse_down_after_ups")
+        if refuse is not None and st["ups"] >= refuse:     # a stop that never completes
+            entry["refused"] = True
+            with (CTL / "sv-log.jsonl").open("a") as stream:
+                stream.write(json.dumps(entry) + "\n")
+            print("timeout: run: hg-runtime", file=sys.stderr)
+            return 1
         st["up"] = False
     elif argv[:1] == ["up"]:
         st["up"] = True
         st["pid"] += 1
-        entry.update(run_sha256=hashlib.sha256((Path(CFG["svc"]) / "run").read_bytes()).hexdigest(),
+        st["ups"] += 1
+        entry.update(run_sha256=hashlib.sha256((Path(CFG["svc"]) / "run").read_bytes()).hexdigest()
+                     if (Path(CFG["svc"]) / "run").is_file() else None,
                      state=state_digest(), release=current_release(),
-                     after_fault=(CTL / "barrier.fired").exists())
+                     after_fault=(CTL / "barrier.fired").exists() or (CTL / "sigterm.fired").exists())
     else:
         print("sv stub: unsupported " + " ".join(argv), file=sys.stderr)
         return 1
@@ -171,12 +180,53 @@ def barrier():
     return 0
 
 
+def _mv_matches(kind, src, dst):
+    state = Path(CFG["state"])
+    s, d = Path(src), Path(dst)
+    svc = Path(CFG["svc"])
+    if kind == "state-to-prev":
+        return s == state and d.parent == state.parent and d.name.startswith(state.name + ".prev-")
+    if kind == "incoming-to-state":
+        return (s.parent == state.parent and s.name.startswith(state.name + ".incoming-")
+                and not s.name.endswith(".precheck") and d == state)
+    if kind == "prev-to-state":
+        return s.parent == state.parent and s.name.startswith(state.name + ".prev-") and d == state
+    if kind == "run-swap":
+        return s == svc / "run.tmp" and d == svc / "run"
+    raise SystemExit("unknown mv fault " + kind)
+
+
+def mv(argv):
+    """Real mv, then (per HG_FI_MV_FAULTS, one rule at a time) SIGTERM the switch shell: the
+    rename is done but the shell has not run its next command (its flags lag behind)."""
+    rc = subprocess.call([CFG["real_mv"], *argv])
+    rules = json.loads(os.environ.get("HG_FI_MV_FAULTS") or "[]")
+    done_path = CTL / "mv-faults.done"
+    done = int(done_path.read_text()) if done_path.exists() else 0
+    if rc != 0 or len(argv) != 2 or done >= len(rules):
+        return rc
+    rule = rules[done]
+    if not _mv_matches(rule["match"], *argv):
+        return rc
+    if rule.get("tamper") == "hide-prev":                   # someone else moves the aside copy away
+        state = Path(CFG["state"])
+        os.rename(argv[1], state.parent / (state.name + ".foreign-moved"))
+    done_path.write_text(str(done + 1))
+    with (CTL / "sigterm.log").open("a") as stream:
+        stream.write(json.dumps({"rule": rule, "src": argv[0], "dst": argv[1]}) + "\n")
+    (CTL / "sigterm.fired").touch()
+    os.kill(os.getppid(), signal.SIGTERM)
+    return rc
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1]
     if cmd == "sv":
         sys.exit(sv(sys.argv[2:]))
     if cmd == "barrier":
         sys.exit(barrier())
+    if cmd == "mv":
+        sys.exit(mv(sys.argv[2:]))
     sys.exit(2)
 '''
 
@@ -278,16 +328,19 @@ class SwitchEnv:
         shutil.copy(DEPLOY / "hg-runtime.finish", self.svc / "finish")
 
         (self.ctl / "stub.py").write_text(STUB, encoding="utf-8")
+        sh, py = shutil.which("sh"), sys.executable
+        real_date, real_sleep, real_mv = shutil.which("date"), shutil.which("sleep"), shutil.which("mv")
         (self.ctl / "env.json").write_text(json.dumps({"svc": str(self.svc), "state": str(self.state),
-                                                       "evidence": str(self.evidence)}), encoding="utf-8")
-        (self.ctl / "sv.json").write_text(json.dumps({"up": True, "pid": 4000, "restart_loop": []}),
+                                                       "evidence": str(self.evidence), "real_mv": real_mv}),
+                                           encoding="utf-8")
+        (self.ctl / "sv.json").write_text(json.dumps({"up": True, "pid": 4000, "ups": 0, "restart_loop": []}),
                                           encoding="utf-8")
         (self.ctl / "ready.json").write_text(json.dumps([OLD, NEW]), encoding="utf-8")
-        sh, py = shutil.which("sh"), sys.executable
-        real_date, real_sleep = shutil.which("date"), shutil.which("sleep")
         stubs = {
             "python3": f'exec "{py}" "$@"\n',
             "sv": f'exec "{py}" -I "{self.ctl / "stub.py"}" sv "$@"\n',
+            "mv": (f'[ -n "${{HG_FI_MV_FAULTS:-}}" ] || exec "{real_mv}" "$@"\n'
+                   f'exec "{py}" -I "{self.ctl / "stub.py"}" mv "$@"\n'),
             "curl": "echo '{\"resources\": {\"core\": {\"remaining\": 5000}}}'\n",
             "sleep": f'exec "{real_sleep}" 0.05\n',
             "date": (f'if [ -n "${{HG_FI_BARRIER:-}}" ]; then "{py}" -I "{self.ctl / "stub.py"}" barrier '
@@ -344,23 +397,24 @@ class SwitchEnv:
         os.chmod(src / "state" / ".hg-state-copy.json", 0o600)
         return src
 
-    def start(self, *args, barrier="", fault=""):
+    def start(self, *args, barrier="", fault="", mv_faults=None):
         env = {"PATH": f"{self.bin}{os.pathsep}{os.environ.get('PATH', '/usr/bin:/bin')}",
                "HOME": str(self.home), "PREFIX": str(self.prefix), "LANG": "C.UTF-8",
                "HG_FINISH_STATE_DIR": str(self.home / ".local" / "state" / "hg"),
-               "HG_FI_CTL": str(self.ctl), "HG_FI_BARRIER": barrier, "HG_FI_FAULT": fault}
+               "HG_FI_CTL": str(self.ctl), "HG_FI_BARRIER": barrier, "HG_FI_FAULT": fault,
+               "HG_FI_MV_FAULTS": json.dumps(mv_faults) if mv_faults else ""}
         if "TMPDIR" in os.environ:
             env["TMPDIR"] = os.environ["TMPDIR"]
         proc = subprocess.Popen([shutil.which("sh"), str(DEPLOY / "switch_service.sh"), *map(str, args)],
                                 env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                                cwd=str(self.tmp))
+                                cwd=str(self.tmp), start_new_session=True)
 
         def stop():
             if proc.poll() is None:
                 (self.ctl / "barrier.go").touch()
-                proc.kill()
-                proc.communicate(timeout=10)
+                self._kill_group(proc)
         self.case.addCleanup(stop)
+        proc.switch_env = self
         return proc
 
     def wait_barrier(self, proc, timeout=90):
@@ -427,6 +481,57 @@ class SwitchEnv:
     def go(self):
         (self.ctl / "barrier.go").touch()
 
+    def unverified_start(self):
+        """An `sv up` after the injected fault with anything but the pair that ran before."""
+        for entry in self.sv_log():
+            if entry["argv"][:1] == ["up"] and entry.get("after_fault") and (
+                    entry["run_sha256"] != self.original_run_sha or entry["state"] != self.original_state):
+                return entry
+        return None
+
+    @staticmethod
+    def _kill_group(proc):
+        """SIGKILL the switch and everything it started (ready-wait children keep stdout open)."""
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        return proc.communicate(timeout=10)[0]
+
+    def run(self, proc, timeout=150, guard=True):
+        """Wait for the switch. With guard, kill it at once if it starts an unverified pair after a fault."""
+        deadline = time.monotonic() + timeout
+        while proc.poll() is None:
+            bad = self.unverified_start() if guard else None
+            if bad is not None:
+                out = self._kill_group(proc)
+                return proc.returncode, out + f"\nWATCHDOG: started an unverified pair after the fault: {bad}\n"
+            if time.monotonic() > deadline:
+                out = self._kill_group(proc)
+                return proc.returncode, out + "\nWATCHDOG: switch did not finish in time\n"
+            time.sleep(0.05)
+        out = proc.communicate(timeout=10)[0]
+        bad = self.unverified_start() if guard else None
+        if bad is not None:
+            out += f"\nWATCHDOG: started an unverified pair after the fault: {bad}\n"
+        return proc.returncode, out
+
+    def sv_state(self):
+        return json.loads((self.ctl / "sv.json").read_text())
+
+    def locks_free(self):
+        """True when no process holds any state writer lock of this environment."""
+        for path in [*self.state.parent.glob(self.state.name + "/.writer.lock"),
+                     *self.state.parent.glob(self.state.name + ".*/.writer.lock")]:
+            fd = os.open(path, os.O_RDONLY | os.O_CLOEXEC)
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return False
+            finally:
+                os.close(fd)
+        return True
+
     def sv_log(self):
         path = self.ctl / "sv-log.jsonl"
         return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
@@ -461,8 +566,7 @@ class SwitchLockFaultInjectionTests(unittest.TestCase):
         return SwitchEnv(self, self.template, running=running)
 
     def finish(self, proc):
-        out = proc.communicate(timeout=120)[0]
-        return proc.returncode, out
+        return proc.switch_env.run(proc)
 
     # ---- positive controls: the harness can complete both paths --------------------------------
 
@@ -498,7 +602,7 @@ class SwitchLockFaultInjectionTests(unittest.TestCase):
         obtained, refused = env.compete()
         env._release_competitor()
         env.go()
-        rc, out = self.finish(proc)
+        rc, out = env.run(proc, guard=False)        # no fault in the lock: the new pair may start
         return env, killed, obtained, refused, rc, out
 
     def test_killing_lock_processes_after_ready_does_not_free_the_lock_forward(self):
@@ -621,7 +725,7 @@ class SwitchRollbackReadyTests(unittest.TestCase):
         env = self.env()
         env.set_sv(restart_loop=[NEW])                      # the new release never keeps a pid
         proc = env.start(NEW)
-        out = proc.communicate(timeout=120)[0]
+        rc, out = env.run(proc)
         self.assertNotEqual(proc.returncode, 0, out)
         self.assertIn(f"ROLLBACK_READY_VERIFIED release={OLD}", out)
         self.assertEqual(_sha(env.svc / "run"), env.original_run_sha)
@@ -633,10 +737,40 @@ class SwitchRollbackReadyTests(unittest.TestCase):
         env = self.env()
         env.set_sv(restart_loop=[NEW, OLD])
         proc = env.start(NEW)
-        out = proc.communicate(timeout=120)[0]
+        rc, out = env.run(proc)
         self.assertNotEqual(proc.returncode, 0, out)
         self.assertNotIn("ROLLBACK_READY_VERIFIED", out)
         self.assertIn(f"ROLLBACK_READY_UNVERIFIED release={OLD}", out)
+        # F-06: an unverified rollback must not leave runit restart-looping the old release.
+        self.assertFalse(env.sv_state()["up"], "service left up (restart loop) after an unverified rollback")
+        self.assertIn("SERVICE_DOWN_VERIFIED", out.splitlines())
+        last = env.sv_log()[-1]
+        self.assertIn("down", last["argv"], last)
+
+    def test_unverified_rollback_reports_unknown_when_down_cannot_be_proven(self):
+        """F-06: the stop after an unverified rollback does not complete: never claim DOWN/safe."""
+        env = self.env()
+        env.set_sv(restart_loop=[NEW, OLD], refuse_down_after_ups=2)   # 2nd start = the rollback start
+        proc = env.start(NEW)
+        rc, out = env.run(proc)
+        self.assertNotEqual(proc.returncode, 0, out)
+        self.assertIn(f"ROLLBACK_READY_UNVERIFIED release={OLD}", out)
+        self.assertIn("SERVICE_STATE_UNKNOWN", out.splitlines())
+        self.assertNotIn("SERVICE_DOWN_VERIFIED", out)
+        self.assertNotIn("ROLLBACK_INCOMPLETE_SERVICE_DOWN", out)
+
+    def test_restore_state_unverified_rollback_takes_the_service_down(self):
+        env = self.env(running=NEW)
+        src = env.previous_switch_dir()
+        env.set_sv(restart_loop=[OLD, NEW])
+        proc = env.start("--restore-state", src)
+        rc, out = env.run(proc)
+        self.assertNotEqual(proc.returncode, 0, out)
+        self.assertIn(f"ROLLBACK_READY_UNVERIFIED release={NEW}", out)
+        self.assertIn("SERVICE_DOWN_VERIFIED", out.splitlines())
+        self.assertFalse(env.sv_state()["up"])
+        self.assertEqual(_tree_digest(env.state), env.original_state)       # the pair is back, only not READY
+        self.assertEqual(_sha(env.svc / "run"), env.original_run_sha)
 
     def test_restore_state_rollback_relocks_puts_state_back_and_proves_the_previous_release_ready(self):
         """The old release cannot keep a pid after --restore-state swapped the state and released
@@ -646,7 +780,7 @@ class SwitchRollbackReadyTests(unittest.TestCase):
         src = env.previous_switch_dir()
         env.set_sv(restart_loop=[OLD])
         proc = env.start("--restore-state", src)
-        out = proc.communicate(timeout=120)[0]
+        rc, out = env.run(proc)
         self.assertNotEqual(proc.returncode, 0, out)
         self.assertIn(f"ROLLBACK_READY_VERIFIED release={NEW}", out)
         self.assertEqual(_tree_digest(env.state), env.original_state, "live state was not put back:\n" + out)
@@ -665,10 +799,91 @@ class SwitchRollbackReadyTests(unittest.TestCase):
         env = self.env()
         (env.svc / "run").write_text("#!/bin/sh\nexec python3 -m something_else\n", encoding="utf-8")
         proc = env.start(NEW)
-        out = proc.communicate(timeout=120)[0]
+        rc, out = env.run(proc)
         self.assertNotEqual(proc.returncode, 0, out)
         self.assertEqual(env.sv_log(), [], "the service was touched although rollback could not be verified")
         self.assertIn("rollback", out)
+
+
+@unittest.skipUnless(sys.platform.startswith("linux") and shutil.which("sh"), "needs a POSIX sh")
+class SwitchSignalWindowTests(unittest.TestCase):
+    """F-05: SIGTERM lands right after a rename completes, before the shell runs its next command
+    (the flag or lock-path update). The EXIT trap must judge what changed from the filesystem
+    (directory inodes, run-script hashes), put back exactly the pair that ran before, prove it
+    READY, and never start a runtime on a missing state path or an unverified state/release pair.
+    The `mv` stub does the real rename, then signals its parent: the switch shell."""
+
+    setUpClass = classmethod(SwitchLockFaultInjectionTests.setUpClass.__func__)
+    tearDownClass = classmethod(SwitchLockFaultInjectionTests.tearDownClass.__func__)
+
+    def _run(self, mode, rules, *, sv=None):
+        restore = mode != "forward"
+        env = SwitchEnv(self, self.template, running=NEW if restore else OLD)
+        if sv:
+            env.set_sv(**sv)
+        args = (NEW,) if not restore else (mode, env.previous_switch_dir())
+        proc = env.start(*args, mv_faults=rules)
+        rc, out = env.run(proc)
+        fired = (env.ctl / "sigterm.log").read_text().splitlines() if (env.ctl / "sigterm.log").exists() else []
+        self.assertEqual(len(fired), len(rules), f"the SIGTERM fault did not fire as planned:\n{out}")
+        self.assertNotIn("WATCHDOG", out, out)
+        self.assertEqual(rc, 143, out)                                    # interrupted, not reported OK
+        for marker in ("SWITCH_OK", "RESTORED"):
+            self.assertNotIn(marker, out.splitlines())
+        self.assertTrue(env.locks_free(), "a state writer lock is still held after the switch exited")
+        return env, out
+
+    def _assert_rolled_back(self, env, out, release):
+        self.assertIn(f"ROLLBACK_READY_VERIFIED release={release}", out)
+        self.assertEqual(_sha(env.svc / "run"), env.original_run_sha, "run script not put back:\n" + out)
+        self.assertEqual(_tree_digest(env.state), env.original_state, "state not put back:\n" + out)
+        ups = [e for e in env.sv_log() if e["argv"][:1] == ["up"] and e["after_fault"]]
+        self.assertTrue(ups, out)
+        for entry in ups:                                                  # only the verified pair starts
+            self.assertEqual((entry["run_sha256"], entry["state"]), (env.original_run_sha, env.original_state))
+        self.assertTrue(env.sv_state()["up"])
+
+    def test_sigterm_after_forward_run_swap_before_flag(self):
+        env, out = self._run("forward", [{"match": "run-swap"}])
+        self._assert_rolled_back(env, out, OLD)
+
+    def test_sigterm_after_restore_run_swap_before_flag(self):
+        env, out = self._run("--restore", [{"match": "run-swap"}])
+        self._assert_rolled_back(env, out, NEW)
+
+    def test_sigterm_after_state_moved_aside_before_flag(self):
+        env, out = self._run("--restore-state", [{"match": "state-to-prev"}])
+        self._assert_rolled_back(env, out, NEW)
+        incoming = list(env.state.parent.glob(env.state.name + ".incoming-*"))
+        self.assertEqual(len(incoming), 1, "the incoming copy must be kept for investigation")
+        self.assertEqual(list(env.state.parent.glob(env.state.name + ".prev-*")), [])
+
+    def test_sigterm_after_incoming_renamed_live_before_lock_path_update(self):
+        env, out = self._run("--restore-state", [{"match": "incoming-to-state"}])
+        self._assert_rolled_back(env, out, NEW)
+        failed = list(env.state.parent.glob(env.state.name + ".failed-*"))
+        self.assertEqual(len(failed), 1, "the incoming state that went live must be kept as .failed-*")
+
+    def test_sigterm_after_restore_state_run_swap_before_flag(self):
+        env, out = self._run("--restore-state", [{"match": "run-swap"}])
+        self._assert_rolled_back(env, out, NEW)
+        self.assertEqual(len(list(env.state.parent.glob(env.state.name + ".failed-*"))), 1)
+
+    def test_second_sigterm_during_rollback_does_not_cut_it_short(self):
+        env, out = self._run("--restore-state", [{"match": "run-swap"}, {"match": "prev-to-state"}])
+        self._assert_rolled_back(env, out, NEW)
+
+    def test_unknown_state_layout_keeps_service_down_and_touches_nothing(self):
+        """The moved-aside copy is no longer where the switch put it: the trap cannot tell what
+        happened, so it moves nothing, starts nothing and proves the service DOWN."""
+        env, out = self._run("--restore-state", [{"match": "state-to-prev", "tamper": "hide-prev"}])
+        self.assertFalse(env.state.exists(), "something was renamed into the live path:\n" + out)
+        self.assertTrue((env.state.parent / (env.state.name + ".foreign-moved")).is_dir())
+        self.assertEqual(len(list(env.state.parent.glob(env.state.name + ".incoming-*"))), 1)
+        self.assertEqual([e for e in env.sv_log() if e["argv"][:1] == ["up"] and e["after_fault"]], [])
+        self.assertFalse(env.sv_state()["up"])
+        self.assertIn("ROLLBACK_INCOMPLETE_SERVICE_DOWN", out.splitlines())
+        self.assertNotIn("ROLLBACK_READY_VERIFIED", out)
 
 
 if __name__ == "__main__":

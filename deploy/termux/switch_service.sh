@@ -8,10 +8,13 @@
 #                                                 (only if the new release left state the old one cannot read)
 #
 # Every check that can fail runs BEFORE the service is stopped. After the stop, any failure or
-# interruption (HUP/INT/TERM) runs the EXIT trap, which puts the previous run script (and, for
-# --restore-state, the previous state) back, starts the service again and waits for authenticated
-# READY of that release (ROLLBACK_READY_VERIFIED / _UNVERIFIED). The state writer lock is owned
-# by this shell's own descriptor for the whole critical section (see lock_state_dir). The service is only
+# interruption (HUP/INT/TERM) runs the EXIT trap (rollback_cutover): it proves the service DOWN,
+# reads from the filesystem — directory identities and run-script hashes, never flags — what was
+# really changed, puts back exactly the run script and state that ran before, starts only that
+# pair and waits for authenticated READY (ROLLBACK_READY_VERIFIED); otherwise it leaves the
+# service proven DOWN (or reports SERVICE_STATE_UNKNOWN) and every directory as found. The state
+# writer lock is owned by this shell's own descriptor for the whole critical section (see
+# lock_state_dir). The service is only
 # stopped with a graceful `sv down` (never SIGKILL: a killed POST would leave its key IN_DOUBT).
 # Run it detached so a dropped remote session cannot cut it short:
 #   nohup sh switch_service.sh <args> > ~/hg-v1-evidence/switch-$(date +%s).log 2>&1 &
@@ -28,11 +31,13 @@ FINISH_SRC="$HERE/hg-runtime.finish"
 RUN_TEMPLATE="$HERE/hg-runtime.run.in"
 FINISH_STATE="${HG_FINISH_STATE_DIR:-$HOME/.local/state/hg}"
 MIN_QUOTA="${HG_MIN_QUOTA:-20}"
-STOPPED=0          # 1 once a stop was requested (set BEFORE sv down: a timed-out stop still counts)
-SWAPPED=0          # 1 while $S/run is not the script that was running before this invocation
-STATE_SWAPPED=0    # 1 while the live state dir is the restored copy (--restore-state)
-STATE_RESTORE_OK=1
-RUN_RESTORE_OK=1
+CUTOVER=0          # 1 once a stop was requested (set BEFORE sv down, never reset): rollback is due on failure
+# What a failure must undo is read from the filesystem, not from flags (PR #87 review F-05): a
+# signal can land after a rename and before the next command. These identify the before/after:
+ORIG_RUN_SHA=""    # sha256 of the run script that ran before this invocation
+NEW_RUN_SHA=""     # sha256 of the run script this invocation installs
+LIVE_ID=""         # dev:ino of the live state directory before this invocation
+INCOMING_ID=""     # dev:ino of the incoming state copy (--restore-state)
 STATE_LOCK_HELD=0     # 1 while fd 9 of THIS shell owns the live state's writer flock
 STATE_LOCK_DIR=""     # where the state locked through fd 9 is now (--restore-state moves it)
 INCOMING_LOCK_HELD=0  # 1 while fd 8 of THIS shell owns the incoming state's writer flock
@@ -48,7 +53,7 @@ svpid() { sv status hg-runtime | sed -n 's/^run: hg-runtime: (pid \([0-9]*\)).*/
 sha() { sha256sum "$1" | cut -d' ' -f1; }
 
 stop_service() {
-  STOPPED=1
+  CUTOVER=1
   sv -w 60 -v down hg-runtime > /dev/null || { say "graceful stop did not finish in 60 s"; return 1; }
   sv status hg-runtime | grep -q '^down: hg-runtime' || { sv status hg-runtime; return 1; }
 }
@@ -62,50 +67,135 @@ start_and_wait() {   # start_and_wait <config> <expected release id>: authentica
   pid1="$(svpid)"; sleep 5; pid2="$(svpid)"
   [ -n "$pid1" ] && [ "$pid1" = "$pid2" ] || { say "service pid changed ($pid1 -> $pid2): restart loop?"; return 1; }
   HG_SERVICE_CONFIG="$1" python3 -I -B "$SMOKE" ready-wait "$2" 10 || return 1
-  STOPPED=0
+}
+
+ensure_down() {   # ask runit for a graceful stop and PROVE it with sv status (never SIGKILL)
+  sv -w 60 -v down hg-runtime > /dev/null 2>&1 || true
+  sv status hg-runtime 2>/dev/null | grep -q '^down: hg-runtime'
+}
+
+absent() { [ ! -e "$1" ] && [ ! -L "$1" ]; }
+
+dir_id() {   # dir_id <path>: dev:ino of a real (non-symlink) directory, empty otherwise
+  python3 -I -c 'import os, stat, sys
+try:
+    st = os.lstat(sys.argv[1])
+except OSError:
+    sys.exit(0)
+if stat.S_ISDIR(st.st_mode):
+    print(f"{st.st_dev}:{st.st_ino}")' "$1"
+}
+
+classify_state() {   # where the live/incoming state directories really are: ORIGINAL|MOVED_ASIDE|SWAPPED|UNKNOWN
+  live_now="$(dir_id "$STATE")"; prev_now="$(dir_id "$STATE.prev-$TS")"; inc_now="$(dir_id "$STATE.incoming-$TS")"
+  if [ -n "$LIVE_ID" ] && [ "$live_now" = "$LIVE_ID" ] && absent "$STATE.prev-$TS"; then
+    echo ORIGINAL                                   # live state untouched (an incoming copy may sit beside it)
+  elif [ -n "$LIVE_ID" ] && [ -n "$INCOMING_ID" ] && absent "$STATE" && [ "$prev_now" = "$LIVE_ID" ] \
+      && [ "$inc_now" = "$INCOMING_ID" ]; then
+    echo MOVED_ASIDE                                # first rename done, second not
+  elif [ -n "$LIVE_ID" ] && [ -n "$INCOMING_ID" ] && [ "$live_now" = "$INCOMING_ID" ] \
+      && [ "$prev_now" = "$LIVE_ID" ] && absent "$STATE.incoming-$TS"; then
+    echo SWAPPED                                    # both renames done
+  else
+    echo UNKNOWN
+  fi
+}
+
+classify_run() {   # which run script is installed: ORIGINAL|NEW|UNKNOWN
+  if [ -f "$S/run" ] && [ ! -L "$S/run" ] && [ -n "$ORIG_RUN_SHA" ]; then
+    run_now="$(sha "$S/run")"
+    if [ "$run_now" = "$ORIG_RUN_SHA" ]; then echo ORIGINAL; return; fi
+    if [ -n "$NEW_RUN_SHA" ] && [ "$run_now" = "$NEW_RUN_SHA" ]; then echo NEW; return; fi
+  fi
+  echo UNKNOWN
+}
+
+lock_for_state_rollback() {   # $1 MOVED_ASIDE|SWAPPED: own both state locks where the directories are now
+  if [ "$1" = SWAPPED ]; then inc_dir="$STATE"; else inc_dir="$STATE.incoming-$TS"; fi
+  # Lock paths follow the directories; require_state_locks then proves each descriptor owns the
+  # lock file at that path, so a wrong guess fails closed instead of being trusted.
+  if [ "$STATE_LOCK_HELD" = 1 ]; then STATE_LOCK_DIR="$STATE.prev-$TS"
+  else lock_state_dir "$STATE.prev-$TS" live || return 1; fi
+  if [ "$INCOMING_LOCK_HELD" = 1 ]; then INCOMING_LOCK_DIR="$inc_dir"
+  else lock_state_dir "$inc_dir" incoming || return 1; fi
+}
+
+rollback_cutover() {   # put back exactly the run script and state that ran before; start only that pair
+  if ! ensure_down; then
+    unlock_state
+    say "could not prove hg-runtime DOWN: nothing is put back or started; inspect sv status hg-runtime, $S/run and $STATE*"
+    echo "ROLLBACK_INCOMPLETE_SERVICE_STATE_UNKNOWN"
+    return 0
+  fi
+  layout="$(classify_state)"; run_found="$(classify_run)"
+  say "after the failure: state layout $layout, run script $run_found"
+  back=1
+  case "$layout" in
+    ORIGINAL) ;;
+    MOVED_ASIDE|SWAPPED)
+      # Renaming state back is a state change too: only under locks this switch provably owns
+      # (taken again if they were already released for the start; the service is DOWN now).
+      if lock_for_state_rollback "$layout" && require_state_locks && restore_state_previous; then
+        :
+      else
+        back=0
+        say "state rollback incomplete; inspect $STATE.prev-$TS, $STATE.incoming-$TS and $STATE.failed-$TS"
+      fi ;;
+    *)
+      back=0
+      say "state layout is not one this switch produced: nothing is moved; inspect $STATE and $STATE.*-$TS" ;;
+  esac
+  case "$run_found" in
+    ORIGINAL) ;;
+    NEW)
+      if cp -p "$PREV_RUN" "$S/run.tmp" && mv "$S/run.tmp" "$S/run"; then
+        say "previous run script put back"
+      else
+        back=0
+        say "run-script rollback incomplete; inspect $S/run and $PREV_RUN"
+      fi ;;
+    *)
+      back=0
+      say "run script is neither the previous nor the new one: left as it is; inspect $S/run" ;;
+  esac
+  unlock_state
+  # Start only the pair that ran before, re-read from the filesystem after the rollback.
+  if [ "$back" = 1 ] && [ "$(classify_state)" = ORIGINAL ] && [ "$(classify_run)" = ORIGINAL ]; then
+    # `sv up` alone proves nothing (F-04): authenticated READY with a stable pid, or stop it again.
+    if start_and_wait "$ROLLBACK_CONF" "$ROLLBACK_RID"; then
+      say "hg-runtime is READY again on release $ROLLBACK_RID"
+      echo "ROLLBACK_READY_VERIFIED release=$ROLLBACK_RID"
+      return 0
+    fi
+    say "previous release did not reach authenticated READY with a stable pid: stopping it so runit cannot restart-loop it"
+    echo "ROLLBACK_READY_UNVERIFIED release=${ROLLBACK_RID:-UNKNOWN}"
+    if ensure_down; then
+      echo "SERVICE_DOWN_VERIFIED"
+    else
+      say "could not prove hg-runtime DOWN; inspect sv status hg-runtime"
+      echo "SERVICE_STATE_UNKNOWN"
+    fi
+    return 0
+  fi
+  if ensure_down; then
+    say "HG runtime deliberately remains DOWN: the previous run script and state could not both be proven back in place"
+    echo "ROLLBACK_INCOMPLETE_SERVICE_DOWN"
+  else
+    say "could not prove hg-runtime DOWN; inspect sv status hg-runtime"
+    echo "ROLLBACK_INCOMPLETE_SERVICE_STATE_UNKNOWN"
+  fi
 }
 
 on_exit() {
   rc=$?
-  trap - EXIT HUP INT TERM
+  trap '' HUP INT TERM     # the rollback must run to its end: a second signal must not cut it short
+  trap - EXIT
   if [ "$rc" -ne 0 ] && [ -n "$BK" ]; then
     say "FAILED (exit $rc) — returning to the state before this run"
-    if [ "$SWAPPED" = 1 ] || [ "$STATE_SWAPPED" = 1 ]; then
-      sv -w 60 -v down hg-runtime > /dev/null 2>&1 || true
-    fi
-    if [ "$STATE_SWAPPED" = 1 ]; then
-      # Renaming state back is a state change too: only while this switch provably owns its locks.
-      # If they were already released for the start, take them again now that the service is down.
-      if ! relock_for_state_rollback || ! require_state_locks || ! restore_state_previous; then
-        STATE_RESTORE_OK=0
-        say "state rollback incomplete; service will remain DOWN; inspect $STATE.prev-$TS and $STATE.failed-$TS"
-      fi
-    fi
-    if [ "$SWAPPED" = 1 ] && [ -n "$PREV_RUN" ]; then
-      if cp -p "$PREV_RUN" "$S/run.tmp" && mv "$S/run.tmp" "$S/run"; then
-        say "previous run script put back"
-      else
-        RUN_RESTORE_OK=0
-        say "run-script rollback incomplete; service will remain DOWN; inspect $S/run and $PREV_RUN"
-      fi
-    fi
-    unlock_state
-    if [ "$STOPPED" = 1 ] || [ "$SWAPPED" = 1 ] || [ "$STATE_SWAPPED" = 1 ]; then
-      rm -f "$FINISH_STATE/hg-runtime-finish.count" "$FINISH_STATE/hg-runtime.HELD"
-      if [ "$STATE_RESTORE_OK" = 1 ] && [ "$RUN_RESTORE_OK" = 1 ]; then
-        # `sv up` alone proves nothing (F-04): wait for authenticated READY of the release this
-        # run replaced, with a stable pid, before calling the rollback verified.
-        if start_and_wait "$ROLLBACK_CONF" "$ROLLBACK_RID"; then
-          say "hg-runtime is READY again on release $ROLLBACK_RID"
-          echo "ROLLBACK_READY_VERIFIED release=$ROLLBACK_RID"
-        else
-          say "previous release did not reach authenticated READY with a stable pid; inspect sv status hg-runtime"
-          echo "ROLLBACK_READY_UNVERIFIED release=${ROLLBACK_RID:-UNKNOWN}"
-        fi
-      else
-        say "HG runtime deliberately remains DOWN because rollback could not be verified"
-        echo "ROLLBACK_INCOMPLETE_SERVICE_DOWN"
-      fi
+    if [ "$CUTOVER" = 1 ]; then
+      rollback_cutover || true
+    else
+      unlock_state         # nothing was stopped or changed yet
     fi
     echo "ROLLED_BACK_AFTER_FAILURE dir=$BK"
   fi
@@ -192,14 +282,6 @@ require_state_locks() {   # fail unless this shell provably still owns every sta
   if [ "$INCOMING_LOCK_HELD" = 1 ]; then
     python3 -I -B "$HERE/state_lock.py" verify 8 "$INCOMING_LOCK_DIR/.writer.lock" \
       || { say "incoming state writer lock is no longer owned by this switch: stopping before any further change"; return 1; }
-  fi
-}
-
-relock_for_state_rollback() {   # after unlock_state: lock the restored copy and the moved-aside state again
-  [ "$STATE_LOCK_HELD" = 0 ] && [ "$INCOMING_LOCK_HELD" = 0 ] || return 0      # still held: nothing to do
-  lock_state_dir "$STATE.prev-$TS" live || return 1
-  if [ -d "$STATE" ]; then
-    lock_state_dir "$STATE" incoming || return 1
   fi
 }
 
@@ -370,7 +452,11 @@ if [ "${1:-}" = "--restore" ] || [ "${1:-}" = "--restore-state" ]; then
   mkdir -m 700 "$BK"
   cp -p "$S/run" "$BK/run.current"
   PREV_RUN="$BK/run.current"
+  ORIG_RUN_SHA="$(sha "$PREV_RUN")"
+  NEW_RUN_SHA="$(sha "$SRC/run.old")"
   rollback_target "$BK/run.current"
+  LIVE_ID="$(dir_id "$STATE")"
+  [ -n "$LIVE_ID" ] || { say "live state $STATE is not a real directory"; exit 1; }
   sv status hg-runtime > "$BK/status.before"
   if [ "$MODE" = "--restore-state" ]; then
     ( cd "$SRC/state" && sha256sum -c --quiet "$SRC/state.sha256" ) || { say "backed-up state fails its hashes"; exit 1; }
@@ -385,6 +471,8 @@ if [ "${1:-}" = "--restore" ] || [ "${1:-}" = "--restore-state" ]; then
   if [ "$MODE" = "--restore-state" ]; then
     require_state_locks
     cp -a "$SRC/state" "$STATE.incoming-$TS"
+    INCOMING_ID="$(dir_id "$STATE.incoming-$TS")"
+    [ -n "$INCOMING_ID" ] || { say "incoming state copy is not a real directory"; exit 1; }
     precheck_with "$OLD_ROOT" "$STATE.incoming-$TS" "$BK/state-precheck.json"
     require_state_locks
     rm -f "$STATE.incoming-$TS/.hg-state-copy.json"   # the copy attestation must not become live state
@@ -392,7 +480,6 @@ if [ "${1:-}" = "--restore" ] || [ "${1:-}" = "--restore-state" ]; then
     require_state_locks
     mv "$STATE" "$STATE.prev-$TS"
     STATE_LOCK_DIR="$STATE.prev-$TS"                 # fd 9's lock file moved with its directory
-    STATE_SWAPPED=1
     say "live state moved aside to $STATE.prev-$TS"
     require_state_locks
     mv "$STATE.incoming-$TS" "$STATE"
@@ -403,10 +490,8 @@ if [ "${1:-}" = "--restore" ] || [ "${1:-}" = "--restore-state" ]; then
   fi
   require_state_locks
   cp -p "$SRC/run.old" "$S/run.tmp" && mv "$S/run.tmp" "$S/run"
-  SWAPPED=1
   unlock_state
   start_and_wait "$OLD_RUNCONF" "$OLD_RID"
-  SWAPPED=0; STATE_SWAPPED=0
   sha256sum "$S/run" > "$BK/run.restored.sha256"
   echo "RESTORE_DIR=$BK"
   echo RESTORED
@@ -426,7 +511,10 @@ cp "$0" "$SMOKE" "$PRECHECK" "$FINISH_SRC" "$RUN_TEMPLATE" "$BK/"
 # 1. recovery point (the shared config is never modified by this script)
 cp -p "$S/run" "$BK/run.old"
 PREV_RUN="$BK/run.old"
+ORIG_RUN_SHA="$(sha "$PREV_RUN")"
 rollback_target "$BK/run.old"      # a failure after the stop must be able to prove the old release READY
+LIVE_ID="$(dir_id "$STATE")"
+[ -n "$LIVE_ID" ] || { say "live state $STATE is not a real directory"; exit 1; }
 cp -p "$OLDCONF" "$BK/runtime-service.json.old"
 sha256sum "$S/run" "$OLDCONF" > "$BK/hashes.before"
 [ -e "$S/finish" ] && sha256sum "$S/finish" >> "$BK/hashes.before"
@@ -456,6 +544,7 @@ space_ok
 sed -e "s#@ROOT@#$ROOT#g" -e "s#@CONF@#$NEWCONF#g" "$RUN_TEMPLATE" > "$BK/run.new"
 sh -n "$BK/run.new"
 if grep -q "@ROOT@\|@CONF@" "$BK/run.new"; then say "run template not fully rendered"; exit 1; fi   # `! cmd` is ignored by set -e
+NEW_RUN_SHA="$(sha "$BK/run.new")"
 
 # 4. stop, back up the state under the service's own lock, prove the new release can read it
 stop_service
@@ -466,10 +555,8 @@ precheck_with "$ROOT" "$BK/state" "$BK/state-precheck.json"
 # 5. new run script, start, READY on the new release with a stable pid
 require_state_locks
 install -m 700 "$BK/run.new" "$S/run.tmp" && mv "$S/run.tmp" "$S/run"
-SWAPPED=1
 unlock_state
 start_and_wait "$NEWCONF" "$NEW"
-SWAPPED=0
 sha256sum "$S/run" "$S/finish" "$NEWCONF" > "$BK/hashes.after"
 echo "SWITCH_DIR=$BK"
 echo SWITCH_OK

@@ -60,12 +60,18 @@ class DeployScriptTests(unittest.TestCase):
             self.assertGreaterEqual(body.count("require_state_locks"), 2, name)
         self.assertNotIn("HG_STATE_LOCK_HELD", full)                    # a flag is never proof of a lock
         self.assertIn("trap on_exit EXIT", full)
-        self.assertIn("if ! relock_for_state_rollback || ! require_state_locks || ! restore_state_previous; then",
-                      full)                                                     # proof, then rollback
+        rollback = full[full.index("rollback_cutover() {"):full.index("\non_exit() {")]
+        self.assertIn('if lock_for_state_rollback "$layout" && require_state_locks && restore_state_previous; then',
+                      rollback)                                                 # proof, then rollback
+        self.assertLess(rollback.index("ensure_down"), rollback.index("classify_state"))   # DOWN before any change
+        on_exit = full[full.index("on_exit() {"):full.index("trap on_exit EXIT")]
+        self.assertLess(on_exit.index("trap '' HUP INT TERM"), on_exit.index("rollback_cutover"))
+        for flag in ("SWAPPED=1", "STATE_SWAPPED", "STOPPED=1"):          # flags are not evidence (F-05)
+            self.assertNotIn(flag, full)
         for sig in ("HUP", "INT", "TERM"):
             self.assertRegex(full, rf"trap 'exit \d+' {sig}")
         stop = full[full.index("stop_service() {"):full.index("start_and_wait() {")]
-        self.assertLess(stop.index("STOPPED=1"), stop.index("sv -w 60 -v down"))   # a timed-out stop still rolls back
+        self.assertLess(stop.index("CUTOVER=1"), stop.index("sv -w 60 -v down"))   # a timed-out stop still rolls back
         self.assertNotIn("kill -9", full)
         self.assertNotIn("sv kill", full)
         self.assertNotIn("! grep", full)                                              # `!` disables set -e
@@ -447,58 +453,92 @@ class DeployScriptTests(unittest.TestCase):
             self.assertNotEqual(proc.returncode, 0)
             self.assertTrue((state / "incoming.txt").is_file())
 
+    def _trap_script(self, root, *, layout, run, status_line="down: hg-runtime: 1s, normally up", stubs=""):
+        """on_exit + rollback_cutover + ensure_down from the real script; classifiers and state
+        operations stubbed, every external call logged to calls.txt."""
+        full = (DEPLOY / "switch_service.sh").read_text(encoding="utf-8")
+
+        def func(name):
+            start = full.index(f"{name}() {{")
+            return full[start:full.index("\n}\n", start) + 3]
+        calls = root / "calls.txt"
+        log = lambda what: 'echo "' + what + '" >> ' + repr(str(calls))
+        return calls, (
+            "say() { :; }\n"
+            'sv() { echo "sv $*" >> ' + repr(str(calls)) + '; [ "$1" = status ] && echo ' + repr(status_line) + '; return 0; }\n'
+            f"classify_state() {{ echo {layout}; }}\nclassify_run() {{ echo {run}; }}\n"
+            "lock_for_state_rollback() { return 0; }\nrequire_state_locks() { return 0; }\n"
+            "restore_state_previous() { " + log("restore") + "; return 0; }\n"
+            "start_and_wait() { " + log("start") + "; return 0; }\n"
+            "unlock_state() { :; }\ncp() { :; }\nmv() { :; }\n" + stubs +
+            "CUTOVER=1; BK=fixture; STATE=/missing/state; TS=T; FINISH_STATE=/missing; PREV_RUN=/missing/run.old; "
+            "S=/missing/service; ROLLBACK_CONF=c; ROLLBACK_RID=r\n"
+            + func("ensure_down") + func("rollback_cutover") + func("on_exit") + "\nfalse\non_exit\n")
+
     def test_on_exit_keeps_service_down_when_state_rollback_fails(self):
         import tempfile
-
-        full = (DEPLOY / "switch_service.sh").read_text(encoding="utf-8")
-        start = full.index("on_exit() {")
-        func = full[start:full.index("\n}\n", start) + 3]
         with tempfile.TemporaryDirectory(prefix="hg-on-exit-fail-closed-") as td:
-            root = Path(td)
-            commands = root / "sv-calls.txt"
-            script = (
-                "say() { :; }\n"
-                'sv() { echo "$*" >> ' + repr(str(commands)) + '; return 0; }\n'
-                "restore_state_previous() { return 1; }\n"
-                "relock_for_state_rollback() { return 0; }\n"
-                "require_state_locks() { return 0; }\n"
-                "unlock_state() { :; }\n"
-                "rm() { :; }\n"
-                "STOPPED=1; SWAPPED=0; STATE_SWAPPED=1; STATE_RESTORE_OK=1; RUN_RESTORE_OK=1; "
-                "BK=fixture; STATE=/missing/state; TS=T; FINISH_STATE=/missing; PREV_RUN=; S=/missing/service\n"
-                + func + "\nfalse\non_exit\n"
-            )
+            calls, script = self._trap_script(Path(td), layout="SWAPPED", run="ORIGINAL",
+                                              stubs="restore_state_previous() { return 1; }\n")
             proc = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=5)
             self.assertNotEqual(proc.returncode, 0)
-            calls = commands.read_text(encoding="utf-8").splitlines()
-            self.assertEqual(calls, ["-w 60 -v down hg-runtime"])
+            self.assertEqual(calls.read_text(encoding="utf-8").splitlines(),
+                             ["sv -w 60 -v down hg-runtime", "sv status hg-runtime",      # proven DOWN first
+                              "sv -w 60 -v down hg-runtime", "sv status hg-runtime"])     # and DOWN at the end
+            self.assertIn("ROLLBACK_INCOMPLETE_SERVICE_DOWN", proc.stdout.splitlines())
 
     def test_on_exit_does_not_rename_state_back_without_proving_its_locks(self):
         import tempfile
-
-        full = (DEPLOY / "switch_service.sh").read_text(encoding="utf-8")
-        start = full.index("on_exit() {")
-        func = full[start:full.index("\n}\n", start) + 3]
         with tempfile.TemporaryDirectory(prefix="hg-on-exit-lock-lost-") as td:
-            root = Path(td)
-            calls = root / "calls.txt"
-            script = (
-                "say() { :; }\n"
-                'sv() { echo "sv $*" >> ' + repr(str(calls)) + '; return 0; }\n'
-                'restore_state_previous() { echo restore >> ' + repr(str(calls)) + '; return 0; }\n'
-                "relock_for_state_rollback() { return 0; }\n"
-                "require_state_locks() { return 1; }\n"
-                'start_and_wait() { echo start >> ' + repr(str(calls)) + '; return 0; }\n'
-                "unlock_state() { :; }\n"
-                "rm() { :; }\n"
-                "STOPPED=1; SWAPPED=0; STATE_SWAPPED=1; STATE_RESTORE_OK=1; RUN_RESTORE_OK=1; "
-                "BK=fixture; STATE=/missing/state; TS=T; FINISH_STATE=/missing; PREV_RUN=; S=/missing/service\n"
-                + func + "\nfalse\non_exit\n"
-            )
+            calls, script = self._trap_script(Path(td), layout="MOVED_ASIDE", run="ORIGINAL",
+                                              stubs="require_state_locks() { return 1; }\n")
             proc = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=5)
             self.assertNotEqual(proc.returncode, 0)
-            self.assertEqual(calls.read_text(encoding="utf-8").splitlines(), ["sv -w 60 -v down hg-runtime"])
-            self.assertIn("ROLLBACK_INCOMPLETE_SERVICE_DOWN", proc.stdout)
+            seen = calls.read_text(encoding="utf-8").splitlines()
+            self.assertNotIn("restore", seen)
+            self.assertNotIn("start", seen)
+            self.assertNotIn("sv up hg-runtime", seen)
+            self.assertIn("ROLLBACK_INCOMPLETE_SERVICE_DOWN", proc.stdout.splitlines())
+
+    def test_on_exit_changes_and_starts_nothing_when_down_cannot_be_proven(self):
+        import tempfile
+        with tempfile.TemporaryDirectory(prefix="hg-on-exit-not-down-") as td:
+            calls, script = self._trap_script(Path(td), layout="SWAPPED", run="NEW",
+                                              status_line="run: hg-runtime: (pid 7) 9s")
+            proc = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=5)
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertEqual(calls.read_text(encoding="utf-8").splitlines(),
+                             ["sv -w 60 -v down hg-runtime", "sv status hg-runtime"])
+            self.assertIn("ROLLBACK_INCOMPLETE_SERVICE_STATE_UNKNOWN", proc.stdout.splitlines())
+            self.assertNotIn("ROLLBACK_INCOMPLETE_SERVICE_DOWN", proc.stdout)
+
+    def test_on_exit_unknown_layout_alone_blocks_the_start(self):
+        """Each guard holds on its own: an UNKNOWN layout found before the rollback blocks the start
+        even if a later re-read happened to look ORIGINAL."""
+        import tempfile
+        with tempfile.TemporaryDirectory(prefix="hg-on-exit-unknown-") as td:
+            root = Path(td)
+            seen = root / "classify-count"
+            stub = ("classify_state() { n=$(cat " + repr(str(seen)) + " 2>/dev/null || echo 0); "
+                    "echo $((n + 1)) > " + repr(str(seen)) + "; "
+                    "if [ \"$n\" = 0 ]; then echo UNKNOWN; else echo ORIGINAL; fi; }\n")
+            calls, script = self._trap_script(root, layout="UNKNOWN", run="ORIGINAL", stubs=stub)
+            proc = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=5)
+            got = calls.read_text(encoding="utf-8").splitlines()
+            self.assertNotIn("start", got)
+            self.assertNotIn("restore", got)
+            self.assertIn("ROLLBACK_INCOMPLETE_SERVICE_DOWN", proc.stdout.splitlines())
+
+    def test_on_exit_starts_only_a_pair_proven_original_after_rollback(self):
+        """classify_* re-read after the rollback still say SWAPPED: never start, stay DOWN."""
+        import tempfile
+        with tempfile.TemporaryDirectory(prefix="hg-on-exit-unproven-pair-") as td:
+            calls, script = self._trap_script(Path(td), layout="SWAPPED", run="ORIGINAL")
+            proc = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=5)
+            seen = calls.read_text(encoding="utf-8").splitlines()
+            self.assertIn("restore", seen)
+            self.assertNotIn("start", seen)
+            self.assertIn("ROLLBACK_INCOMPLETE_SERVICE_DOWN", proc.stdout.splitlines())
 
     def test_restore_state_never_makes_a_copy_attestation_live(self):
         text = (DEPLOY / "switch_service.sh").read_text(encoding="utf-8")
