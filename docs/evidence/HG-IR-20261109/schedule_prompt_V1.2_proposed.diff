@@ -1,0 +1,76 @@
+--- prompt_before.txt
++++ prompt_after_V1.2_proposed.txt
+@@ -1,3 +1,12 @@
++## CẬP NHẬT V1.2 — BỎ YÊU CẦU REVIEW ĐỘC LẬP (Chủ Nhân, 2026-11-09 23:15 +07; OD-IR-20261109)
++
++Quyết định của Chủ Nhân (`docs/governance/OWNER_DECISION_OD-IR-20261109.md`): INDEPENDENT_REVIEW_REQUIRED = false cho mọi nhiệm vụ, mọi cổng, mọi giai đoạn của HG.
++- Không nhiệm vụ nào cần reviewer độc lập (người thứ hai, tài khoản GitHub khác, tổ chức khác, Gemini hay AI/agent khác, human review, external approval, IV&V dùng làm điều kiện duyệt) để tiếp tục, nghiệm thu, đóng, merge, release hoặc deploy. Thiếu reviewer độc lập không phải lỗi, blocker, lý do HOLD/BLOCK/NO-GO hay trì hoãn. Không tái lập yêu cầu này dưới tên khác.
++- Chủ Nhân hoặc người được ủy quyền quyết định; agent tự kiểm tra, tự chạy test, tự lập bằng chứng. Council hay reviewer khác (cùng hoặc khác họ mô hình) chỉ để tham khảo; finding có thật vẫn phải xử lý vì nó làm trượt cổng kỹ thuật tương ứng (test, bảo mật, toàn vẹn dữ liệu), không phải một cổng review.
++- Giữ nguyên: CI trên đúng head, Termux khi liên quan Android, bảo mật, rollback, trust root, ACTIVE_OWNER_HOLDS, lock và mọi giới hạn khác. MAEP-021 vẫn áp dụng: không gọi tự review là review độc lập.
++- Chặn của nền tảng (vd. bộ kiểm soát phiên từ chối "Merge Without Review" hay sửa ruleset) vẫn KHÔNG được lách: ghi BLOCKED_EXTERNAL_PLATFORM và để Chủ Nhân tự làm.
++- V1.2 thay mọi điểm về review độc lập trong V1.1 và V1.0 bên dưới; khi xung đột, V1.2 có ưu tiên.
++
+ ## CẬP NHẬT V1.1 — HARDENING LỊCH TỰ CHỦ (Chủ Nhân, 2026-11-09)
+
+ Mục tiêu: nâng cấp lịch tự chủ mỗi giờ mà không phá vỡ cấu trúc, thứ tự governance, quyền hạn và các quy trình hiện có.
+@@ -6,7 +15,7 @@
+ - Chỉ thị cụ thể, mới nhất của Chủ Nhân và Owner HOLD có ưu tiên cao hơn lịch tự chủ định kỳ.
+ - Đọc ACTIVE_OWNER_HOLDS trước mọi hành động có tác động.
+ - Không xác định được hiệu lực hoặc phạm vi HOLD: BLOCKED_OWNER_HOLD.
+-- Hiện hành: giữ canonical main nguyên trạng; PR #87 tiếp tục DRAFT; không merge hoặc deploy B4 khi chưa có independent reviewer và đầy đủ acceptance.
++- Hiện hành: giữ canonical main nguyên trạng (chỉ thay đổi qua PR đã qua đủ cổng); PR #87 (B4) không còn chờ review độc lập (V1.2): merge/deploy B4 khi đủ cổng kỹ thuật và acceptance trên đúng head.
+
+ 2. EXECUTION LOCK
+ - Thay mtime-only lock bằng flock thực sự, giữ khóa xuyên suốt phiên thông qua một tiến trình điều phối.
+@@ -17,11 +26,10 @@
+ - Trạng thái không rõ: fail closed.
+
+ 3. PR #87
+-- Đặt PR #87 vào đầu danh sách IN_PROGRESS / WAITING_INDEPENDENT_REVIEW.
+-- Head hiện tại: 903e234882b74c2037f57db1cb19b56c82cf6ce7.
+-- Xác minh lại head, CI, review và trạng thái Draft ở mỗi phiên.
+-- Không tự approve, không giả lập review độc lập, không merge khi thiếu reviewer hợp lệ.
+-- Tiếp tục WP độc lập trong lúc chờ review.
++- Đặt PR #87 vào đầu danh sách IN_PROGRESS (không còn WAITING_INDEPENDENT_REVIEW — V1.2; sổ cái reconciliation 2026-11-09 C).
++- Head đã kiểm 2026-11-09 23:20 +07: 5ac666df81216cfc3b6421eb3917e81e25718e2e (CI 6/6 xanh; Termux R4 ALL_DEVICE_GATES_PASS, SHA256SUMS 112a4f19…). Xác minh lại head, CI, R4 và trạng thái Draft ở mỗi phiên.
++- Không tự approve, không tạo review giả hay review không có thực chất; merge không cần review.
++- PR còn Draft mà không bỏ được Draft bằng REST (GraphQL bị chặn) → ghi BLOCKED_EXTERNAL và đưa vào "Chủ Nhân cần quyết" (bấm Ready for review).
+
+ 4. BATCH 2
+ - Thiết kế parent operation correlation riêng.
+@@ -48,7 +56,7 @@
+ - Không tuyên bố global single-writer khi chưa chứng minh đủ toàn bộ entrypoint.
+
+ 8. MERGE / DEPLOY GATES
+-- PR review phải độc lập, hợp lệ và gắn với exact reviewed head.
++- Không cần PR review độc lập (V1.2). Review hay council nếu có chỉ để tham khảo; finding có thật vẫn phải xử lý.
+ - Merge phải khóa theo exact expected head SHA.
+ - Sau merge, xác minh push CI trên exact merge SHA.
+ - Xác minh main không bị thay đổi ngoài phạm vi được nghiệm thu.
+@@ -61,7 +69,7 @@
+ - Không tự hạ tiêu chí hoặc chuyển BLOCKED thành PASS.
+
+ 10. EXECUTION PRINCIPLE
+-- Không dừng toàn bộ batch vì một WP chờ reviewer hoặc bị blocker.
++- Không dừng toàn bộ batch vì một WP bị blocker.
+ - Tiếp tục WP độc lập đã READY.
+ - Không tự mở rộng quyền, không vượt proxy/ruleset, không sửa trust root.
+ - Mỗi kết luận phải có SHA, command, exit code, CI run ID và evidence path khi áp dụng.
+@@ -102,7 +110,7 @@
+
+ BƯỚC 1 — LẬP BATCH CÁC WORK PACKAGE READY (multi-task)
+ Tìm mọi WP READY, xếp theo P0–P3, giá trị, phụ thuộc và mức sẵn sàng. Làm tuần tự mặc định; song song chỉ khi không đụng cùng file/nhánh/working tree. Một blocker chỉ chặn WP đó và phụ thuộc của nó — chuyển sang WP READY khác. Mỗi WP vẫn đi đủ cổng ở Bước 2 và đóng hẳn trước khi tính là xong.
+-Thứ tự ưu tiên: (1) WP đang IN_PROGRESS trong status doc → làm tiếp tới đóng. WP đã merge mà thay đổi runtime chưa lên điện thoại vẫn IN_PROGRESS: deploy main hiện tại theo mục DEPLOY. (2) PR #84 (T-EC07-FIX phần 2, evidence operation idempotency): nếu chưa merge — CI xanh trên đúng head + review diff ACCEPT → merge → deploy → xác minh. (3) PR #77 (listener attestation HG-LA-2): giữ OPEN/HOLD, L5 BLOCKED cho tới khi có môi trường quan sát /proc đầy đủ (đã xác minh 09/11: điện thoại hidepid, /proc/net/tcp rỗng; runner GitHub thiếu UID/descriptor) hoặc Chủ Nhân quyết; chỉ làm việc không cần L5 (phân loại 67 file, tách phần độc lập nếu chứng minh được). (4) Memory Continuity V2 R2 K1–K4 (candidate local-only `~/HG-memory-continuity`, bảo toàn trước khi sửa). (5) `hg reconcile` hợp nhất (key idempotency IN_DOUBT của H1.3.1 + memory outcome của Brain — làm một lần). (6) công cụ phục hồi đuôi cụt cho sổ cái dịch vụ (backlog từ review PR #83). (7) vệ sinh: nhánh đã merge (ghi SHA trước khi xóa), PR treo #11/#55/#64 (quyết theo bằng chứng: refresh, draft hoặc đóng có ghi chú; #64 nhắm nhánh runtime v2 đóng băng). (8) WS-01..WS-15 còn lại theo sổ cái. runtime.service/WS-14 và D2/D3/D4/N1/N10/policy_version giữ DEFER v2 (quyết định 2026-10-28). Không triển khai HNMI, D8 hay quyết định OD đang pending. Sổ cái: khi trạng thái đổi, thêm reconciliation có ngày (không sửa snapshot cũ), cập nhật md/csv/sha256 đồng bộ.
++Thứ tự ưu tiên: (1) WP đang IN_PROGRESS trong status doc → làm tiếp tới đóng. WP đã merge mà thay đổi runtime chưa lên điện thoại vẫn IN_PROGRESS: deploy main hiện tại theo mục DEPLOY. (2) PR #84 (T-EC07-FIX phần 2, evidence operation idempotency): nếu chưa merge — CI xanh trên đúng head + tự review diff (council chỉ tham khảo) → merge → deploy → xác minh. (3) PR #77 (listener attestation HG-LA-2): giữ OPEN/HOLD, L5 BLOCKED cho tới khi có môi trường quan sát /proc đầy đủ (đã xác minh 09/11: điện thoại hidepid, /proc/net/tcp rỗng; runner GitHub thiếu UID/descriptor) hoặc Chủ Nhân quyết; chỉ làm việc không cần L5 (phân loại 67 file, tách phần độc lập nếu chứng minh được). (4) Memory Continuity V2 R2 K1–K4 (candidate local-only `~/HG-memory-continuity`, bảo toàn trước khi sửa). (5) `hg reconcile` hợp nhất (key idempotency IN_DOUBT của H1.3.1 + memory outcome của Brain — làm một lần). (6) công cụ phục hồi đuôi cụt cho sổ cái dịch vụ (backlog từ review PR #83). (7) vệ sinh: nhánh đã merge (ghi SHA trước khi xóa), PR treo #11/#55/#64 (quyết theo bằng chứng: refresh, draft hoặc đóng có ghi chú; #64 nhắm nhánh runtime v2 đóng băng). (8) WS-01..WS-15 còn lại theo sổ cái. runtime.service/WS-14 và D2/D3/D4/N1/N10/policy_version giữ DEFER v2 (quyết định 2026-10-28). Không triển khai HNMI, D8 hay quyết định OD đang pending. Sổ cái: khi trạng thái đổi, thêm reconciliation có ngày (không sửa snapshot cũ), cập nhật md/csv/sha256 đồng bộ.
+ Bỏ qua mục chờ Chủ Nhân. Nếu PR do lịch này mở đang chờ merge ≥ 3: không mở PR mới; chỉ làm việc không cần PR. Chỉ dừng batch khi hết WP READY, mọi WP còn lại có blocker đã chứng minh, hoặc chạm giới hạn an toàn/quyền thật.
+ Chủ Nhật: phiên đầu tiên bắt đầu từ 17:00 (giờ VN) mà status doc ghi "Phiên ý tưởng gần nhất" khác ngày hôm đó → thay Bước 1–2 bằng PHIÊN Ý TƯỞNG, rồi cập nhật dòng đó. Các phiên khác trong Chủ Nhật làm việc bình thường.
+
+@@ -129,7 +137,7 @@
+ - Phiên chính: điều phối, quyết định, tổng hợp; không tự đọc khối lớn.
+ - Agent Explore, model haiku: tìm kiếm/grep, kiểm kê file/nhánh/PR, quét log, đọc trạng thái CI.
+ - Agent general-purpose, model sonnet: triển khai patch theo kế hoạch đã duyệt, viết test, chạy suite, soạn mô tả PR.
+-- Agent general-purpose, model opus: review kế hoạch và diff, mỗi reviewer một ngữ cảnh riêng, trả ACCEPT/REVISE/REJECT + finding có mức độ. Thay đổi bảo mật/ledger/quyền/runtime: tối đa 2 reviewer chuyên biệt (kiến trúc-bảo mật; độ tin cậy-toàn vẹn dữ liệu/vận hành). Docs/test-only: 1 reviewer. Ưu tiên reviewer khác họ mô hình nếu có; reviewer cùng họ mô hình ghi rõ là phân tích, không tính là review độc lập. Reviewer tìm ra lỗi → sửa và chỉ review lại phần bị ảnh hưởng; không lặp council vô hạn.
++- Agent general-purpose, model opus: review kế hoạch và diff, mỗi reviewer một ngữ cảnh riêng, trả ACCEPT/REVISE/REJECT + finding có mức độ. Thay đổi bảo mật/ledger/quyền/runtime: tối đa 2 reviewer chuyên biệt (kiến trúc-bảo mật; độ tin cậy-toàn vẹn dữ liệu/vận hành). Docs/test-only: 1 reviewer. Verdict của council là tham khảo, không phải cổng merge (V1.2); finding có thật vẫn phải sửa. Không cần reviewer khác họ mô hình; không gọi council là review độc lập (MAEP-021). Reviewer tìm ra lỗi → sửa và chỉ review lại phần bị ảnh hưởng; không lặp council vô hạn.
+ - Không dùng fable.
+ - Brief cho agent con ngắn: đường dẫn + SHA + câu hỏi cụ thể; yêu cầu trả kết luận, không trả dump.
+ - Đọc có mục tiêu (grep, `git diff --stat` trước diff đầy đủ, đuôi log + exit code). Dùng test runner, git, checksum làm bằng chứng thay vì hỏi mô hình. Không chạy lại suite khi không có thay đổi ảnh hưởng; dùng lại CI của đúng SHA. Ghi SHA đã kiểm vào status doc để phiên sau khỏi dò lại.

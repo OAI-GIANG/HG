@@ -74,7 +74,9 @@ Giới hạn: đây là kiểm tra từ vựng (lexical), không phải suy lu�
 
 ### 4.2 Ngoài phạm vi v1 (V2_DEFERRED)
 
-Chuyển sang runtime.service (6 cổng ADR-012); MAEP-1.2.0; chống kẻ tấn công cùng UID và TOCTOU nâng cao; T-1 danh tính principal; A-1b; review độc lập AC-14; mở `ask`/`note` qua HTTP; mở `test.run`/`url.read` qua HTTP; model lớn trên GPU thuê; ASR/TTS tiếng Việt; tìm kiếm ngữ nghĩa (embedding) — chỉ thêm khi benchmark chứng minh cần (MIID §11); dọn 76 nhánh cũ.
+Chuyển sang runtime.service (6 cổng ADR-012); MAEP-1.2.0; chống kẻ tấn công cùng UID và TOCTOU nâng cao; T-1 danh tính principal; A-1b; mở `ask`/`note` qua HTTP; mở `test.run`/`url.read` qua HTTP; model lớn trên GPU thuê; ASR/TTS tiếng Việt; tìm kiếm ngữ nghĩa (embedding) — chỉ thêm khi benchmark chứng minh cần (MIID §11); dọn 76 nhánh cũ.
+
+*Ghi chú 2026-11-09 (quyết định OD-IR-20261109 của Chủ Nhân, `docs/governance/OWNER_DECISION_OD-IR-20261109.md`):* mục "AC-14" đã được bỏ khỏi danh sách hoãn v2. HG không yêu cầu kiểu xác nhận độc lập đó ở bất kỳ giai đoạn nào; AC-14 nay là NOT_APPLICABLE.
 
 ## 5. Tiêu chí nghiệm thu (đo được)
 

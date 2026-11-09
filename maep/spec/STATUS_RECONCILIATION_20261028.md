@@ -30,7 +30,7 @@ BLOCKED rather than upgraded.
 
 | Item | Status | Why |
 |---|---|---|
-| `maep/spec/ACCEPTANCE_CHECKLIST_V1.md` AC-14 independent review | NOT_PERFORMED-BY-DIRECTIVE | A different party must perform it; an agent cannot supply it (MAEP-021) |
+| `maep/spec/ACCEPTANCE_CHECKLIST_V1.md` AC-14 independent review | NOT_PERFORMED-BY-DIRECTIVE on 2026-10-28; **superseded 2026-11-09: NOT_APPLICABLE** | 2026-10-28 reason (superseded): only a different party could have performed it, and an agent cannot supply it (MAEP-021). Owner decision OD-IR-20261109 (`docs/governance/OWNER_DECISION_OD-IR-20261109.md`) removed independent review as a requirement, so AC-14 is no longer an acceptance criterion |
 | Principal identity (T-1) | OPEN | Any holder of the service token acts as the manifest principal `STT`. Closing it needs an authenticated identity source, which is an owner decision about the trust root |
 | `maep/core.py` primitives that still take a caller boolean (`validate_policy_change`, `validate_review_label`, `validate_closure` for non-CLOSED_VERIFIED, `transition` guards) | OPEN, documented | They are primitives whose authority comes from the caller; the runtime path does not accept booleans (TaskStore derives them). Making the primitives self-authorizing is a contract change that needs a policy version and owner approval (MAEP-017, 028) |
 | Production deployment | BLOCKED | No reachable deployment target from this environment; see the task report |
