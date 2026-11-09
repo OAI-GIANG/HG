@@ -886,5 +886,25 @@ class SwitchSignalWindowTests(unittest.TestCase):
         self.assertNotIn("ROLLBACK_READY_VERIFIED", out)
 
 
+FAULT_SUITE_CLASSES = (SwitchLockFaultInjectionTests, SwitchRollbackReadyTests, SwitchSignalWindowTests)
+FAULT_SUITE_MIN_TESTS = 27
+
+
+class FaultSuiteAvailabilityTests(unittest.TestCase):
+    """F-07: on any Linux kernel — Android/Termux included — the fault suite must really run.
+    A run that skips it would otherwise exit 0 and look like a pass. This guard is never skipped
+    on a Linux kernel: if the harness cannot run there, this test fails and says why."""
+
+    def test_fault_suite_runs_on_every_linux_kernel(self):
+        if os.uname().sysname != "Linux":
+            self.skipTest(f"kernel {os.uname().sysname}: the harness needs Linux /proc and flock semantics")
+        for cls in FAULT_SUITE_CLASSES:
+            self.assertFalse(getattr(cls, "__unittest_skip__", False),
+                             f"{cls.__name__} would be skipped here ({getattr(cls, '__unittest_skip_why__', '')}); "
+                             f"sys.platform={sys.platform!r}")
+        names = [n for cls in FAULT_SUITE_CLASSES for n in unittest.defaultTestLoader.getTestCaseNames(cls)]
+        self.assertGreaterEqual(len(names), FAULT_SUITE_MIN_TESTS, "fault-injection tests went missing")
+
+
 if __name__ == "__main__":
     unittest.main()
