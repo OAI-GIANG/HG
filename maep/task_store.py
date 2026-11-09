@@ -531,7 +531,11 @@ class TaskStore:
     # ----- internals ---------------------------------------------------------------
 
     def _sync_ledger(self):
-        """Make the ledger durable before a replay reports a record as committed (EC07 part 2)."""
+        """Make the ledger durable before a replay reports a record as committed (EC07 part 2).
+
+        Limit: after an earlier fsync error on another descriptor, Linux may report this fsync as
+        successful although those pages never reached the disk; it is not a durability proof then.
+        """
         try:
             with ledger_lock(self._ledger_path, exclusive=False, create=False) as fd:
                 os.fsync(fd)
