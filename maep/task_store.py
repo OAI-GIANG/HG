@@ -31,8 +31,10 @@ and appends nothing; a different content is a conflict. Events without an operat
 matched to one. This is separate from HTTP Idempotency-Key receipts, event_id and evidence_id
 uniqueness, and content-addressed artifact storage; none of those implies the others.
 
-Append outcome: if the ledger append raises after the event reached the file (for example fsync
-fails after the write), the store raises LedgerOutcomeUnknown (IN_DOUBT), not "state unchanged".
+Append outcome: a refusal before the write (maep.ledger.LedgerAppendRefused) is "state unchanged".
+Any other append error is checked against the ledger: if the event reached the file (for example
+fsync fails after the write) or the ledger cannot be read back, the store raises
+LedgerOutcomeUnknown (IN_DOUBT), not "state unchanged".
 
 Limits: in-process only. Authority comes from an injected PolicyEvaluator, which is not
 yet anchored to the trust root (RT-06). One authorization request is held per task.
@@ -49,7 +51,7 @@ from .core import (
     MAEPError, POLICY_VERSION, TERMINAL_STATES, _nonempty_string, evaluate_gate, transition,
     validate_blocker, validate_closure, validate_evidence, validate_linked_task, validate_task,
 )
-from .ledger import append_event, ledger_lock, read_events
+from .ledger import LedgerAppendRefused, append_event, ledger_lock, read_events
 from .admission import require_writer_session
 
 RESULT_STATES = {"RUNNING", "UNVERIFIED"}
@@ -593,6 +595,10 @@ class TaskStore:
         }
         try:
             self._append(self._ledger_path, event)
+        except LedgerAppendRefused as exc:
+            # Refused before any write: the outcome is known, whatever an identical event on
+            # disk (another writer's, e.g. a lost task@version race) would suggest.
+            raise MAEPError(f"ledger append failed; state unchanged ({exc})") from exc
         except (OSError, MAEPError) as exc:
             outcome = self._append_outcome(event)
             if outcome == "ABSENT":
