@@ -23,10 +23,25 @@ touched becomes read-only history (`policy_status: "STALE"`, `recorded_policy_ve
 it can be read, but no fact, transition or effect is accepted for it. Unknown, newer or
 non-earlier versions are refused. Nothing in the ledger is rewritten.
 
+Evidence operations (EC07 part 2): `record_evidence` takes an optional `operation_id` that names
+one logical evidence operation within one task. It is stored in the EVIDENCE_RECORDED event data
+next to the evidence (never inside it). A retry with the same operation_id and the same observed
+content (the evidence minus `evidence_id` and `collected_at`) returns the committed evidence_id
+and appends nothing; a different content is a conflict. Events without an operation_id are never
+matched to one. This is separate from HTTP Idempotency-Key receipts, event_id and evidence_id
+uniqueness, and content-addressed artifact storage; none of those implies the others.
+
+Append outcome: if the ledger append raises after the event reached the file (for example fsync
+fails after the write), the store raises LedgerOutcomeUnknown (IN_DOUBT), not "state unchanged".
+
 Limits: in-process only. Authority comes from an injected PolicyEvaluator, which is not
 yet anchored to the trust root (RT-06). One authorization request is held per task.
 """
 import copy
+import hashlib
+import json
+import os
+import re
 import threading
 from datetime import datetime, timezone
 
@@ -34,10 +49,39 @@ from .core import (
     MAEPError, POLICY_VERSION, TERMINAL_STATES, _nonempty_string, evaluate_gate, transition,
     validate_blocker, validate_closure, validate_evidence, validate_linked_task, validate_task,
 )
-from .ledger import append_event, read_events
+from .ledger import append_event, ledger_lock, read_events
 from .admission import require_writer_session
 
 RESULT_STATES = {"RUNNING", "UNVERIFIED"}
+
+_OPERATION_ID = re.compile(r"[A-Za-z0-9._:-]{1,128}")
+# A retry of one logical evidence operation may re-mint these; everything observed must match.
+_UNHASHED_EVIDENCE_FIELDS = frozenset({"evidence_id", "collected_at"})
+
+
+class LedgerOutcomeUnknown(MAEPError):
+    """The ledger append raised, but its event is on disk or cannot be ruled out (IN_DOUBT)."""
+
+
+def _validate_operation_id(operation_id):
+    if not isinstance(operation_id, str) or _OPERATION_ID.fullmatch(operation_id) is None:
+        raise MAEPError("operation_id must be 1-128 characters from A-Z a-z 0-9 . _ : -")
+    return operation_id
+
+
+def _evidence_operation_digest(evidence):
+    """Canonical identity of what one evidence record observed (EC07 part 2)."""
+    material = {key: value for key, value in evidence.items() if key not in _UNHASHED_EVIDENCE_FIELDS}
+    try:
+        encoded = json.dumps(material, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+                             allow_nan=False)
+    except (TypeError, ValueError) as exc:
+        raise MAEPError(f"evidence is not canonical JSON ({exc})") from exc
+    return "sha256:" + hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _canonical_event(event):
+    return json.dumps(event, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
 def _version_key(version):
@@ -146,10 +190,12 @@ class TaskStore:
         self._writer_key = None
         self._active_writer = None
         self._history_versions = frozenset()
+        self._evidence_operations = {}   # (task_id, operation_id) -> {"evidence_id", "digest"}
 
     def _refresh_from_disk(self):
         events = read_events(self._ledger_path)
         self._records = {}
+        self._evidence_operations = {}
         for event in events:
             self._replay(event, self._history_versions)
 
@@ -199,8 +245,24 @@ class TaskStore:
             raise MAEPError(f"ledger mixes policy versions for one task at {event['event_id']}")
         if kind == "TRANSITION" and data.get("from") != record["task"]["state"]:
             raise MAEPError(f"ledger transition does not start from the recorded state at {event['event_id']}")
+        if kind == "EVIDENCE_RECORDED" and "operation_id" in data:
+            self._index_evidence_operation(task_id, data, event["event_id"])
         record["version"] = version
         _APPLIERS[kind](record, data)
+
+    def _index_evidence_operation(self, task_id, data, event_id):
+        operation_id = data["operation_id"]
+        try:
+            _validate_operation_id(operation_id)
+            evidence_id = data["evidence"]["evidence_id"]
+            digest = _evidence_operation_digest(data["evidence"])
+        except (MAEPError, KeyError, TypeError) as exc:
+            raise MAEPError(f"ledger event {event_id} carries an invalid evidence operation ({exc})") from None
+        key = (task_id, operation_id)
+        if key in self._evidence_operations:
+            raise MAEPError(f"ledger history inconsistent at {event_id}: task holds operation_id "
+                            f"{operation_id} twice")
+        self._evidence_operations[key] = {"evidence_id": evidence_id, "digest": digest}
 
     def claim_writer(self):
         """Issue the only TaskWriter. After this, mutations without it are refused (MAEP-006)."""
@@ -285,15 +347,49 @@ class TaskStore:
 
             self._commit(record, "RESULT_RECORDED", result)
 
-    def record_evidence(self, task_id, evidence, *, expected_version):
+    def record_evidence(self, task_id, evidence, *, expected_version, operation_id=None):
+        """Record one evidence object; return its committed evidence_id.
+
+        With `operation_id`, a retry of the same operation on this task replays: same observed
+        content returns the committed evidence_id without appending (whatever expected_version,
+        evidence_id or collected_at the retry carries); different content is a conflict. The
+        lookup reads the ledger fresh and keeps the writer, read-only and policy checks; a replay
+        fsyncs the ledger before it reports the record as committed. Evidence sent with an
+        operation_id must be deterministic apart from evidence_id and collected_at: a result that
+        embeds a fresh timestamp conflicts on every retry. Reusing one operation_id for two
+        logically different operations is a caller error and replays the first.
+        """
         with self._lock:
+            if operation_id is not None:
+                _validate_operation_id(operation_id)
+                self._require_writer()
+                record = self._record(task_id)
+                if record.get("policy_status") == "STALE":
+                    raise MAEPError(f"task was recorded under {record.get('recorded_policy_version')}; it is "
+                                    f"read-only history under {POLICY_VERSION} (MAEP-012)")
+                validate_evidence(evidence)
+                committed = self._evidence_operations.get((task_id, operation_id))
+                if committed is not None:
+                    if committed["digest"] != _evidence_operation_digest(evidence):
+                        raise MAEPError(f"evidence operation_id {operation_id} conflict: this task already "
+                                        f"recorded different content for it")
+                    self._sync_ledger()
+                    return committed["evidence_id"]
+            # _open_record reads the ledger again. That cannot admit a second event for this
+            # operation: versions are contiguous, so an event committed after the lookup moves the
+            # task past expected_version and is refused here; the retry then replays it.
             record = self._open_record(task_id, expected_version)
             validate_evidence(evidence)
             evidence = copy.deepcopy(evidence)
             if evidence["evidence_id"] in record["evidence"]:
                 raise MAEPError("evidence_id already recorded; append an amendment with a new ID")
+            data = {"evidence": evidence}
+            if operation_id is not None:
+                _evidence_operation_digest(evidence)   # refuse non-canonical content before the append
+                data["operation_id"] = operation_id
 
-            self._commit(record, "EVIDENCE_RECORDED", {"evidence": evidence})
+            self._commit(record, "EVIDENCE_RECORDED", data)
+            return evidence["evidence_id"]
 
     def set_mandatory_gates(self, task_id, gates, *, expected_version):
         with self._lock:
@@ -434,6 +530,28 @@ class TaskStore:
 
     # ----- internals ---------------------------------------------------------------
 
+    def _sync_ledger(self):
+        """Make the ledger durable before a replay reports a record as committed (EC07 part 2).
+
+        Limit: after an earlier fsync error on another descriptor, Linux may report this fsync as
+        successful although those pages never reached the disk; it is not a durability proof then.
+        """
+        try:
+            with ledger_lock(self._ledger_path, exclusive=False, create=False) as fd:
+                os.fsync(fd)
+        except (OSError, MAEPError) as exc:
+            raise LedgerOutcomeUnknown("cannot make the ledger durable before replaying an evidence "
+                                       f"operation; outcome IN_DOUBT ({exc})") from exc
+
+    def _append_outcome(self, event):
+        """After a failed append: PRESENT, ABSENT or UNREADABLE. The ledger is append-only."""
+        try:
+            events = read_events(self._ledger_path)
+        except (OSError, MAEPError):
+            return "UNREADABLE"
+        wanted = _canonical_event(event)
+        return "PRESENT" if any(_canonical_event(e) == wanted for e in events) else "ABSENT"
+
     def _record(self, task_id):
         self._refresh_from_disk()
         if task_id not in self._records:
@@ -476,7 +594,13 @@ class TaskStore:
         try:
             self._append(self._ledger_path, event)
         except (OSError, MAEPError) as exc:
-            raise MAEPError(f"ledger append failed; state unchanged ({exc})") from exc
+            outcome = self._append_outcome(event)
+            if outcome == "ABSENT":
+                raise MAEPError(f"ledger append failed; state unchanged ({exc})") from exc
+            detail = ("is on disk" if outcome == "PRESENT"
+                      else "may be on disk (the ledger cannot be read back)")
+            raise LedgerOutcomeUnknown(f"ledger append reported an error but event {event['event_id']} "
+                                       f"{detail}; outcome IN_DOUBT ({exc})") from exc
         updated = copy.deepcopy(record)
         updated["version"] = version
         apply(updated)

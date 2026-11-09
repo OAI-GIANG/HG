@@ -71,7 +71,7 @@ class BrainOrchestrator:
         return self._writer.apply_transition(task_id, target, expected_version=self._version(task_id))
 
     def _evidence(self, task_id, *, evidence_type, source_ref, candidate_ref, method, result,
-                  limitations, criterion_id=None, detail=None, integrity_metadata=None):
+                  limitations, criterion_id=None, detail=None, integrity_metadata=None, operation_id=None):
         record = {
             "evidence_id": f"EV-{uuid.uuid4().hex[:12]}", "evidence_type": evidence_type,
             "source_ref": source_ref, "candidate_ref": candidate_ref,
@@ -85,16 +85,22 @@ class BrainOrchestrator:
             metadata["detail"] = str(detail)[:500]
         if metadata:
             record["integrity_metadata"] = metadata
-        self._writer.record_evidence(task_id, record, expected_version=self._version(task_id))
-        return record["evidence_id"]
+        if operation_id is None:
+            self._writer.record_evidence(task_id, record, expected_version=self._version(task_id))
+            return record["evidence_id"]
+        # A retry of the same operation returns the evidence_id committed first (EC07 part 2).
+        return self._writer.record_evidence(task_id, record, expected_version=self._version(task_id),
+                                            operation_id=operation_id)
 
     def record_artifact_evidence(self, task_id, payload, *, evidence_type, source_ref, candidate_ref,
                                  method, result, payload_kind="application/octet-stream",
-                                 limitations=(), criterion_id=None):
+                                 limitations=(), criterion_id=None, operation_id=None):
         """Persist raw bytes first, then append their immutable reference to the MAEP task ledger.
 
         A crash between the two writes can leave an orphan blob, which is safe and discoverable.
         A ledger reference is never considered verified until the payload hash and size are checked.
+        With `operation_id`, retrying after a lost acknowledgement reuses the content-addressed blob
+        and replays the committed ledger reference instead of appending a second one.
         """
         if self._evidence_artifacts is None:
             raise MAEPError("evidence artifact storage is not configured")
@@ -106,7 +112,7 @@ class BrainOrchestrator:
             task_id, evidence_type=evidence_type, source_ref=source_ref,
             candidate_ref=candidate_ref, method=method, result=result,
             limitations=limitations, criterion_id=criterion_id,
-            integrity_metadata=metadata,
+            integrity_metadata=metadata, operation_id=operation_id,
         )
 
     def verify_artifact_evidence(self, evidence):
@@ -116,11 +122,11 @@ class BrainOrchestrator:
             raise MAEPError("evidence record must be an object")
         return self._evidence_artifacts.verify_metadata(evidence.get("integrity_metadata"))
 
-    def record_observation(self, task_id, *, source_ref, method, result, limitations=()):
+    def record_observation(self, task_id, *, source_ref, method, result, limitations=(), operation_id=None):
         """Evidence not tied to an acceptance criterion (e.g. a denial or a blocker resolution)."""
         return self._evidence(task_id, evidence_type="OBSERVATION", source_ref=source_ref,
                               candidate_ref=f"task:{task_id}", method=method, result=result,
-                              limitations=limitations)
+                              limitations=limitations, operation_id=operation_id)
 
     # ---------- lifecycle ----------
 
