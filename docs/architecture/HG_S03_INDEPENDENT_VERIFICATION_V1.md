@@ -79,6 +79,40 @@ The SHA-256 reference detects content change relative to the trusted metadata re
 
 Reads require a SHA-256 reference, owner-owned regular file, no symlink at the final payload, a configured byte limit, exact length and digest match. `find_orphans()` only lists unreferenced blobs; it is deliberately non-destructive.
 
+### 3.4 Evidence operation idempotency (EC07 part 2, revision 2026-11-09)
+
+Additive revision. Before it, a caller that lost the acknowledgement of an evidence append could only recover by reading the ledger itself (the S03 recovery test); a plain retry appended a second record, because `BrainOrchestrator` mints a new random `evidence_id` per call.
+
+Five layers stay separate:
+
+| Layer | Owner | Guarantee |
+|---|---|---|
+| HTTP request idempotency | `hg/http_api.py` `IdempotencyStore` | One POST per Idempotency-Key; STARTED/COMPLETE/IN_DOUBT receipts. No evidence route. |
+| Event ID uniqueness | `maep/ledger.py` | `task@version` appended once (re-read under the exclusive lock). |
+| Evidence ID uniqueness | `TaskStore.record_evidence` | One record per `evidence_id` per task. |
+| Artifact deduplication | `EvidenceArtifactStore.put` | Same bytes, same blob. |
+| Evidence-operation idempotency | `TaskStore.record_evidence(..., operation_id=)` | One record per logical operation per task. |
+
+The fifth layer relies on the second: two writers that race one operation on one task both build the same `task@version`, and the ledger refuses the second. It does not replace any other layer.
+
+Contract:
+
+- `operation_id` is optional: 1–128 characters from `A-Z a-z 0-9 . _ : -`, unique within one task. `BrainOrchestrator.record_artifact_evidence` and `record_observation` accept it and pass it through.
+- It is stored in the EVIDENCE_RECORDED event data next to `evidence`, never inside the evidence object (`evidence.schema.json` forbids extra properties). It is written only when given.
+- Canonical content: the evidence object without `evidence_id` and `collected_at`, as JSON with sorted keys and compact separators, hashed with SHA-256. Evidence sent with an `operation_id` must be deterministic apart from those two fields.
+- Same task, same `operation_id`, same content: the committed `evidence_id` is returned and nothing is appended, whatever `expected_version` the retry carries. The ledger is fsynced before the replay reports success; if that fails, `LedgerOutcomeUnknown`.
+- Same task, same `operation_id`, different content: conflict, nothing appended. Through `record_artifact_evidence`, the refused bytes remain an unlinked orphan blob.
+- A replay keeps the claimed-writer, read-only and STALE-policy checks. A terminal task replays a committed operation but accepts no new one.
+- Events without `operation_id` are never matched to an operation, by content or by time.
+- Restore rebuilds the index from the ledger. A task holding one `operation_id` twice, or an invalid one, refuses to restore (only reachable by editing the ledger).
+- The torn-tail rule (C1) applies unchanged: a torn ledger refuses replays as it refuses appends.
+- Append outcome (every event type): when the append raises, the store re-reads the ledger. The exact event present, or the ledger unreadable: `LedgerOutcomeUnknown` (IN_DOUBT). Absent: "ledger append failed; state unchanged". A lock timeout followed by an unreadable ledger is reported IN_DOUBT although nothing may have been written; that is the conservative side.
+- Not provided: atomicity across the artifact store and the ledger, exactly-once effects, or idempotency for internal orchestrator evidence. A re-run of verification is a new attempt (MAEP-014) and does not reuse an earlier operation.
+
+Rollback: older releases read the new field harmlessly (they read `data["evidence"]` only). No migration.
+
+Tests: `maep/tests/test_evidence_operations.py`, `hg/tests/test_evidence_operations_runtime.py`.
+
 ## 4. Independent-process verification contract
 
 ### 4.1 Process boundary
