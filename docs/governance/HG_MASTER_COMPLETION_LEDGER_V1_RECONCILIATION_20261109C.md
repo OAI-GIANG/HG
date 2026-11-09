@@ -30,6 +30,8 @@ This supersedes, in the 2026-11-06 snapshot, the next action "P0 — PR #77: …
 | #77 listener attestation HG-LA-2 | `73a45f059d51`, base `9d82701` | OPEN/HOLD; "independent review still required", "Get an independent security review" (description; comment 2026-11-09T06:00Z) | **Independent-review items superseded** by OD-IR-20261109. **HOLD stays** for its technical and owner items: L5 BLOCKED (no environment with full /proc), a partial holder scan still returns PASS, `reverify()` re-checks cached descriptors only, owner decision Q3 widened without approval (MAEP-017/028), `mergeable_state` unstable (`l5-capability-gate`) | unit 3.13/3.14 and RT06 green per reconciliation B; not re-run here |
 | #64, #55, #11 | unchanged | Not held for an independent review | No change | — |
 
+PR records: governance-update comments posted 2026-11-09 on [#87](https://github.com/OAI-GIANG/HG/pull/87#issuecomment-6745656618), [#88](https://github.com/OAI-GIANG/HG/pull/88#issuecomment-6745667831) and [#77](https://github.com/OAI-GIANG/HG/pull/77#issuecomment-6745668278); the PR descriptions themselves are left as written (history). Remediation PR: [#89](https://github.com/OAI-GIANG/HG/pull/89).
+
 ## 4. Specification and scope documents (this change set)
 
 - `maep/spec/ACCEPTANCE_CHECKLIST_V1.md` AC-14 "Independent review": NOT_PERFORMED-BY-DIRECTIVE → **NOT_APPLICABLE (OD-IR-20261109)**.
