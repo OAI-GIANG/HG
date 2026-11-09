@@ -32,6 +32,8 @@ matched to one. This is separate from HTTP Idempotency-Key receipts, event_id an
 uniqueness, and content-addressed artifact storage; none of those implies the others.
 
 Append outcome: a refusal before the write (maep.ledger.LedgerAppendRefused) is "state unchanged".
+An injected `ledger_append` must raise LedgerAppendRefused only when that call wrote nothing; a
+wrapper that retries after a write error must not let a later refusal escape as one.
 Any other append error is checked against the ledger: if the event reached the file (for example
 fsync fails after the write) or the ledger cannot be read back, the store raises
 LedgerOutcomeUnknown (IN_DOUBT), not "state unchanged".

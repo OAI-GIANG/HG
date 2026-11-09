@@ -17,7 +17,11 @@ from .core import MAEPError
 
 
 class LedgerAppendRefused(MAEPError):
-    """append_event refused the event before writing any byte; this call left the ledger unchanged."""
+    """append_event refused the event before writing any event byte; no record was added.
+
+    Opening with O_CREAT may still have created an empty ledger file or its parent directory,
+    which reads as an empty ledger.
+    """
 
 _LOCKS_GUARD = threading.Lock()
 _LOCKS = {}
@@ -173,7 +177,7 @@ def append_event(path, event):
     """Append a unique event under the canonical cross-instance/process ledger lock.
 
     Every refusal before the write (invalid event, lock or open failure, unsafe file, unreadable
-    or torn ledger, duplicate event_id) raises LedgerAppendRefused: nothing was written. An
+    or torn ledger, duplicate event_id) raises LedgerAppendRefused: no event byte was written. An
     OSError from the write or the fsync is not a refusal; the bytes may be in the file.
     """
     if not isinstance(event, dict) or not isinstance(event.get("event_id"), str) or not event["event_id"]:
