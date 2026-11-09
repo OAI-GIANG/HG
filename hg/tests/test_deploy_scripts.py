@@ -52,7 +52,7 @@ class DeployScriptTests(unittest.TestCase):
             'start_and_wait "$NEWCONF" "$NEW"')]      # READY on the new release with a stable pid
         self.assertEqual(order, sorted(order))
         self.assertIn("trap on_exit EXIT", full)
-        self.assertIn("restore_state_previous || say", full)
+        self.assertIn("if ! restore_state_previous; then", full)
         for sig in ("HUP", "INT", "TERM"):
             self.assertRegex(full, rf"trap 'exit \d+' {sig}")
         stop = full[full.index("stop_service() {"):full.index("start_and_wait() {")]
@@ -365,6 +365,47 @@ class DeployScriptTests(unittest.TestCase):
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertEqual((state / "owner.txt").read_text(encoding="utf-8"), "old-state-2")
             self.assertTrue((root / "state.failed-T" / "incoming.txt").is_file())
+
+    def test_restore_state_rollback_refuses_to_claim_success_when_previous_is_missing(self):
+        import tempfile
+
+        full = (DEPLOY / "switch_service.sh").read_text(encoding="utf-8")
+        start = full.index("restore_state_previous() {")
+        func = full[start:full.index("\n}\n", start) + 3]
+        with tempfile.TemporaryDirectory(prefix="hg-state-rollback-missing-") as td:
+            root = Path(td)
+            state = root / "state"
+            state.mkdir()
+            (state / "incoming.txt").write_text("unverified-incoming", encoding="utf-8")
+            script = ("say() { :; }\nSTATE=" + repr(str(state)) + "\nTS=T\n" + func
+                      + "\nrestore_state_previous\n")
+            proc = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=5)
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertTrue((state / "incoming.txt").is_file())
+
+    def test_on_exit_keeps_service_down_when_state_rollback_fails(self):
+        import tempfile
+
+        full = (DEPLOY / "switch_service.sh").read_text(encoding="utf-8")
+        start = full.index("on_exit() {")
+        func = full[start:full.index("\n}\n", start) + 3]
+        with tempfile.TemporaryDirectory(prefix="hg-on-exit-fail-closed-") as td:
+            root = Path(td)
+            commands = root / "sv-calls.txt"
+            script = (
+                "say() { :; }\n"
+                'sv() { echo "$*" >> ' + repr(str(commands)) + '; return 0; }\n'
+                "restore_state_previous() { return 1; }\n"
+                "unlock_state() { :; }\n"
+                "rm() { :; }\n"
+                "STOPPED=1; SWAPPED=0; STATE_SWAPPED=1; STATE_RESTORE_OK=1; RUN_RESTORE_OK=1; "
+                "BK=fixture; STATE=/missing/state; TS=T; FINISH_STATE=/missing; PREV_RUN=; S=/missing/service\n"
+                + func + "\nfalse\non_exit\n"
+            )
+            proc = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=5)
+            self.assertNotEqual(proc.returncode, 0)
+            calls = commands.read_text(encoding="utf-8").splitlines()
+            self.assertEqual(calls, ["-w 60 -v down hg-runtime"])
 
     def test_restore_state_never_makes_a_copy_attestation_live(self):
         text = (DEPLOY / "switch_service.sh").read_text(encoding="utf-8")

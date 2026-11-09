@@ -29,6 +29,8 @@ MIN_QUOTA="${HG_MIN_QUOTA:-20}"
 STOPPED=0          # 1 once a stop was requested (set BEFORE sv down: a timed-out stop still counts)
 SWAPPED=0          # 1 while $S/run is not the script that was running before this invocation
 STATE_SWAPPED=0    # 1 while the live state dir is the restored copy (--restore-state)
+STATE_RESTORE_OK=1
+RUN_RESTORE_OK=1
 STATE_LOCK_PID=""
 STATE_LOCK_RELEASE=""
 INCOMING_LOCK_PID=""
@@ -66,15 +68,27 @@ on_exit() {
       sv -w 60 -v down hg-runtime > /dev/null 2>&1 || true
     fi
     if [ "$STATE_SWAPPED" = 1 ]; then
-      restore_state_previous || say "state rollback incomplete; inspect $STATE.prev-$TS and $STATE.failed-$TS"
+      if ! restore_state_previous; then
+        STATE_RESTORE_OK=0
+        say "state rollback incomplete; service will remain DOWN; inspect $STATE.prev-$TS and $STATE.failed-$TS"
+      fi
     fi
     if [ "$SWAPPED" = 1 ] && [ -n "$PREV_RUN" ]; then
-      cp -p "$PREV_RUN" "$S/run.tmp" && mv "$S/run.tmp" "$S/run" && say "previous run script put back"
+      if cp -p "$PREV_RUN" "$S/run.tmp" && mv "$S/run.tmp" "$S/run"; then
+        say "previous run script put back"
+      else
+        RUN_RESTORE_OK=0
+        say "run-script rollback incomplete; service will remain DOWN; inspect $S/run and $PREV_RUN"
+      fi
     fi
     unlock_state
     if [ "$STOPPED" = 1 ] || [ "$SWAPPED" = 1 ] || [ "$STATE_SWAPPED" = 1 ]; then
       rm -f "$FINISH_STATE/hg-runtime-finish.count" "$FINISH_STATE/hg-runtime.HELD"
-      sv up hg-runtime && say "hg-runtime started again (check: sv status hg-runtime)"
+      if [ "$STATE_RESTORE_OK" = 1 ] && [ "$RUN_RESTORE_OK" = 1 ]; then
+        sv up hg-runtime && say "hg-runtime started again (check: sv status hg-runtime)"
+      else
+        say "HG runtime deliberately remains DOWN because rollback could not be verified"
+      fi
     fi
     echo "ROLLED_BACK_AFTER_FAILURE dir=$BK"
   fi
@@ -160,12 +174,15 @@ unlock_state() {
 }
 
 restore_state_previous() {   # restore the old state even if the incoming rename never created $STATE
+  if [ ! -d "$STATE.prev-$TS" ]; then
+    say "previous state rollback directory is missing"
+    return 1
+  fi
   if [ -d "$STATE" ]; then
     mv "$STATE" "$STATE.failed-$TS" || return 1
   fi
-  if [ -d "$STATE.prev-$TS" ]; then
-    mv "$STATE.prev-$TS" "$STATE" && say "state put back" || return 1
-  fi
+  mv "$STATE.prev-$TS" "$STATE" || return 1
+  say "state put back"
 }
 
 space_ok() {   # room for two copies of the state dir plus 1 MB
