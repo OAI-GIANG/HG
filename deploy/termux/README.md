@@ -26,11 +26,20 @@ remote session cannot cut them short:
    script, shared config, finish, status, hashes), one config file per release (fields checked if it
    already exists), GitHub quota ≥ 20, `verify-root`, read-only `serve --check`, the config matches the
    shared one in state_dir/port/token/host/body limit, the reviewed finish is installed, free space, the
-   rendered run script parses. Only then a graceful `sv down` (never SIGKILL), a state backup under the
-   service's own writer lock with both trees hashed, and `state_precheck.py` proving the new release
-   reads that state. Then the new run script, start, READY on the expected release with a stable pid.
+   rendered run script parses, and the running run script names the config and release a rollback would
+   return to. Only then a graceful `sv down` (never SIGKILL), a state backup under the service's own
+   writer lock with both trees hashed, and `state_precheck.py` proving the new release reads that state.
+   Then the new run script, start, READY on the expected release with a stable pid.
+   The writer lock is held on the switch shell's own descriptor (`state_lock.py acquire`), not by a
+   helper process, and ownership is proven through that descriptor (`state_lock.py verify`) before the
+   backup, after it, around the precheck and before every rename and run-script swap; if the lock is
+   no longer the switch's, it stops before the next change (PR #87 review F-01).
    Any failure or interruption after the stop runs the EXIT trap: the previous run script goes back and
-   the service is started again.
+   the service is started again, then the trap waits for authenticated READY of the previous release with
+   a stable pid and prints `ROLLBACK_READY_VERIFIED release=<id>` or `ROLLBACK_READY_UNVERIFIED release=<id>`
+   (or `ROLLBACK_INCOMPLETE_SERVICE_DOWN` when the state or run script could not be put back, or the
+   state could not be renamed back under a proven lock). `ROLLED_BACK_AFTER_FAILURE` only says the trap
+   ran; it is not rollback evidence (review F-04).
 5. `python3 -I -B deploy_smoke.py ready|ready-wait RID SECONDS|submit TAG|get TASK_ID` — readiness, a
    verified write on a task id that did not exist (`replayed: false`) with independent read-back,
    idempotent replay and a 409 for a changed body.

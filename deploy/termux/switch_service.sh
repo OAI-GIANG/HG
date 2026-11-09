@@ -9,7 +9,9 @@
 #
 # Every check that can fail runs BEFORE the service is stopped. After the stop, any failure or
 # interruption (HUP/INT/TERM) runs the EXIT trap, which puts the previous run script (and, for
-# --restore-state, the previous state) back and starts the service again. The service is only
+# --restore-state, the previous state) back, starts the service again and waits for authenticated
+# READY of that release (ROLLBACK_READY_VERIFIED / _UNVERIFIED). The state writer lock is owned
+# by this shell's own descriptor for the whole critical section (see lock_state_dir). The service is only
 # stopped with a graceful `sv down` (never SIGKILL: a killed POST would leave its key IN_DOUBT).
 # Run it detached so a dropped remote session cannot cut it short:
 #   nohup sh switch_service.sh <args> > ~/hg-v1-evidence/switch-$(date +%s).log 2>&1 &
@@ -31,12 +33,14 @@ SWAPPED=0          # 1 while $S/run is not the script that was running before th
 STATE_SWAPPED=0    # 1 while the live state dir is the restored copy (--restore-state)
 STATE_RESTORE_OK=1
 RUN_RESTORE_OK=1
-STATE_LOCK_PID=""
-STATE_LOCK_RELEASE=""
-INCOMING_LOCK_PID=""
-INCOMING_LOCK_RELEASE=""
+STATE_LOCK_HELD=0     # 1 while fd 9 of THIS shell owns the live state's writer flock
+STATE_LOCK_DIR=""     # where the state locked through fd 9 is now (--restore-state moves it)
+INCOMING_LOCK_HELD=0  # 1 while fd 8 of THIS shell owns the incoming state's writer flock
+INCOMING_LOCK_DIR=""
 BK=""              # recovery dir of this invocation
 PREV_RUN=""        # run script to put back on failure
+ROLLBACK_CONF=""   # config and release that PREV_RUN starts: a rollback is verified against them
+ROLLBACK_RID=""
 
 say() { echo "[$(date +%T)] $*"; }
 field() { python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1]))[sys.argv[2]])' "$1" "$2"; }
@@ -49,13 +53,15 @@ stop_service() {
   sv status hg-runtime | grep -q '^down: hg-runtime' || { sv status hg-runtime; return 1; }
 }
 
-start_and_wait() {   # start_and_wait <config> <expected release id>
+start_and_wait() {   # start_and_wait <config> <expected release id>: authenticated READY, stable pid
+  # Every step returns explicitly: on_exit calls this inside `if`, where set -e does not apply.
   rm -f "$FINISH_STATE/hg-runtime-finish.count" "$FINISH_STATE/hg-runtime.HELD"
-  sv up hg-runtime
-  HG_SERVICE_CONFIG="$1" python3 -I -B "$SMOKE" ready-wait "$2" 180
+  sv up hg-runtime || return 1
+  [ -n "$1" ] && [ -n "$2" ] || { say "no service config/release id to wait for"; return 1; }
+  HG_SERVICE_CONFIG="$1" python3 -I -B "$SMOKE" ready-wait "$2" 180 || return 1
   pid1="$(svpid)"; sleep 5; pid2="$(svpid)"
   [ -n "$pid1" ] && [ "$pid1" = "$pid2" ] || { say "service pid changed ($pid1 -> $pid2): restart loop?"; return 1; }
-  HG_SERVICE_CONFIG="$1" python3 -I -B "$SMOKE" ready-wait "$2" 10
+  HG_SERVICE_CONFIG="$1" python3 -I -B "$SMOKE" ready-wait "$2" 10 || return 1
   STOPPED=0
 }
 
@@ -68,7 +74,9 @@ on_exit() {
       sv -w 60 -v down hg-runtime > /dev/null 2>&1 || true
     fi
     if [ "$STATE_SWAPPED" = 1 ]; then
-      if ! restore_state_previous; then
+      # Renaming state back is a state change too: only while this switch provably owns its locks.
+      # If they were already released for the start, take them again now that the service is down.
+      if ! relock_for_state_rollback || ! require_state_locks || ! restore_state_previous; then
         STATE_RESTORE_OK=0
         say "state rollback incomplete; service will remain DOWN; inspect $STATE.prev-$TS and $STATE.failed-$TS"
       fi
@@ -85,9 +93,18 @@ on_exit() {
     if [ "$STOPPED" = 1 ] || [ "$SWAPPED" = 1 ] || [ "$STATE_SWAPPED" = 1 ]; then
       rm -f "$FINISH_STATE/hg-runtime-finish.count" "$FINISH_STATE/hg-runtime.HELD"
       if [ "$STATE_RESTORE_OK" = 1 ] && [ "$RUN_RESTORE_OK" = 1 ]; then
-        sv up hg-runtime && say "hg-runtime started again (check: sv status hg-runtime)"
+        # `sv up` alone proves nothing (F-04): wait for authenticated READY of the release this
+        # run replaced, with a stable pid, before calling the rollback verified.
+        if start_and_wait "$ROLLBACK_CONF" "$ROLLBACK_RID"; then
+          say "hg-runtime is READY again on release $ROLLBACK_RID"
+          echo "ROLLBACK_READY_VERIFIED release=$ROLLBACK_RID"
+        else
+          say "previous release did not reach authenticated READY with a stable pid; inspect sv status hg-runtime"
+          echo "ROLLBACK_READY_UNVERIFIED release=${ROLLBACK_RID:-UNKNOWN}"
+        fi
       else
         say "HG runtime deliberately remains DOWN because rollback could not be verified"
+        echo "ROLLBACK_INCOMPLETE_SERVICE_DOWN"
       fi
     fi
     echo "ROLLED_BACK_AFTER_FAILURE dir=$BK"
@@ -127,50 +144,70 @@ finish_ok() {
     || { say "hg-runtime/finish is not the reviewed version: run --install-finish first"; return 1; }
 }
 
+# State writer locks (PR #87 review F-01). The flock is taken on an open file description of THIS
+# shell — fd 9 for the live state, fd 8 for an incoming copy — by a short child that only calls
+# flock() on the inherited descriptor (state_lock.py acquire). flock locks belong to the open
+# file description, so the lock lasts exactly as long as this script keeps the descriptor: no
+# helper process exists whose death could free it while the switch carries on, and if this shell
+# dies the switch stops with it. Before every state, backup or run-script change the switch still
+# PROVES, through its own descriptors, that it owns each lock (require_state_locks); a flag, a
+# ready file or a path check is never taken as that proof. Children that do not need the
+# descriptors get them closed (`8<&- 9<&-`).
 lock_state_dir() {   # lock_state_dir <state dir> <live|incoming>
-  lock_root="$1"; lock_kind="$2"
-  ready="$BK/.writer-$lock_kind.ready"
-  release="$BK/.writer-$lock_kind.release"
-  log="$BK/.writer-$lock_kind.log"
-  rm -f "$ready" "$release"
-  python3 -I -B "$HERE/state_lock.py" hold "$lock_root/.writer.lock" "$ready" "$release" "$$" > "$log" 2>&1 &
-  holder=$!
-  attempts=0
-  while [ ! -f "$ready" ] && kill -0 "$holder" 2>/dev/null && [ "$attempts" -lt 200 ]; do
-    sleep 0.05
-    attempts=$((attempts + 1))
-  done
-  if [ ! -f "$ready" ] || ! kill -0 "$holder" 2>/dev/null; then
-    touch "$release"
-    wait "$holder" 2>/dev/null || true
-    say "could not acquire $lock_kind state writer lock: $(tail -n 5 "$log" 2>/dev/null)"
+  lock_root="$1"; lock_kind="$2"; lock_path="$1/.writer.lock"
+  case "$lock_kind" in
+    live) lock_fd=9; [ "$STATE_LOCK_HELD" = 0 ] || { say "live state lock is already held"; return 1; } ;;
+    incoming) lock_fd=8; [ "$INCOMING_LOCK_HELD" = 0 ] || { say "incoming state lock is already held"; return 1; } ;;
+    *) say "unknown state lock kind: $lock_kind"; return 1 ;;
+  esac
+  if [ -L "$lock_path" ] || [ ! -f "$lock_path" ]; then
+    say "$lock_kind state writer lock is missing or not a regular file: $lock_path"
     return 1
   fi
-  if [ "$lock_kind" = "live" ]; then
-    STATE_LOCK_PID="$holder"; STATE_LOCK_RELEASE="$release"
-  elif [ "$lock_kind" = "incoming" ]; then
-    INCOMING_LOCK_PID="$holder"; INCOMING_LOCK_RELEASE="$release"
+  if [ "$lock_fd" = 9 ]; then exec 9< "$lock_path"; else exec 8< "$lock_path"; fi
+  if python3 -I -B "$HERE/state_lock.py" acquire "$lock_fd" "$lock_path"; then
+    lock_rc=0
   else
-    say "unknown state lock kind: $lock_kind"
-    touch "$release"; wait "$holder" 2>/dev/null || true
+    lock_rc=$?
+  fi
+  if [ "$lock_rc" -ne 0 ]; then
+    if [ "$lock_fd" = 9 ]; then exec 9<&-; else exec 8<&-; fi
+    say "could not acquire the $lock_kind state writer lock (state_lock.py exit $lock_rc)"
     return 1
   fi
-  export HG_STATE_LOCK_HELD=1
-  say "$lock_kind state writer lock held by helper PID $holder"
+  if [ "$lock_fd" = 9 ]; then
+    STATE_LOCK_HELD=1; STATE_LOCK_DIR="$lock_root"
+  else
+    INCOMING_LOCK_HELD=1; INCOMING_LOCK_DIR="$lock_root"
+  fi
+  say "$lock_kind state writer lock held on fd $lock_fd of switch PID $$"
 }
 
-unlock_state() {
-  if [ -n "$INCOMING_LOCK_PID" ]; then
-    touch "$INCOMING_LOCK_RELEASE"
-    wait "$INCOMING_LOCK_PID" 2>/dev/null || true
-    INCOMING_LOCK_PID=""; INCOMING_LOCK_RELEASE=""
+require_state_locks() {   # fail unless this shell provably still owns every state lock it took
+  [ "$STATE_LOCK_HELD" = 1 ] || [ "$INCOMING_LOCK_HELD" = 1 ] || { say "no state writer lock is held"; return 1; }
+  if [ "$STATE_LOCK_HELD" = 1 ]; then
+    python3 -I -B "$HERE/state_lock.py" verify 9 "$STATE_LOCK_DIR/.writer.lock" \
+      || { say "live state writer lock is no longer owned by this switch: stopping before any further change"; return 1; }
   fi
-  if [ -n "$STATE_LOCK_PID" ]; then
-    touch "$STATE_LOCK_RELEASE"
-    wait "$STATE_LOCK_PID" 2>/dev/null || true
-    STATE_LOCK_PID=""; STATE_LOCK_RELEASE=""
+  if [ "$INCOMING_LOCK_HELD" = 1 ]; then
+    python3 -I -B "$HERE/state_lock.py" verify 8 "$INCOMING_LOCK_DIR/.writer.lock" \
+      || { say "incoming state writer lock is no longer owned by this switch: stopping before any further change"; return 1; }
   fi
-  unset HG_STATE_LOCK_HELD
+}
+
+relock_for_state_rollback() {   # after unlock_state: lock the restored copy and the moved-aside state again
+  [ "$STATE_LOCK_HELD" = 0 ] && [ "$INCOMING_LOCK_HELD" = 0 ] || return 0      # still held: nothing to do
+  lock_state_dir "$STATE.prev-$TS" live || return 1
+  if [ -d "$STATE" ]; then
+    lock_state_dir "$STATE" incoming || return 1
+  fi
+}
+
+unlock_state() {   # closing this shell's descriptors releases the flocks (no child keeps a copy)
+  # Closed unconditionally: a signal between `exec 9<` and the bookkeeping must not leave a lock behind.
+  exec 8<&- 9<&-
+  INCOMING_LOCK_HELD=0; INCOMING_LOCK_DIR=""
+  STATE_LOCK_HELD=0; STATE_LOCK_DIR=""
 }
 
 restore_state_previous() {   # restore the old state even if the incoming rename never created $STATE
@@ -192,15 +229,29 @@ space_ok() {   # room for two copies of the state dir plus 1 MB
 }
 
 backup_state() {   # backup_state <dest>: copy the stopped state dir under its writer lock, hash both trees
-  python3 -I - "$STATE" "$1" <<'PY'
-import datetime, fcntl, hashlib, json, os, stat, subprocess, sys, uuid
+  require_state_locks
+  HG_STATE_LOCK_FD=9 python3 -I - "$STATE" "$1" "$HERE/state_lock.py" 8<&- <<'PY'
+import datetime, fcntl, hashlib, importlib.util, json, os, stat, subprocess, sys, uuid
 src, dst = sys.argv[1], sys.argv[2]
 lock_path = os.path.join(src, ".writer.lock")
 fd = None
-if os.environ.get("HG_STATE_LOCK_HELD") == "1":
-    info = os.lstat(lock_path)
-    if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
-        sys.exit("state writer lock is not a regular non-symlink file")
+held = None
+if "HG_STATE_LOCK_FD" in os.environ:
+    # The switch owns the flock on its own descriptor, inherited here. A variable naming that
+    # descriptor proves nothing by itself: prove the descriptor owns the lock before the copy
+    # and again after hashing, or the copy is not a backup.
+    if len(sys.argv) != 4:
+        sys.exit("HG_STATE_LOCK_FD needs the path of state_lock.py")
+    spec = importlib.util.spec_from_file_location("hg_switch_state_lock", sys.argv[3])
+    state_lock = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(state_lock)
+    lock_fd = int(os.environ["HG_STATE_LOCK_FD"])
+    def held():
+        try:
+            state_lock.verify_held(lock_fd, lock_path)
+        except (state_lock.LockNotHeld, state_lock.LockRefused, OSError) as exc:
+            sys.exit(f"state writer lock is not owned by the switch: {exc}")
+    held()
 else:
     fd = os.open(lock_path, os.O_RDWR | getattr(os, "O_NOFOLLOW", 0))
     fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)  # standalone use: no live writer may hold the state
@@ -219,6 +270,8 @@ def tree(root):
                 out[os.path.relpath(p, root)] = hashlib.sha256(f.read()).hexdigest()
     return out
 a, b = tree(src), tree(dst)
+if held is not None:
+    held()                                     # still the switch's lock after copy and hashing
 if fd is not None:
     os.close(fd)
 if a != b:
@@ -257,14 +310,29 @@ with open(dst + ".sha256", "w") as f:
         f.write(f"{a[k]}  {k}\n")
 print(f"state backed up: {len(a)} files")
 PY
+  require_state_locks
+  say "state backup taken under the live writer lock: $1"
 }
 
 precheck_with() {   # precheck_with <release root> <state dir> <report>: load a COPY with that release's code
+  require_state_locks
   cp -a "$2" "$2.precheck"
   # Name the real live state (from the service config) so the precheck refuses to load it.
+  # The release code it loads gets no copy of the lock descriptors.
   HG_RUNTIME_STATE_DIR="$STATE" HG_SERVICE_CONFIG="$OLDCONF" \
-    python3 -I -B "$PRECHECK" "$1" "$2.precheck" > "$3" || { cat "$3"; rm -rf "$2.precheck"; return 1; }
+    python3 -I -B "$PRECHECK" "$1" "$2.precheck" > "$3" 8<&- 9<&- || { cat "$3"; rm -rf "$2.precheck"; return 1; }
   rm -rf "$2.precheck"
+  require_state_locks
+  say "state precheck passed with $1"
+}
+
+rollback_target() {   # rollback_target <run script>: the config/release that script starts, or fail
+  ROLLBACK_CONF="$(run_config "$1")"
+  [ -n "$ROLLBACK_CONF" ] && [ -f "$ROLLBACK_CONF" ] \
+    || { say "the running run script names no readable service config: an automatic rollback could not be verified"; return 1; }
+  ROLLBACK_RID="$(field "$ROLLBACK_CONF" release_id)" || return 1
+  grep -qF "cd \"$HOME/hg-releases/$ROLLBACK_RID\"" "$1" \
+    || { say "the running run script does not start release $ROLLBACK_RID: an automatic rollback could not be verified"; return 1; }
 }
 
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -302,6 +370,7 @@ if [ "${1:-}" = "--restore" ] || [ "${1:-}" = "--restore-state" ]; then
   mkdir -m 700 "$BK"
   cp -p "$S/run" "$BK/run.current"
   PREV_RUN="$BK/run.current"
+  rollback_target "$BK/run.current"
   sv status hg-runtime > "$BK/status.before"
   if [ "$MODE" = "--restore-state" ]; then
     ( cd "$SRC/state" && sha256sum -c --quiet "$SRC/state.sha256" ) || { say "backed-up state fails its hashes"; exit 1; }
@@ -314,17 +383,25 @@ if [ "${1:-}" = "--restore" ] || [ "${1:-}" = "--restore-state" ]; then
   lock_state_dir "$STATE" live
   backup_state "$BK/state"
   if [ "$MODE" = "--restore-state" ]; then
+    require_state_locks
     cp -a "$SRC/state" "$STATE.incoming-$TS"
     precheck_with "$OLD_ROOT" "$STATE.incoming-$TS" "$BK/state-precheck.json"
+    require_state_locks
     rm -f "$STATE.incoming-$TS/.hg-state-copy.json"   # the copy attestation must not become live state
     lock_state_dir "$STATE.incoming-$TS" incoming
+    require_state_locks
     mv "$STATE" "$STATE.prev-$TS"
+    STATE_LOCK_DIR="$STATE.prev-$TS"                 # fd 9's lock file moved with its directory
     STATE_SWAPPED=1
+    say "live state moved aside to $STATE.prev-$TS"
+    require_state_locks
     mv "$STATE.incoming-$TS" "$STATE"
+    INCOMING_LOCK_DIR="$STATE"
     say "state restored from $SRC/state (the replaced copy is kept at $STATE.prev-$TS)"
   else
     precheck_with "$OLD_ROOT" "$BK/state" "$BK/state-precheck.json"
   fi
+  require_state_locks
   cp -p "$SRC/run.old" "$S/run.tmp" && mv "$S/run.tmp" "$S/run"
   SWAPPED=1
   unlock_state
@@ -349,6 +426,7 @@ cp "$0" "$SMOKE" "$PRECHECK" "$FINISH_SRC" "$RUN_TEMPLATE" "$BK/"
 # 1. recovery point (the shared config is never modified by this script)
 cp -p "$S/run" "$BK/run.old"
 PREV_RUN="$BK/run.old"
+rollback_target "$BK/run.old"      # a failure after the stop must be able to prove the old release READY
 cp -p "$OLDCONF" "$BK/runtime-service.json.old"
 sha256sum "$S/run" "$OLDCONF" > "$BK/hashes.before"
 [ -e "$S/finish" ] && sha256sum "$S/finish" >> "$BK/hashes.before"
@@ -386,6 +464,7 @@ backup_state "$BK/state"
 precheck_with "$ROOT" "$BK/state" "$BK/state-precheck.json"
 
 # 5. new run script, start, READY on the new release with a stable pid
+require_state_locks
 install -m 700 "$BK/run.new" "$S/run.tmp" && mv "$S/run.tmp" "$S/run"
 SWAPPED=1
 unlock_state

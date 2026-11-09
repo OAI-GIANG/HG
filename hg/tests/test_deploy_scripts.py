@@ -38,6 +38,7 @@ class DeployScriptTests(unittest.TestCase):
         text = full[full.index("# ---------------------------------------------------------------- switch forward"):]
         order = [text.index(marker) for marker in (
             'cp -p "$S/run" "$BK/run.old"',          # recovery point first
+            'rollback_target "$BK/run.old"',         # a rollback must be provable before anything stops
             "quota_ok",                               # GitHub quota for safe restarts
             'release_ok "$NEWCONF" "$NEW"',          # verify-root, preflight, config consistency
             "finish_ok",                              # the reviewed ./finish is installed
@@ -47,12 +48,20 @@ class DeployScriptTests(unittest.TestCase):
             'lock_state_dir "$STATE" live',            # exclusive lock survives the complete cutover
             'backup_state "$BK/state"',              # copy while the switch-owned lock is held
             'precheck_with "$ROOT"',                  # the new release must read that state
+            "require_state_locks",                    # still the switch's own lock right before the swap
             'mv "$S/run.tmp" "$S/run"',               # then swap the run script
             "unlock_state",                            # release only when the next service can acquire it
             'start_and_wait "$NEWCONF" "$NEW"')]      # READY on the new release with a stable pid
         self.assertEqual(order, sorted(order))
+        for name in ("backup_state", "precheck_with"):                 # proof before and after each step
+            start = full.index(f"{name}() {{")
+            after_heredoc = full.index("\nPY\n", start) if name == "backup_state" else start
+            body = full[start:full.index("\n}\n", after_heredoc)]
+            self.assertGreaterEqual(body.count("require_state_locks"), 2, name)
+        self.assertNotIn("HG_STATE_LOCK_HELD", full)                    # a flag is never proof of a lock
         self.assertIn("trap on_exit EXIT", full)
-        self.assertIn("if ! restore_state_previous; then", full)
+        self.assertIn("if ! relock_for_state_rollback || ! require_state_locks || ! restore_state_previous; then",
+                      full)                                                     # proof, then rollback
         for sig in ("HUP", "INT", "TERM"):
             self.assertRegex(full, rf"trap 'exit \d+' {sig}")
         stop = full[full.index("stop_service() {"):full.index("start_and_wait() {")]
@@ -67,14 +76,22 @@ class DeployScriptTests(unittest.TestCase):
                     full.index("# ---------------------------------------------------------------- switch forward")]
         self.assertIn('PREV_RUN="$BK/run.current"', text)          # failure returns to the release that was running
         self.assertIn("the shared config changed since the switch", text)
-        order = [text.index(m) for m in ("quota_ok", 'release_ok "$OLD_RUNCONF" "$OLD_RID"', "stop_service",
+        order = [text.index(m) for m in ('rollback_target "$BK/run.current"', "quota_ok",
+                                         'release_ok "$OLD_RUNCONF" "$OLD_RID"', "stop_service",
                                          'lock_state_dir "$STATE" live', 'backup_state "$BK/state"',
                                          'precheck_with "$OLD_ROOT"',
                                          'lock_state_dir "$STATE.incoming-$TS" incoming',
                                          'mv "$STATE" "$STATE.prev-$TS"',
+                                         'STATE_LOCK_DIR="$STATE.prev-$TS"',
+                                         'mv "$STATE.incoming-$TS" "$STATE"',
                                          'cp -p "$SRC/run.old" "$S/run.tmp"', "unlock_state",
                                          'start_and_wait "$OLD_RUNCONF" "$OLD_RID"')]
         self.assertEqual(order, sorted(order))
+        # every rename and the run-script swap is preceded by a fresh proof of lock ownership
+        for marker in ('mv "$STATE" "$STATE.prev-$TS"', 'mv "$STATE.incoming-$TS" "$STATE"',
+                       'cp -p "$SRC/run.old" "$S/run.tmp"'):
+            before = text[:text.index(marker)].rstrip().splitlines()
+            self.assertEqual(before[-1].strip(), "require_state_locks", marker)
         self.assertIn('sha256sum -c --quiet "$SRC/state.sha256"', text)
 
     def test_restore_targets_the_release_the_recorded_run_script_started(self):
@@ -282,38 +299,38 @@ class DeployScriptTests(unittest.TestCase):
         self.assertEqual((rc, report["result"]), (0, "PASS"), report)
 
 
-    def test_backup_state_uses_existing_switch_lock_without_releasing_it(self):
+    def _backup_body(self):
+        text = (DEPLOY / "switch_service.sh").read_text(encoding="utf-8")
+        return text.split("backup_state() {", 1)[1].split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
+
+    def _run_backup(self, live, dst, *, fd=None, env_extra=None):
+        import os
+        env = {k: v for k, v in os.environ.items() if k not in ("HG_STATE_LOCK_FD", "HG_STATE_LOCK_HELD")}
+        env.update(env_extra or {})
+        args = [sys.executable, "-I", "-", str(live), str(dst)]
+        if fd is not None:
+            env["HG_STATE_LOCK_FD"] = str(fd)
+            args.append(str(DEPLOY / "state_lock.py"))
+        return subprocess.run(args, input=self._backup_body(), text=True, capture_output=True, timeout=60,
+                              env=env, pass_fds=() if fd is None else (fd,))
+
+    def test_backup_state_uses_the_switch_descriptor_lock_without_releasing_it(self):
         import fcntl
         import json
         import os
-        import tempfile
-        import time
 
-        text = (DEPLOY / "switch_service.sh").read_text(encoding="utf-8")
-        body = text.split("backup_state() {", 1)[1].split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
         tmp = self._tmp()
         live = self._state_copy(tmp, "live-externally-locked")
         (live / ".hg-state-copy.json").write_text('{"copy_id": "stale"}', encoding="utf-8")
         os.chmod(live / ".hg-state-copy.json", 0o600)
         (tmp / "bk").mkdir()
         dst = tmp / "bk" / "state"
-        ready, release = tmp / "writer.ready", tmp / "writer.release"
         lock_path = live / ".writer.lock"
-        helper = DEPLOY / "state_lock.py"
-        proc = subprocess.Popen(
-            [sys.executable, "-I", str(helper), "hold", str(lock_path), str(ready),
-             str(release), str(os.getpid())],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-        )
+        owner = os.open(lock_path, os.O_RDONLY)          # plays the switch shell's fd 9
         contender = os.open(lock_path, os.O_RDWR)
         try:
-            deadline = time.monotonic() + 5
-            while not ready.exists() and proc.poll() is None and time.monotonic() < deadline:
-                time.sleep(0.01)
-            self.assertTrue(ready.is_file(), "external switch lock helper did not become ready")
-            env = dict(os.environ, HG_STATE_LOCK_HELD="1")
-            result = subprocess.run([sys.executable, "-I", "-", str(live), str(dst)],
-                                    input=body, text=True, capture_output=True, timeout=60, env=env)
+            fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            result = self._run_backup(live, dst, fd=owner)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("state backed up:", result.stdout)
             self.assertTrue((dst / ".hg-state-copy.json").is_file())
@@ -324,17 +341,64 @@ class DeployScriptTests(unittest.TestCase):
             # backup_state must not unlock the switch owner's still-live exclusive flock.
             with self.assertRaises(BlockingIOError):
                 fcntl.flock(contender, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            release.touch()
-            out, err = proc.communicate(timeout=5)
-            self.assertEqual(proc.returncode, 0, out + err)
+            os.close(owner)
+            owner = None
             fcntl.flock(contender, fcntl.LOCK_EX | fcntl.LOCK_NB)
             fcntl.flock(contender, fcntl.LOCK_UN)
         finally:
-            release.touch()
-            if proc.poll() is None:
-                proc.terminate()
-                proc.wait(timeout=3)
+            if owner is not None:
+                os.close(owner)
             os.close(contender)
+
+    def test_backup_state_refuses_while_another_process_owns_the_lock(self):
+        """Review F-01 reproduction B: the switch's holder is gone and a competing writer has the
+        flock. Neither the old flag (HG_STATE_LOCK_HELD=1) nor a descriptor that does not own the
+        lock may produce a backup or an attestation."""
+        import fcntl
+        import os
+
+        tmp = self._tmp()
+        live = self._state_copy(tmp, "live-taken-over")
+        lock_path = live / ".writer.lock"
+        competitor = os.open(lock_path, os.O_RDWR)
+        stale = os.open(lock_path, os.O_RDONLY)            # the switch's descriptor, lock already lost
+        try:
+            fcntl.flock(competitor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            cases = {"legacy-flag": dict(env_extra={"HG_STATE_LOCK_HELD": "1"}),
+                     "descriptor-without-lock": dict(fd=stale)}
+            for name, kwargs in cases.items():
+                (tmp / name).mkdir()
+                dst = tmp / name / "state"
+                result = self._run_backup(live, dst, **kwargs)
+                self.assertNotEqual(result.returncode, 0, name)
+                self.assertNotIn("state backed up:", result.stdout, name)
+                self.assertFalse(dst.exists(), f"{name}: a copy was made without owning the lock")
+            with self.assertRaises(BlockingIOError):         # the competitor still owns it, untouched
+                fcntl.flock(stale, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        finally:
+            os.close(stale)
+            os.close(competitor)
+
+    def test_backup_state_refuses_a_descriptor_when_nobody_holds_the_lock(self):
+        import fcntl
+        import os
+
+        tmp = self._tmp()
+        live = self._state_copy(tmp, "live-unlocked")
+        fd = os.open(live / ".writer.lock", os.O_RDONLY)
+        try:
+            (tmp / "bk").mkdir()
+            result = self._run_backup(live, tmp / "bk" / "state", fd=fd)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("nobody holds", result.stderr)
+            self.assertFalse((tmp / "bk" / "state").exists())
+            probe = os.open(live / ".writer.lock", os.O_RDONLY)
+            try:                                              # the check did not take the lock itself
+                fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            finally:
+                os.close(probe)
+        finally:
+            os.close(fd)
 
     def test_restore_state_rollback_restores_previous_if_incoming_rename_failed(self):
         import tempfile
@@ -396,6 +460,8 @@ class DeployScriptTests(unittest.TestCase):
                 "say() { :; }\n"
                 'sv() { echo "$*" >> ' + repr(str(commands)) + '; return 0; }\n'
                 "restore_state_previous() { return 1; }\n"
+                "relock_for_state_rollback() { return 0; }\n"
+                "require_state_locks() { return 0; }\n"
                 "unlock_state() { :; }\n"
                 "rm() { :; }\n"
                 "STOPPED=1; SWAPPED=0; STATE_SWAPPED=1; STATE_RESTORE_OK=1; RUN_RESTORE_OK=1; "
@@ -406,6 +472,33 @@ class DeployScriptTests(unittest.TestCase):
             self.assertNotEqual(proc.returncode, 0)
             calls = commands.read_text(encoding="utf-8").splitlines()
             self.assertEqual(calls, ["-w 60 -v down hg-runtime"])
+
+    def test_on_exit_does_not_rename_state_back_without_proving_its_locks(self):
+        import tempfile
+
+        full = (DEPLOY / "switch_service.sh").read_text(encoding="utf-8")
+        start = full.index("on_exit() {")
+        func = full[start:full.index("\n}\n", start) + 3]
+        with tempfile.TemporaryDirectory(prefix="hg-on-exit-lock-lost-") as td:
+            root = Path(td)
+            calls = root / "calls.txt"
+            script = (
+                "say() { :; }\n"
+                'sv() { echo "sv $*" >> ' + repr(str(calls)) + '; return 0; }\n'
+                'restore_state_previous() { echo restore >> ' + repr(str(calls)) + '; return 0; }\n'
+                "relock_for_state_rollback() { return 0; }\n"
+                "require_state_locks() { return 1; }\n"
+                'start_and_wait() { echo start >> ' + repr(str(calls)) + '; return 0; }\n'
+                "unlock_state() { :; }\n"
+                "rm() { :; }\n"
+                "STOPPED=1; SWAPPED=0; STATE_SWAPPED=1; STATE_RESTORE_OK=1; RUN_RESTORE_OK=1; "
+                "BK=fixture; STATE=/missing/state; TS=T; FINISH_STATE=/missing; PREV_RUN=; S=/missing/service\n"
+                + func + "\nfalse\non_exit\n"
+            )
+            proc = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=5)
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertEqual(calls.read_text(encoding="utf-8").splitlines(), ["sv -w 60 -v down hg-runtime"])
+            self.assertIn("ROLLBACK_INCOMPLETE_SERVICE_DOWN", proc.stdout)
 
     def test_restore_state_never_makes_a_copy_attestation_live(self):
         text = (DEPLOY / "switch_service.sh").read_text(encoding="utf-8")
@@ -421,60 +514,112 @@ class DeployScriptTests(unittest.TestCase):
 
 
 class StateLockHelperTests(unittest.TestCase):
-    def test_switch_lock_holder_excludes_other_writers_until_explicit_release(self):
+    """state_lock.py only locks or checks a descriptor its caller owns (review F-01)."""
+
+    def _tool(self, mode, fd, path):
+        return subprocess.run([sys.executable, "-I", "-B", str(DEPLOY / "state_lock.py"), mode, str(fd), str(path)],
+                              capture_output=True, text=True, timeout=10, pass_fds=(fd,))
+
+    def _lock_file(self):
+        import os
+        import tempfile
+        root = Path(tempfile.mkdtemp(prefix="hg-state-lock-"))
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        lock = root / ".writer.lock"
+        lock.touch(mode=0o600)
+        os.chmod(lock, 0o600)
+        return root, lock
+
+    def test_lock_taken_by_the_tool_stays_with_the_callers_descriptor_after_the_tool_exits(self):
         import fcntl
         import os
-        import tempfile
-        import time
-
-        helper = DEPLOY / "state_lock.py"
-        with tempfile.TemporaryDirectory(prefix="hg-state-lock-") as td:
-            root = Path(td)
-            lock_path = root / ".writer.lock"
-            lock_path.touch(mode=0o600)
-            ready, release = root / "ready", root / "release"
-            parent_pid = os.getpid()
-            proc = subprocess.Popen(
-                [sys.executable, "-I", str(helper), "hold", str(lock_path), str(ready),
-                 str(release), str(parent_pid)],
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-            )
-            contender = os.open(lock_path, os.O_RDWR)
-            try:
-                deadline = time.monotonic() + 5
-                while not ready.exists() and proc.poll() is None and time.monotonic() < deadline:
-                    time.sleep(0.01)
-                self.assertTrue(ready.is_file(), "lock helper did not publish readiness")
-                with self.assertRaises(BlockingIOError):
-                    fcntl.flock(contender, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                release.touch()
-                out, err = proc.communicate(timeout=5)
-                self.assertEqual(proc.returncode, 0, out + err)
+        _root, lock = self._lock_file()
+        owner = os.open(lock, os.O_RDONLY)                  # the switch shell's descriptor
+        contender = os.open(lock, os.O_RDWR)
+        try:
+            proc = self._tool("acquire", owner, lock)
+            self.assertEqual(proc.returncode, 0, proc.stderr)   # the tool has exited ...
+            with self.assertRaises(BlockingIOError):            # ... and the lock is still held
                 fcntl.flock(contender, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                fcntl.flock(contender, fcntl.LOCK_UN)
-            finally:
-                release.touch()
-                if proc.poll() is None:
-                    proc.terminate()
-                    proc.wait(timeout=3)
-                os.close(contender)
+            self.assertEqual(self._tool("verify", owner, lock).returncode, 0)
+            proc = self._tool("verify", contender, lock)        # a different description is not the owner
+            self.assertEqual(proc.returncode, 5, proc.stderr)
+            os.close(owner)                                     # only closing the owner releases it
+            owner = None
+            fcntl.flock(contender, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(contender, fcntl.LOCK_UN)
+        finally:
+            if owner is not None:
+                os.close(owner)
+            os.close(contender)
 
-    def test_switch_lock_helper_refuses_a_symlink_lock_file(self):
+    def test_verify_refuses_a_lost_lock_and_never_takes_it_back(self):
+        import fcntl
         import os
-        import tempfile
-        with tempfile.TemporaryDirectory(prefix="hg-state-lock-symlink-") as td:
-            root = Path(td)
-            target = root / "target"
-            target.touch(mode=0o600)
-            lock = root / ".writer.lock"
-            lock.symlink_to(target)
-            proc = subprocess.run(
-                [sys.executable, "-I", str(DEPLOY / "state_lock.py"), "hold",
-                 str(lock), str(root / "ready"), str(root / "release"), str(os.getpid())],
-                capture_output=True, text=True, timeout=5,
-            )
+        _root, lock = self._lock_file()
+        owner = os.open(lock, os.O_RDONLY)
+        try:
+            self.assertEqual(self._tool("acquire", owner, lock).returncode, 0)
+            fcntl.flock(owner, fcntl.LOCK_UN)                   # the lock is lost (e.g. an unlocking child)
+            proc = self._tool("verify", owner, lock)
+            self.assertEqual(proc.returncode, 5, proc.stderr)
+            self.assertIn("nobody holds", proc.stderr)
+            probe = os.open(lock, os.O_RDONLY)
+            try:
+                fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)   # verify did not re-lock it
+                proc = self._tool("verify", owner, lock)            # now a competitor owns it
+                self.assertEqual(proc.returncode, 5, proc.stderr)
+                self.assertIn("another process", proc.stderr)
+            finally:
+                os.close(probe)
+        finally:
+            os.close(owner)
+
+    def test_acquire_reports_contention_and_takes_nothing(self):
+        import fcntl
+        import os
+        _root, lock = self._lock_file()
+        competitor = os.open(lock, os.O_RDWR)
+        mine = os.open(lock, os.O_RDONLY)
+        try:
+            fcntl.flock(competitor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            proc = self._tool("acquire", mine, lock)
+            self.assertEqual(proc.returncode, 3, proc.stderr)
+            self.assertIn("already held", proc.stderr)
+        finally:
+            os.close(mine)
+            os.close(competitor)
+
+    def test_switch_lock_tool_refuses_a_symlink_or_a_path_that_names_another_file(self):
+        import os
+        root, lock = self._lock_file()
+        target = root / "target"
+        target.touch(mode=0o600)
+        link = root / "link.lock"
+        link.symlink_to(target)
+        fd = os.open(target, os.O_RDONLY)
+        try:
+            proc = self._tool("acquire", fd, link)
             self.assertEqual(proc.returncode, 4)
             self.assertIn("writer lock refused", proc.stderr)
+            proc = self._tool("acquire", fd, lock)               # descriptor and path disagree
+            self.assertEqual(proc.returncode, 4)
+            self.assertIn("no longer names the locked file", proc.stderr)
+        finally:
+            os.close(fd)
+
+    def test_switch_lock_tool_refuses_a_group_readable_lock_and_bad_usage(self):
+        import os
+        _root, lock = self._lock_file()
+        os.chmod(lock, 0o640)
+        fd = os.open(lock, os.O_RDONLY)
+        try:
+            self.assertEqual(self._tool("acquire", fd, lock).returncode, 4)
+        finally:
+            os.close(fd)
+        proc = subprocess.run([sys.executable, "-I", "-B", str(DEPLOY / "state_lock.py"), "hold", "x"],
+                              capture_output=True, text=True, timeout=10)
+        self.assertEqual(proc.returncode, 2)
 
 
 class InstallSealOrderTests(unittest.TestCase):
