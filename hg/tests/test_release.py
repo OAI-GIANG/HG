@@ -155,7 +155,11 @@ class SealedReleaseTests(unittest.TestCase):
         self.assertTrue((self.release_root / "bin/check").stat().st_mode & 0o111)
 
     def test_sealed_import_without_dont_write_bytecode_leaves_tree_unchanged(self):
-        seal_root(self.release_root)
+        self.assertEqual(seal_root(self.release_root)["result"], "SEALED")
+        if os.geteuid() == 0:
+            # The guarantee is that sealed directory modes stop Python writing
+            # __pycache__; root ignores directory modes, so it cannot hold here.
+            self.skipTest("root bypasses directory write permissions")
         before = self._tree()
         for _ in range(3):
             subprocess.run([sys.executable, "-c", self.IMPORT], cwd=str(self.release_root),
