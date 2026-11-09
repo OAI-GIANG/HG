@@ -97,10 +97,10 @@ class EventLog:
                 return event
 
             if self._home is None:
-                event = ledger.append_generated(self._path, build)
+                event = ledger.append_generated(self._path, build, writer_session=self._writer_session)
             else:
                 with locked(self._home, exclusive=True):
-                    event = ledger.append_generated(self._path, build)
+                    event = ledger.append_generated(self._path, build, writer_session=self._writer_session)
             self._events = latest
             return copy.deepcopy(event)
 

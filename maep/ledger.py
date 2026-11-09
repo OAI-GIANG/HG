@@ -1,7 +1,9 @@
 """Append-only JSONL ledger with path-scoped thread/process serialization.
 
-The lock protects the complete read/validate/append sequence. It is advisory: every
-writer using this API cooperates; direct filesystem writes remain outside this boundary.
+The lock protects the complete read/validate/append sequence. For paths below a marked
+runtime state root, both public append APIs also require the active in-process
+RuntimeWriterSession. This remains an application-level boundary: direct filesystem
+writes and other processes that bypass this interpreter are not sandboxed.
 """
 import errno
 import fcntl
@@ -14,6 +16,7 @@ from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
 from .core import MAEPError
+from .admission import require_writer_session
 
 
 class LedgerAppendRefused(MAEPError):
@@ -173,16 +176,21 @@ def _append_unlocked(fd, event):
     os.fsync(fd)
 
 
-def append_event(path, event):
+def append_event(path, event, *, writer_session=None):
     """Append a unique event under the canonical cross-instance/process ledger lock.
 
     Every refusal before the write (invalid event, lock or open failure, unsafe file, unreadable
     or torn ledger, duplicate event_id) raises LedgerAppendRefused: no event byte was written. An
     OSError from the write or the fsync is not a refusal; the bytes may be in the file.
+    A path below a marked runtime state root also requires its active writer_session.
     """
     if not isinstance(event, dict) or not isinstance(event.get("event_id"), str) or not event["event_id"]:
         raise LedgerAppendRefused("event must have a non-empty event_id")
     path = Path(path)
+    try:
+        require_writer_session(path, writer_session)
+    except MAEPError as exc:
+        raise LedgerAppendRefused(f"writer admission refused: {exc}") from exc
     with ExitStack() as stack:
         try:
             fd = stack.enter_context(ledger_lock(path, exclusive=True, create=True))
@@ -196,9 +204,10 @@ def append_event(path, event):
     return event["event_id"]
 
 
-def append_generated(path, factory):
-    """Atomically allocate data from the latest ledger view and append the result."""
+def append_generated(path, factory, *, writer_session=None):
+    """Atomically allocate and append; protected runtime ledgers require the lifetime session."""
     path = Path(path)
+    require_writer_session(path, writer_session)
     with ledger_lock(path, exclusive=True, create=True) as fd:
         current = _read_events_unlocked(path, fd)
         _require_terminated_tail(fd)
