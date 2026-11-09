@@ -9,6 +9,8 @@ everything.
 import hashlib
 import os
 import sqlite3
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -78,6 +80,52 @@ class FalseAcceptOracleTests(unittest.TestCase):
                 report = self.verifier.verify_python_syntax(
                     self.root, rel, candidate_ref="bad", expected_sha256=expected)
                 self.assertNotEqual(report["status"], "PASS", report)
+
+    # -- python source-encoding candidates ----------------------------------------------
+    # The interpreter decodes a source file by its BOM and PEP 263 coding declaration.
+    # A verifier that decodes the bytes itself and compiles the resulting text ignores
+    # the declaration, so it can attest files the interpreter refuses to load. Ground
+    # truth for each case is the interpreter itself, run on the same bytes.
+    _UNLOADABLE = {
+        "unknown_cookie.py": b"# coding: nonexistent-hg-codec\nx = 1\n",
+        "utf16_cookie.py": b"# coding: utf-16\nx = 1\n",
+        "rot13_cookie.py": b"# coding: rot13\nx = 1\n",
+        "bom_latin1_cookie.py": b"\xef\xbb\xbf# coding: latin-1\nx = 1\n",
+    }
+
+    def _interpreter_accepts(self, name):
+        result = subprocess.run([sys.executable, "-I", "-B", "-c",
+                                 "import sys; compile(open(sys.argv[1], 'rb').read(), "
+                                 "sys.argv[1], 'exec', dont_inherit=True)",
+                                 str(self.root / name)],
+                                capture_output=True, timeout=30)
+        return result.returncode == 0
+
+    def test_sources_the_interpreter_cannot_load_are_never_passed(self):
+        for name, data in self._UNLOADABLE.items():
+            self._write(name, data)
+            with self.subTest(name):
+                self.assertFalse(self._interpreter_accepts(name), "case is not bad by construction")
+                report = self.verifier.verify_python_syntax(self.root, name, candidate_ref="enc")
+                self.assertNotEqual(report["status"], "PASS", report)
+
+    def test_control_utf8_bom_source_passes(self):
+        # A UTF-8 BOM is valid Python source; rejecting it is a false reject.
+        data = b"\xef\xbb\xbfx = 1\n"
+        self._write("bom.py", data)
+        self.assertTrue(self._interpreter_accepts("bom.py"))
+        report = self.verifier.verify_python_syntax(
+            self.root, "bom.py", candidate_ref="bom",
+            expected_sha256=hashlib.sha256(data).hexdigest())
+        self.assertEqual(report["status"], "PASS", report)
+
+    def test_non_utf8_source_stays_rejected_even_with_a_declaration(self):
+        # Policy: verified sources are UTF-8. A latin-1 declaration does not widen it.
+        self._write("latin1_declared.py", b"# coding: latin-1\nx = '\xe9'\n")
+        report = self.verifier.verify_python_syntax(self.root, "latin1_declared.py",
+                                                    candidate_ref="l1")
+        self.assertEqual(report["status"], "FAIL", report)
+        self.assertEqual(report["reason"], "source is not valid UTF-8")
 
     # -- sqlite candidates ------------------------------------------------------------
     def test_bad_sqlite_candidates_are_never_passed(self):
