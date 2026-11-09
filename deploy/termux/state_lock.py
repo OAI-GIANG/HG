@@ -2,28 +2,33 @@
 """Take, or prove ownership of, the HG runtime state writer lock on a descriptor the CALLER holds.
 
     state_lock.py acquire FD LOCK   flock(FD, LOCK_EX|LOCK_NB) on the caller's open descriptor
-    state_lock.py verify  FD LOCK   prove FD's open file description still owns that flock
+    state_lock.py verify  FD LOCK   prove FD's open file description owns that flock
+    state_lock.py free    LOCK      exit 0 if no process holds LOCK, 3 if one does
 
-switch_service.sh opens LOCK on its own descriptor (`exec 9< LOCK`) and runs `acquire` as a short
-child that inherits it. flock(2) locks belong to the open file description, not to the process
-that called flock, so the lock stays with the switch shell after this program exits and lasts
-exactly as long as the shell keeps the descriptor open. There is no separate holder process whose
-death could release the lock while the switch carries on (PR #87 review F-01).
+switch_service.sh opens LOCK on its own descriptor (`command exec 9< LOCK`) and runs `acquire` as
+a short child that inherits it. flock(2) locks belong to the open file description, not to the
+process that called flock, so the lock stays with the switch shell after this program exits and
+lasts exactly as long as the shell keeps the descriptor open. There is no separate holder process
+whose death could release the lock while the switch carries on (PR #87 review F-01).
 
-`verify` never takes a lock it did not already own: a fresh, independent description first tries
-the lock (success means nobody held it -> refused); only then is FD re-locked, which is a no-op
-for the owning description and fails for any other.
+`verify` never takes a lock (review A-05): ownership is read from /proc/self/fdinfo/FD, where the
+kernel lists the flock held by that open file description and no other. An independent probe must
+then be refused, as a consistency check. Without /proc/self/fdinfo lock lines ownership cannot be
+proven without re-taking the lock, so `acquire` and `verify` refuse (fail closed).
 
-Exit codes: 0 locked/owned, 2 usage, 3 another description holds the lock, 4 refused (not a
-private regular file, path does not name FD's file, bad descriptor), 5 not held by FD.
+Exit codes: 0 locked/owned/free, 2 usage, 3 another description holds the lock, 4 refused (not a
+private regular file, path does not name FD's file, bad descriptor, no fdinfo), 5 not held by FD.
 Same-UID processes can still bypass an advisory flock; this is the documented v1 limit.
 """
 from __future__ import annotations
 
 import fcntl
 import os
+import re
 import stat
 import sys
+
+_FLOCK_WRITE = re.compile(r"^lock:\s+\d+:\s+FLOCK\s+ADVISORY\s+WRITE\s")
 
 
 class LockRefused(Exception):
@@ -47,46 +52,60 @@ def _same_file(fd: int, path: str) -> os.stat_result:
     return info
 
 
-def verify_held(fd: int, path: str) -> None:
-    """Raise unless the open file description behind fd owns the exclusive flock on path."""
-    info = _same_file(fd, path)
+def _owns_exclusive_flock(fd: int) -> bool:
+    """Whether the kernel lists an exclusive flock owned by fd's open file description."""
+    try:
+        with open(f"/proc/self/fdinfo/{fd}", encoding="ascii", errors="replace") as stream:
+            lines = stream.read().splitlines()
+    except OSError as exc:
+        raise LockRefused(f"cannot read /proc/self/fdinfo/{fd}: lock ownership cannot be proven") from exc
+    return any(_FLOCK_WRITE.match(line) for line in lines)
+
+
+def _held_by_anyone(path: str) -> bool:
+    """Probe with a fresh, independent description; never touches the caller's descriptor."""
     probe = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0))
     try:
-        seen = os.fstat(probe)
-        if (seen.st_dev, seen.st_ino) != (info.st_dev, info.st_ino):
-            raise LockRefused("writer lock path changed while it was checked")
+        if not stat.S_ISREG(os.fstat(probe).st_mode):
+            raise LockRefused("writer lock path is not a regular file")
         try:
             fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            pass                                    # some description owns it; is it fd's?
-        else:
-            fcntl.flock(probe, fcntl.LOCK_UN)
-            raise LockNotHeld("nobody holds the state writer lock")
-        try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)   # no-op for the owner, fails for others
-        except BlockingIOError:
-            raise LockNotHeld("another process holds the state writer lock") from None
+            return True
+        fcntl.flock(probe, fcntl.LOCK_UN)
+        return False
     finally:
         os.close(probe)
+
+
+def verify_held(fd: int, path: str) -> None:
+    """Raise unless the open file description behind fd owns the exclusive flock on path."""
+    _same_file(fd, path)
+    if not _owns_exclusive_flock(fd):
+        raise LockNotHeld("another process holds the state writer lock" if _held_by_anyone(path)
+                          else "nobody holds the state writer lock")
+    if not _held_by_anyone(path):                            # consistency: fdinfo and flock must agree
+        raise LockNotHeld("fdinfo lists a lock that an independent probe could take")
 
 
 def acquire(fd: int, path: str) -> None:
     _same_file(fd, path)
     fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)          # BlockingIOError: someone else has it
     try:
-        _same_file(fd, path)                                 # not renamed or replaced meanwhile
-        verify_held(fd, path)
+        verify_held(fd, path)                                # also proves fdinfo can show ownership
     except BaseException:
         fcntl.flock(fd, fcntl.LOCK_UN)
         raise
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 4 or argv[1] not in ("acquire", "verify") or not argv[2].isdigit():
-        print("usage: state_lock.py acquire|verify FD LOCK", file=sys.stderr)
-        return 2
-    fd, path = int(argv[2]), argv[3]
     try:
+        if len(argv) == 3 and argv[1] == "free":
+            return 3 if _held_by_anyone(argv[2]) else 0
+        if len(argv) != 4 or argv[1] not in ("acquire", "verify") or not argv[2].isdigit():
+            print("usage: state_lock.py acquire|verify FD LOCK | state_lock.py free LOCK", file=sys.stderr)
+            return 2
+        fd, path = int(argv[2]), argv[3]
         (acquire if argv[1] == "acquire" else verify_held)(fd, path)
     except BlockingIOError:
         print("writer lock is already held", file=sys.stderr)

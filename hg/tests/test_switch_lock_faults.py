@@ -42,18 +42,27 @@ CFG = json.loads((CTL / "env.json").read_text())
 RUN_PREFIX = 'exec python3 -B -u -m hg serve --config "'
 
 
-def current_release():
+def run_target():
+    """(release id, release root, config) that the installed run script starts."""
     try:
         lines = (Path(CFG["svc"]) / "run").read_text().splitlines()
     except OSError:
-        return None
+        return None, None, None
+    root = conf = None
     for line in lines:
+        if line.startswith('cd "') and '"' in line[4:]:
+            root = line[4:line.index('"', 4)]
         if line.startswith(RUN_PREFIX) and line.endswith('"'):
-            try:
-                return json.loads(Path(line[len(RUN_PREFIX):-1]).read_text())["release_id"]
-            except (OSError, ValueError, KeyError):
-                return None
-    return None
+            conf = line[len(RUN_PREFIX):-1]
+    try:
+        rid = json.loads(Path(conf).read_text())["release_id"] if conf else None
+    except (OSError, ValueError, KeyError):
+        rid = None
+    return rid, root, conf
+
+
+def current_release():
+    return run_target()[0]
 
 
 def state_digest():
@@ -67,35 +76,124 @@ def state_digest():
     return {"ino": root.stat().st_ino, "sha256": h.hexdigest()}
 
 
+def alive(pid):
+    if not pid:
+        return False
+    try:
+        with open(f"/proc/{pid}/stat") as stream:
+            state = stream.read().rsplit(")", 1)[1].split()[0]
+    except (OSError, IndexError):
+        return False
+    return state not in ("Z", "X")
+
+
+def spawn(st):
+    """What runsv does on start: run ./run. A rendered run script ends in
+    `exec python3 -B -u -m hg serve --config X`, so the supervised pid IS the runtime."""
+    rid, root, conf = run_target()
+    if rid in st.get("wait_loop", []):               # ./run stuck before its exec (e.g. GitHub wait)
+        argv = [sys.executable, "-c", "import time; time.sleep(600)"]
+    elif root and conf and os.path.isdir(root):
+        argv = [sys.executable, "-B", "-u", "-m", "hg", "serve", "--config", conf]
+    else:
+        argv = [sys.executable, "-c", "raise SystemExit(78)"]
+    proc = subprocess.Popen(argv, cwd=root if root and os.path.isdir(root) else "/",
+                            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                            close_fds=True, start_new_session=True)   # runsv's child: no switch fds
+    st["pid"] = proc.pid
+    st.setdefault("spawned", []).append(proc.pid)
+    deadline = time.monotonic() + 5
+    while (argv[1] == "-B" and time.monotonic() < deadline and alive(proc.pid)
+           and not (CTL / f"runtime-{proc.pid}.json").exists()):
+        time.sleep(0.01)
+
+
+def stop(st):
+    pid = st.get("pid")
+    if alive(pid):
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        deadline = time.monotonic() + 5
+        while alive(pid) and time.monotonic() < deadline:
+            time.sleep(0.01)
+        if alive(pid):
+            os.kill(pid, signal.SIGKILL)
+            while alive(pid):
+                time.sleep(0.01)
+    st["pid"] = 0
+
+
+def normally(running):
+    has_down = (Path(CFG["svc"]) / "down").exists()
+    if running:
+        return ", normally down" if has_down else ""
+    return "" if has_down else ", normally up"
+
+
+LOG = "; run: log: (pid 77) 99s"                       # the phone's hg-runtime has a log service
+
+
 def sv(argv):
     path = CTL / "sv.json"
     st = json.loads(path.read_text())
     entry = {"argv": argv}
     if argv[:1] == ["status"]:
-        if st["up"]:
-            if current_release() in st["restart_loop"]:
-                st["pid"] += 1                       # a restart loop: every look shows a new pid
-            print(f"run: hg-runtime: (pid {st['pid']}) 3s")
-        else:
-            print("down: hg-runtime: 3s, normally up")
         entry = None
+        if st["up"]:
+            if not alive(st.get("pid")):
+                spawn(st)                               # runsv restarts a ./run that exited
+            elif current_release() in st["restart_loop"]:
+                stop(st)
+                spawn(st)                               # a restart loop: every look shows a new pid
+            print(f"run: hg-runtime: (pid {st['pid']}) 3s{normally(True)}{LOG}")
+        elif st.get("pending_want_up"):
+            print(f"down: hg-runtime: 0s{normally(False)}, want up{LOG}")   # runsv about to restart it
+        else:
+            print(f"down: hg-runtime: 3s{normally(False)}{LOG}")
     elif "down" in argv:
         refuse = st.get("refuse_down_after_ups")
         if refuse is not None and st["ups"] >= refuse:     # a stop that never completes
             entry["refused"] = True
             with (CTL / "sv-log.jsonl").open("a") as stream:
                 stream.write(json.dumps(entry) + "\n")
+            path.write_text(json.dumps(st))
             print("timeout: run: hg-runtime", file=sys.stderr)
             return 1
+        want_up = st.get("want_up_after_ups")
+        stop(st)
         st["up"] = False
+        if st.pop("grab_lock_on_down", False):            # a writer that is not the service
+            grab = subprocess.Popen([sys.executable, "-c", (
+                "import fcntl, os, sys, time\n"
+                "fd = os.open(sys.argv[1], os.O_RDWR)\n"
+                "fcntl.flock(fd, fcntl.LOCK_EX)\n"
+                "open(sys.argv[2], 'w').close()\n"
+                "time.sleep(600)\n"), str(Path(CFG["state"]) / ".writer.lock"), str(CTL / "grabbed")],
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                close_fds=True, start_new_session=True)
+            st.setdefault("spawned", []).append(grab.pid)
+            while not (CTL / "grabbed").exists():
+                time.sleep(0.01)
+        if want_up is not None and st["ups"] >= want_up:   # stop raced a pending up: sv times out
+            st["pending_want_up"] = True
+            entry["timeout_want_up"] = True
+            with (CTL / "sv-log.jsonl").open("a") as stream:
+                stream.write(json.dumps(entry) + "\n")
+            path.write_text(json.dumps(st))
+            print("timeout: down: hg-runtime: 0s, normally up, want up", file=sys.stderr)
+            return 1
     elif argv[:1] == ["up"]:
-        st["up"] = True
-        st["pid"] += 1
-        st["ups"] += 1
         entry.update(run_sha256=hashlib.sha256((Path(CFG["svc"]) / "run").read_bytes()).hexdigest()
                      if (Path(CFG["svc"]) / "run").is_file() else None,
                      state=state_digest(), release=current_release(),
-                     after_fault=(CTL / "barrier.fired").exists() or (CTL / "sigterm.fired").exists())
+                     after_fault=any((CTL / m).exists() for m in ("barrier.fired", "sigterm.fired", "fault.fired")))
+        st["up"] = True
+        st["pending_want_up"] = False
+        st["ups"] += 1
+        if not alive(st.get("pid")):
+            spawn(st)
     else:
         print("sv stub: unsupported " + " ".join(argv), file=sys.stderr)
         return 1
@@ -106,34 +204,28 @@ def sv(argv):
     return 0
 
 
-def held(path):
-    try:
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
-    except OSError:
-        return False
-    try:
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        return True
-    else:
-        fcntl.flock(fd, fcntl.LOCK_UN)
-        return False
-    finally:
-        os.close(fd)
+def switch_locks():
+    """.writer.lock files whose flock the switch holds on a descriptor this process inherited."""
+    held = set()
+    for name in os.listdir("/proc/self/fd"):
+        try:
+            target = os.readlink(f"/proc/self/fd/{name}")
+            info = open(f"/proc/self/fdinfo/{name}").read() if target.endswith("/.writer.lock") else ""
+        except OSError:
+            continue
+        if int(name) > 2 and any(l.startswith("lock:") and "FLOCK" in l and "WRITE" in l for l in info.splitlines()):
+            held.add(target)
+    return held
 
 
-def lock_paths():
-    state = CFG["state"]
-    return sorted(set(glob.glob(state + "/.writer.lock") + glob.glob(state + ".*/.writer.lock")))
-
-
-def phase_matches(phase):
+def phase_matches(phase, locks):
     found = sorted(glob.glob(CFG["evidence"] + "/switch-*") + glob.glob(CFG["evidence"] + "/restore-*"))
     if not found:
         return False
     bk, state = Path(found[-1]), Path(CFG["state"])
     incoming = [p for p in glob.glob(str(state) + ".incoming-*") if not p.endswith(".precheck")]
     report = (bk / "state-precheck.json").exists()
+    incoming_locked = any(p + "/.writer.lock" in locks for p in incoming)
     if phase == "before-backup":
         return not (bk / "state").exists()
     if phase == "after-backup":
@@ -141,9 +233,9 @@ def phase_matches(phase):
     if phase == "after-precheck":
         return report and not (bk / "state.precheck").exists() and not incoming
     if phase == "after-incoming-precheck":
-        return bool(incoming) and report and not any(held(p + "/.writer.lock") for p in incoming)
+        return bool(incoming) and report and not incoming_locked
     if phase == "incoming-locked":
-        return bool(incoming) and state.is_dir() and any(held(p + "/.writer.lock") for p in incoming)
+        return bool(incoming) and state.is_dir() and incoming_locked
     if phase == "after-first-rename":
         return bool(glob.glob(str(state) + ".prev-*")) and not state.exists()
     raise SystemExit("unknown barrier phase " + phase)
@@ -153,7 +245,8 @@ def barrier():
     phase = os.environ.get("HG_FI_BARRIER", "")
     if not phase or (CTL / "barrier.fired").exists():
         return 0
-    if not any(held(p) for p in lock_paths()) or not phase_matches(phase):
+    locks = switch_locks()
+    if not locks or not phase_matches(phase, locks):
         return 0
     released = []
     if os.environ.get("HG_FI_FAULT") == "release":
@@ -178,6 +271,17 @@ def barrier():
             return 97
         time.sleep(0.01)
     return 0
+
+
+def cp(argv):
+    """Real cp, except an injected failure of the restore's run-script copy (HG_FI_CP_FAIL)."""
+    if (os.environ.get("HG_FI_CP_FAIL") == "run-old-to-tmp" and len(argv) >= 2
+            and argv[-1] == str(Path(CFG["svc"]) / "run.tmp") and argv[-2].endswith("/run.old")
+            and not (CTL / "fault.fired").exists()):
+        (CTL / "fault.fired").touch()
+        print("cp: injected failure", file=sys.stderr)
+        return 1
+    return subprocess.call([CFG["real_cp"], *argv])
 
 
 def _mv_matches(kind, src, dst):
@@ -227,7 +331,68 @@ if __name__ == "__main__":
         sys.exit(barrier())
     if cmd == "mv":
         sys.exit(mv(sys.argv[2:]))
+    if cmd == "cp":
+        sys.exit(cp(sys.argv[2:]))
     sys.exit(2)
+'''
+
+
+FAKE_RUNTIME = r'''"""Fixture stand-in for `python3 -m hg serve`: like the real service it refuses a missing state
+dir, takes the state writer flock for life (exit 78 if another process holds it), may write to
+the state on start, then serves until SIGTERM. Readiness is answered by the test process."""
+import fcntl, json, os, signal, sys, time
+from pathlib import Path
+
+if "--check" in sys.argv:
+    print("PREFLIGHT_PASS")
+    sys.exit(0)
+if sys.argv[1:2] != ["serve"]:
+    print("fixture release")
+    sys.exit(0)
+conf = json.loads(Path(sys.argv[sys.argv.index("--config") + 1]).read_text())
+state, ctl = Path(conf["state_dir"]), Path(os.environ["HG_FI_CTL"])
+if not state.is_dir():
+    sys.exit(78)
+fd = os.open(state / ".writer.lock", os.O_RDWR | os.O_NOFOLLOW)
+try:
+    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+except BlockingIOError:
+    sys.exit(78)
+writes = ctl / "write_on_start.json"
+kind = json.loads(writes.read_text()).get(conf["release_id"]) if writes.exists() else None
+if kind == "benign":
+    (state / f"written-by-{conf['release_id']}.txt").write_text("accepted write\n")
+elif kind == "corrupt":
+    with (state / "tasks.jsonl").open("ab") as stream:
+        stream.write(b'{"event_id": "TRUNCATED-BY-' + conf["release_id"].encode() + b'\n')
+(ctl / f"runtime-{os.getpid()}.json").write_text(json.dumps(
+    {"pid": os.getpid(), "release": conf["release_id"], "state_ino": state.stat().st_ino}))
+signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+while True:
+    time.sleep(0.5)
+'''
+
+PRECHECK_FD_PROBE = r'''
+
+# --- fixture only: record whether a state precheck inherited any state writer-lock descriptor ---
+def _fixture_record_precheck_fds():
+    import json as _json, os as _os, sys as _sys
+    ctl = _os.environ.get("HG_FI_CTL")
+    if not ctl or not _sys.argv or not _sys.argv[0].endswith("state_precheck.py"):
+        return
+    held = []
+    for name in _os.listdir("/proc/self/fd"):
+        try:
+            target = _os.readlink(f"/proc/self/fd/{name}")
+        except OSError:
+            continue
+        if target.endswith("/.writer.lock"):
+            held.append([int(name), target])
+    with open(_os.path.join(ctl, "precheck-fds.jsonl"), "a") as stream:
+        stream.write(_json.dumps({"argv": _sys.argv[1:], "lock_fds": held}) + "\n")
+
+
+_fixture_record_precheck_fds()
 '''
 
 
@@ -247,6 +412,17 @@ def _tree_digest(root):
         if p.is_file() and not p.is_symlink():
             h.update(p.relative_to(root).as_posix().encode() + b"\0" + p.read_bytes() + b"\0")
     return {"ino": root.stat().st_ino, "sha256": h.hexdigest()}
+
+
+def _alive(pid):
+    """A live (not zombie) process: runtimes are reparented when their spawner exits."""
+    if not pid:
+        return False
+    try:
+        with open(f"/proc/{pid}/stat") as stream:
+            return stream.read().rsplit(")", 1)[1].split()[0] not in ("Z", "X")
+    except (OSError, IndexError):
+        return False
 
 
 def _link_or_copy(src, dst):
@@ -303,7 +479,12 @@ class _ReadyHandler(BaseHTTPRequestHandler):
         else:
             sv_state = json.loads((env.ctl / "sv.json").read_text())
             release = env.current_release()
-            ready = sv_state["up"] and release in json.loads((env.ctl / "ready.json").read_text())
+            pid = sv_state.get("pid")
+            marker = env.ctl / f"runtime-{pid}.json"
+            runtime_up = (sv_state["up"] and _alive(pid) and marker.exists()
+                          and json.loads(marker.read_text()).get("release") == release)
+            squatter = release in sv_state.get("squatter_ready", [])      # any other loopback listener
+            ready = (runtime_up or squatter) and release in json.loads((env.ctl / "ready.json").read_text())
             status = 200 if ready else 503
             body = {"status": "READY" if ready else "STARTING", "release_id": release,
                     "integrity": "VERIFIED", "trust": "LOADED", "trust_commit": "fixture-only"}
@@ -370,10 +551,12 @@ class SwitchEnv:
         (self.ctl / "stub.py").write_text(STUB, encoding="utf-8")
         sh, py = shutil.which("sh"), sys.executable
         real_date, real_sleep, real_mv = shutil.which("date"), shutil.which("sleep"), shutil.which("mv")
+        real_cp = shutil.which("cp")
         (self.ctl / "env.json").write_text(json.dumps({"svc": str(self.svc), "state": str(self.state),
-                                                       "evidence": str(self.evidence), "real_mv": real_mv}),
+                                                       "evidence": str(self.evidence), "real_mv": real_mv,
+                                                       "real_cp": real_cp}),
                                            encoding="utf-8")
-        (self.ctl / "sv.json").write_text(json.dumps({"up": True, "pid": 4000, "ups": 0, "restart_loop": []}),
+        (self.ctl / "sv.json").write_text(json.dumps({"up": False, "pid": 0, "ups": 0, "restart_loop": []}),
                                           encoding="utf-8")
         (self.ctl / "ready.json").write_text(json.dumps([OLD, NEW]), encoding="utf-8")
         stubs = {
@@ -381,6 +564,8 @@ class SwitchEnv:
             "sv": f'exec "{py}" -I "{self.ctl / "stub.py"}" sv "$@"\n',
             "mv": (f'[ -n "${{HG_FI_MV_FAULTS:-}}" ] || exec "{real_mv}" "$@"\n'
                    f'exec "{py}" -I "{self.ctl / "stub.py"}" mv "$@"\n'),
+            "cp": (f'[ -n "${{HG_FI_CP_FAIL:-}}" ] || exec "{real_cp}" "$@"\n'
+                   f'exec "{py}" -I "{self.ctl / "stub.py"}" cp "$@"\n'),
             "curl": "echo '{\"resources\": {\"core\": {\"remaining\": 5000}}}'\n",
             "sleep": f'exec "{real_sleep}" 0.05\n',
             "date": (f'if [ -n "${{HG_FI_BARRIER:-}}" ]; then "{py}" -I "{self.ctl / "stub.py"}" barrier '
@@ -394,6 +579,16 @@ class SwitchEnv:
         self.original_state = _tree_digest(self.state)
         self.competitor = []
         case.addCleanup(self._release_competitor)
+        case.addCleanup(self._kill_runtimes)
+        # The service runs before the switch: a real runtime process holding the state writer lock.
+        subprocess.run([py, "-I", str(self.ctl / "stub.py"), "sv", "up", "hg-runtime"], env=self._env(),
+                       check=True, capture_output=True, timeout=30)
+        st = self.sv_state()
+        if not _alive(st["pid"]) or not (self.ctl / f"runtime-{st['pid']}.json").exists():
+            case.fail("fixture runtime did not start")
+        st["ups"] = 0
+        (self.ctl / "sv.json").write_text(json.dumps(st))
+        (self.ctl / "sv-log.jsonl").unlink()
 
     @staticmethod
     def _write_conf(path, base, rid):
@@ -437,14 +632,31 @@ class SwitchEnv:
         os.chmod(src / "state" / ".hg-state-copy.json", 0o600)
         return src
 
-    def start(self, *args, barrier="", fault="", mv_faults=None):
+    def _env(self, barrier="", fault="", mv_faults=None, cp_fail=""):
         env = {"PATH": f"{self.bin}{os.pathsep}{os.environ.get('PATH', '/usr/bin:/bin')}",
                "HOME": str(self.home), "PREFIX": str(self.prefix), "LANG": "C.UTF-8",
                "HG_FINISH_STATE_DIR": str(self.home / ".local" / "state" / "hg"),
                "HG_FI_CTL": str(self.ctl), "HG_FI_BARRIER": barrier, "HG_FI_FAULT": fault,
-               "HG_FI_MV_FAULTS": json.dumps(mv_faults) if mv_faults else ""}
+               "HG_FI_MV_FAULTS": json.dumps(mv_faults) if mv_faults else "", "HG_FI_CP_FAIL": cp_fail,
+               "HG_READY_WAIT_SECONDS": "8"}          # production default 180 s; a fixture runtime is up at once
         if "TMPDIR" in os.environ:
             env["TMPDIR"] = os.environ["TMPDIR"]
+        return env
+
+    def _kill_runtimes(self):
+        try:
+            pids = self.sv_state().get("spawned", [])
+        except (OSError, ValueError):
+            return
+        for pid in pids:
+            if _alive(pid):
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+
+    def start(self, *args, barrier="", fault="", mv_faults=None, cp_fail=""):
+        env = self._env(barrier, fault, mv_faults, cp_fail)
         proc = subprocess.Popen([shutil.which("sh"), str(DEPLOY / "switch_service.sh"), *map(str, args)],
                                 env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                                 cwd=str(self.tmp), start_new_session=True)
@@ -559,6 +771,20 @@ class SwitchEnv:
     def sv_state(self):
         return json.loads((self.ctl / "sv.json").read_text())
 
+    def stop_runtime(self):
+        """SIGTERM the supervised runtime (it legitimately holds the live lock) without touching sv.json."""
+        pid = self.sv_state().get("pid")
+        if _alive(pid):
+            os.kill(pid, signal.SIGTERM)
+            deadline = time.monotonic() + 10
+            while _alive(pid) and time.monotonic() < deadline:
+                time.sleep(0.01)
+
+    def switch_left_no_lock(self):
+        """After the switch exits, no state writer lock may be held except by the runtime it started."""
+        self.stop_runtime()
+        return self.locks_free()
+
     def locks_free(self):
         """True when no process holds any state writer lock of this environment."""
         for path in [*self.state.parent.glob(self.state.name + "/.writer.lock"),
@@ -594,8 +820,9 @@ class SwitchLockFaultInjectionTests(unittest.TestCase):
         shutil.copytree(REPO / "maep", cls.template / "maep", ignore=ignore)
         # Release verification and preflight are covered elsewhere; here they only have to pass.
         (cls.template / "hg" / "release.py").write_text("def main(argv):\n    return 0\n", encoding="utf-8")
-        (cls.template / "hg" / "__main__.py").write_text(
-            "import sys\nprint('PREFLIGHT_PASS' if '--check' in sys.argv else 'fixture release')\n", encoding="utf-8")
+        (cls.template / "hg" / "__main__.py").write_text(FAKE_RUNTIME, encoding="utf-8")
+        with (cls.template / "maep" / "__init__.py").open("a", encoding="utf-8") as stream:
+            stream.write(PRECHECK_FD_PROBE)
 
     @classmethod
     def tearDownClass(cls):
@@ -618,6 +845,8 @@ class SwitchLockFaultInjectionTests(unittest.TestCase):
         self.assertTrue((env.bk() / "state" / ".hg-state-copy.json").is_file())
         ups = [e for e in env.sv_log() if e["argv"][:1] == ["up"]]
         self.assertEqual([e["release"] for e in ups], [NEW], out)
+        self.assertFalse((env.svc / "down").exists(), "./down left after a verified switch")
+        self.assert_prechecks_got_no_lock_fds(env)
 
     def test_control_restore_state_completes_and_starts_the_old_pair(self):
         env = self.env(running=NEW)
@@ -628,6 +857,15 @@ class SwitchLockFaultInjectionTests(unittest.TestCase):
         self.assertEqual(env.current_release(), OLD)
         self.assertNotEqual(_tree_digest(env.state)["ino"], env.original_state["ino"])     # state was swapped in
         self.assertFalse((env.state / ".hg-state-copy.json").exists())
+        self.assertFalse((env.svc / "down").exists(), "./down left after a verified restore")
+        self.assert_prechecks_got_no_lock_fds(env)
+
+    def assert_prechecks_got_no_lock_fds(self, env):
+        """M14: the release code a precheck loads gets no copy of the switch's lock descriptors."""
+        records = [json.loads(line) for line in (env.ctl / "precheck-fds.jsonl").read_text().splitlines()]
+        self.assertTrue(records, "no precheck ran")
+        for record in records:
+            self.assertEqual(record["lock_fds"], [], record)
 
     # ---- the lock cannot be lost by killing a holder --------------------------------------------
 
@@ -700,6 +938,9 @@ class SwitchLockFaultInjectionTests(unittest.TestCase):
             if entry["argv"][:1] == ["up"] and entry["after_fault"]:
                 self.assertEqual(entry["run_sha256"], env.original_run_sha, entry)
                 self.assertEqual(entry["state"], env.original_state, f"started against an unverified pair: {entry}")
+        # The competitor still holds the lock: starting the service against it would only restart-loop.
+        self.assertEqual([e for e in env.sv_log() if e["argv"][:1] == ["up"] and e["after_fault"]], [], out)
+        self.assertFalse(env.sv_state()["up"])
         return env, snap, rc, out
 
     def test_lock_lost_before_backup_stops_forward_switch(self):
@@ -741,13 +982,13 @@ class SwitchLockFaultInjectionTests(unittest.TestCase):
 
     def test_contended_lock_aborts_before_backup(self):
         env = self.env()
-        fd = os.open(env.state / ".writer.lock", os.O_RDONLY)
-        self.addCleanup(os.close, fd)
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)      # e.g. a writer that did not go away
+        env.set_sv(grab_lock_on_down=True)                   # a writer that is not the service takes the lock
         rc, out = self.finish(env.start(NEW))
         self.assertNotEqual(rc, 0, out)
         self.assertFalse((env.bk() / "state").exists(), out)
         self.assertEqual(_sha(env.svc / "run"), env.original_run_sha)
+        self.assertIn("ROLLBACK_LOCK_CONTENDED_SERVICE_DOWN", out.splitlines())   # review A-01: no start
+        self.assertEqual([e for e in env.sv_log() if e["argv"][:1] == ["up"]], [])
 
 
 @unittest.skipIf(HARNESS_UNAVAILABLE, HARNESS_SKIP_WHY)
@@ -768,6 +1009,7 @@ class SwitchRollbackReadyTests(unittest.TestCase):
         self.assertNotEqual(proc.returncode, 0, out)
         self.assertIn(f"ROLLBACK_READY_VERIFIED release={OLD}", out)
         self.assertEqual(_sha(env.svc / "run"), env.original_run_sha)
+        self.assertFalse((env.svc / "down").exists(), "./down left after a verified rollback")
         ups = [e for e in env.sv_log() if e["argv"][:1] == ["up"]]
         self.assertEqual([e["release"] for e in ups], [NEW, OLD])
         self.assertEqual((ups[-1]["run_sha256"], ups[-1]["state"]), (env.original_run_sha, env.original_state))
@@ -785,6 +1027,7 @@ class SwitchRollbackReadyTests(unittest.TestCase):
         self.assertIn("SERVICE_DOWN_VERIFIED", out.splitlines())
         last = env.sv_log()[-1]
         self.assertIn("down", last["argv"], last)
+        self.assertTrue((env.svc / "down").exists(), "a reboot would auto-start the unverified pair")
 
     def test_unverified_rollback_reports_unknown_when_down_cannot_be_proven(self):
         """F-06: the stop after an unverified rollback does not complete: never claim DOWN/safe."""
@@ -828,11 +1071,7 @@ class SwitchRollbackReadyTests(unittest.TestCase):
         ups = [e for e in env.sv_log() if e["argv"][:1] == ["up"]]
         self.assertEqual([e["release"] for e in ups], [OLD, NEW])
         self.assertEqual((ups[-1]["run_sha256"], ups[-1]["state"]), (env.original_run_sha, env.original_state))
-        probe = os.open(env.state / ".writer.lock", os.O_RDONLY)
-        try:                                                  # the switch released every lock it took
-            fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        finally:
-            os.close(probe)
+        self.assertTrue(env.switch_left_no_lock(), "the switch kept a state writer lock")
 
     def test_switch_refuses_before_stopping_when_the_rollback_target_is_unknown(self):
         env = self.env()
@@ -869,7 +1108,9 @@ class SwitchSignalWindowTests(unittest.TestCase):
         self.assertEqual(rc, 143, out)                                    # interrupted, not reported OK
         for marker in ("SWITCH_OK", "RESTORED"):
             self.assertNotIn(marker, out.splitlines())
-        self.assertTrue(env.locks_free(), "a state writer lock is still held after the switch exited")
+        env.final_sv = env.sv_state()
+        env.final_runtime = _alive(env.final_sv.get("pid"))
+        self.assertTrue(env.switch_left_no_lock(), "a state writer lock is still held after the switch exited")
         return env, out
 
     def _assert_rolled_back(self, env, out, release):
@@ -880,7 +1121,7 @@ class SwitchSignalWindowTests(unittest.TestCase):
         self.assertTrue(ups, out)
         for entry in ups:                                                  # only the verified pair starts
             self.assertEqual((entry["run_sha256"], entry["state"]), (env.original_run_sha, env.original_state))
-        self.assertTrue(env.sv_state()["up"])
+        self.assertTrue(env.final_sv["up"] and env.final_runtime, "the verified pair is not running")
 
     def test_sigterm_after_forward_run_swap_before_flag(self):
         env, out = self._run("forward", [{"match": "run-swap"}])
@@ -920,13 +1161,115 @@ class SwitchSignalWindowTests(unittest.TestCase):
         self.assertTrue((env.state.parent / (env.state.name + ".foreign-moved")).is_dir())
         self.assertEqual(len(list(env.state.parent.glob(env.state.name + ".incoming-*"))), 1)
         self.assertEqual([e for e in env.sv_log() if e["argv"][:1] == ["up"] and e["after_fault"]], [])
-        self.assertFalse(env.sv_state()["up"])
+        self.assertFalse(env.final_sv["up"])
         self.assertIn("ROLLBACK_INCOMPLETE_SERVICE_DOWN", out.splitlines())
         self.assertNotIn("ROLLBACK_READY_VERIFIED", out)
 
 
-FAULT_SUITE_CLASSES = (SwitchLockFaultInjectionTests, SwitchRollbackReadyTests, SwitchSignalWindowTests)
-FAULT_SUITE_MIN_TESTS = 27
+@unittest.skipIf(HARNESS_UNAVAILABLE, HARNESS_SKIP_WHY)
+class SwitchReviewFindingTests(unittest.TestCase):
+    """Findings A-01..A-09 of the adversarial review of 0e31aa2, each driven through the real script."""
+
+    setUpClass = classmethod(SwitchLockFaultInjectionTests.setUpClass.__func__)
+    tearDownClass = classmethod(SwitchLockFaultInjectionTests.tearDownClass.__func__)
+
+    def env(self, running=OLD):
+        return SwitchEnv(self, self.template, running=running)
+
+    def test_a01_second_switch_refuses_while_the_first_one_runs(self):
+        """A retry while the first run is still in its critical section must not touch the service."""
+        env = self.env()
+        first = env.start(NEW, barrier="after-backup")
+        env.wait_barrier(first)
+        time.sleep(1.1)                                     # a later second: its own evidence dir name
+        before = len(env.sv_log())
+        rc2, out2 = env.run(env.start(NEW), guard=False)
+        self.assertNotEqual(rc2, 0, out2)
+        self.assertIn("another switch_service.sh run holds", out2)
+        self.assertEqual(env.sv_log()[before:], [], "the second run touched the service:\n" + out2)
+        self.assertNotIn("ROLLED_BACK_AFTER_FAILURE", out2)
+        env.go()
+        rc1, out1 = env.run(first, guard=False)
+        self.assertEqual(rc1, 0, out1)
+        self.assertIn("SWITCH_OK", out1.splitlines())
+        self.assertEqual(env.current_release(), NEW)
+        st = env.sv_state()
+        self.assertTrue(st["up"] and _alive(st["pid"]), "the first switch's service is not running")
+
+    def test_a02_failed_run_script_copy_never_starts_an_unprechecked_pair(self):
+        env = self.env(running=NEW)
+        proc = env.start("--restore-state", env.previous_switch_dir(), cp_fail="run-old-to-tmp")
+        rc, out = env.run(proc)
+        self.assertTrue((env.ctl / "fault.fired").exists(), "the cp fault did not fire:\n" + out)
+        self.assertNotIn("WATCHDOG", out, out)
+        self.assertNotEqual(rc, 0, out)
+        self.assertIn(f"ROLLBACK_READY_VERIFIED release={NEW}", out)
+        self.assertEqual(_tree_digest(env.state), env.original_state)
+        self.assertEqual(_sha(env.svc / "run"), env.original_run_sha)
+
+    def _write_on_start(self, env, kind):
+        (env.ctl / "write_on_start.json").write_text(json.dumps({NEW: kind}), encoding="utf-8")
+
+    def test_a03_rollback_prechecks_state_the_failed_release_wrote(self):
+        env = self.env()
+        env.set_sv(restart_loop=[NEW])
+        self._write_on_start(env, "benign")
+        rc, out = env.run(env.start(NEW))
+        self.assertNotEqual(rc, 0, out)
+        self.assertIn("live state changed since the backup", out)
+        self.assertTrue((env.bk() / "state.after-failure" / ".hg-state-copy.json").is_file(), out)
+        self.assertIn(f"ROLLBACK_READY_VERIFIED release={OLD}", out)
+        self.assertTrue((env.state / f"written-by-{NEW}.txt").is_file(), "accepted writes were discarded")
+        self.assertFalse((env.svc / "down").exists())
+
+    def test_a03_rollback_stays_down_when_the_previous_release_cannot_read_the_changed_state(self):
+        env = self.env()
+        env.set_sv(restart_loop=[NEW])
+        self._write_on_start(env, "corrupt")
+        rc, out = env.run(env.start(NEW))
+        self.assertNotEqual(rc, 0, out)
+        self.assertIn("ROLLBACK_STATE_CHANGED_SERVICE_DOWN", out.splitlines())
+        self.assertNotIn("ROLLBACK_READY_VERIFIED", out)
+        self.assertEqual([e["release"] for e in env.sv_log() if e["argv"][:1] == ["up"]], [NEW])
+        self.assertFalse(env.sv_state()["up"])
+        self.assertIn(b"TRUNCATED-BY-" + NEW.encode(), (env.state / "tasks.jsonl").read_bytes())
+        self.assertTrue((env.svc / "down").exists(), "a reboot would auto-start an unverified pair")
+
+    def test_a07_want_up_is_not_proof_of_down(self):
+        env = self.env()
+        env.set_sv(restart_loop=[NEW, OLD], want_up_after_ups=2)
+        rc, out = env.run(env.start(NEW))
+        self.assertNotEqual(rc, 0, out)
+        self.assertIn(f"ROLLBACK_READY_UNVERIFIED release={OLD}", out)
+        self.assertIn("SERVICE_STATE_UNKNOWN", out.splitlines())
+        self.assertNotIn("SERVICE_DOWN_VERIFIED", out)
+
+    def test_a08_ready_from_a_process_that_is_not_the_supervised_runtime_is_not_trusted(self):
+        """./run never reached `exec hg serve` (stable pid in its wait loop) while some other
+        loopback listener answers READY for the new release id."""
+        env = self.env()
+        env.set_sv(wait_loop=[NEW], squatter_ready=[NEW])
+        rc, out = env.run(env.start(NEW))
+        self.assertNotEqual(rc, 0, out)
+        self.assertNotIn("SWITCH_OK", out.splitlines())
+        self.assertIn("is not 'hg serve --config", out)
+        self.assertIn(f"ROLLBACK_READY_VERIFIED release={OLD}", out)
+        self.assertEqual(env.current_release(), OLD)
+
+    def test_a09_interrupted_cutover_leaves_runit_down_marker(self):
+        """SIGKILL of the switch mid-cutover (no trap): runsv must not auto-start the pair on disk
+        after a reboot, so ./down exists until a verified start or rollback removes it."""
+        env = self.env()
+        proc = env.start(NEW, barrier="after-backup")
+        env.wait_barrier(proc)
+        env._kill_group(proc)
+        self.assertTrue((env.svc / "down").exists(), "no ./down marker during the cutover")
+        self.assertTrue((env.bk() / "cutover.env").is_file(), "cutover identities were not recorded")
+
+
+FAULT_SUITE_CLASSES = (SwitchLockFaultInjectionTests, SwitchRollbackReadyTests, SwitchSignalWindowTests,
+                       SwitchReviewFindingTests)
+FAULT_SUITE_MIN_TESTS = 34          # a floor: deleting a fault test fails the guard
 
 
 class FaultSuiteAvailabilityTests(unittest.TestCase):

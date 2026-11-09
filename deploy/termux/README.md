@@ -34,19 +34,31 @@ remote session cannot cut them short:
    helper process, and ownership is proven through that descriptor (`state_lock.py verify`) before the
    backup, after it, around the precheck and before every rename and run-script swap; if the lock is
    no longer the switch's, it stops before the next change (PR #87 review F-01).
-   Any failure or interruption after the stop runs the EXIT trap, which ignores further HUP/INT/TERM
-   until it is done. It first proves the service DOWN (`sv down`, then `sv status`), then reads what
-   really changed from the filesystem — the live/incoming state directory identities (dev:ino) and the
-   run-script hash — never from flags, because a signal can land after a rename and before the next
-   command (review F-05). It puts back exactly the run script and state that ran before (state renames
-   only under a proven lock), re-reads both, starts only that pair and waits for authenticated READY
-   with a stable pid: `ROLLBACK_READY_VERIFIED release=<id>`. If READY is not reached it stops the
-   service again so runit cannot restart-loop it: `ROLLBACK_READY_UNVERIFIED release=<id>` followed by
-   `SERVICE_DOWN_VERIFIED` or `SERVICE_STATE_UNKNOWN` (review F-06). If the state layout or run script
-   is not one this switch produced, nothing is moved or started and every directory is left for
-   investigation: `ROLLBACK_INCOMPLETE_SERVICE_DOWN` (or `ROLLBACK_INCOMPLETE_SERVICE_STATE_UNKNOWN`
-   when DOWN cannot be proven). `ROLLED_BACK_AFTER_FAILURE` only says the trap ran; it is not rollback
-   evidence (review F-04).
+   Only one switch runs at a time: the script first takes `~/hg-v1-evidence/.switch.lock` on its own
+   fd 7 and a second run refuses before touching anything (review A-01). From the stop until a verified
+   start it keeps runit's `hg-runtime/down` marker, so a reboot mid-cutover does not auto-start whatever
+   pair is on disk; identities for a manual recovery are in `<switch dir>/cutover.env` (A-09). READY
+   counts only from the supervised pid running `hg serve --config <that config>` (A-08). Once the new
+   pair is proven READY the switch is committed: a later failure is reported
+   (`COMMITTED_SWITCH_EXIT_<rc>`) and never rolled back (A-04).
+   Any failure or interruption before that runs the EXIT trap, which ignores further HUP/INT/TERM
+   until it is done. It first proves the service DOWN (`sv down` must succeed and `sv status` must say
+   down with no `want up`, A-07), then reads what really changed from the filesystem — the
+   live/incoming state directory identities (dev:ino) and the run-script hash — never from flags,
+   because a signal can land after a rename and before the next command (review F-05). It puts back the
+   run script and the state directory that ran before (state renames only under a proven lock),
+   re-reads both, and starts only that pair. If a release that started wrote to the live state, the
+   trap first copies it under the lock and proves the previous release reads it; otherwise it stays
+   DOWN with `ROLLBACK_STATE_CHANGED_SERVICE_DOWN` and keeps everything, so `--restore-state <switch
+   dir>` can return to the backup (A-03). If another process holds the state lock it does not start
+   (`ROLLBACK_LOCK_CONTENDED_SERVICE_DOWN`). A verified start prints `ROLLBACK_READY_VERIFIED
+   release=<id>`. If READY is not reached it stops the service again so runit cannot restart-loop it:
+   `ROLLBACK_READY_UNVERIFIED release=<id>` followed by `SERVICE_DOWN_VERIFIED` or
+   `SERVICE_STATE_UNKNOWN` (review F-06). A state layout or run script this switch did not produce is
+   left exactly as found (the other component may still be put back) and nothing is started:
+   `ROLLBACK_INCOMPLETE_SERVICE_DOWN` (or `..._SERVICE_STATE_UNKNOWN` when DOWN cannot be proven).
+   `ROLLED_BACK_AFTER_FAILURE` only says the trap ran; it is not rollback evidence (review F-04).
+   `HG_READY_WAIT_SECONDS` (default 180) bounds each wait for READY.
 5. `python3 -I -B deploy_smoke.py ready|ready-wait RID SECONDS|submit TAG|get TASK_ID` — readiness, a
    verified write on a task id that did not exist (`replayed: false`) with independent read-back,
    idempotent replay and a 409 for a changed body.

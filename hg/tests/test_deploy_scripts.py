@@ -6,6 +6,9 @@ import unittest
 from pathlib import Path
 
 DEPLOY = Path(__file__).resolve().parents[2] / "deploy" / "termux"
+# The switch runs as `sh switch_service.sh` (dash on Termux and Debian/Ubuntu): test its shell
+# functions under that shell, not bash, whose error semantics differ (review A-06).
+POSIX_SH = shutil.which("dash") or shutil.which("sh")
 
 
 class DeployScriptTests(unittest.TestCase):
@@ -287,7 +290,7 @@ class DeployScriptTests(unittest.TestCase):
         import json
         import os
         text = (DEPLOY / "switch_service.sh").read_text(encoding="utf-8")
-        body = text.split("backup_state() {", 1)[1].split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
+        body = text.split("backup_state() {", 1)[1].split("<<'PY'", 1)[1].split("\n", 1)[1].split("\nPY\n", 1)[0]
         tmp = self._tmp()
         live = self._state_copy(tmp, "live")
         (live / ".hg-state-copy.json").write_text('{"copy_id": "stale-from-a-restore"}', encoding="utf-8")
@@ -307,7 +310,7 @@ class DeployScriptTests(unittest.TestCase):
 
     def _backup_body(self):
         text = (DEPLOY / "switch_service.sh").read_text(encoding="utf-8")
-        return text.split("backup_state() {", 1)[1].split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
+        return text.split("backup_state() {", 1)[1].split("<<'PY'", 1)[1].split("\n", 1)[1].split("\nPY\n", 1)[0]
 
     def _run_backup(self, live, dst, *, fd=None, env_extra=None):
         import os
@@ -420,7 +423,7 @@ class DeployScriptTests(unittest.TestCase):
             (previous / "owner.txt").write_text("old-state", encoding="utf-8")
             script = ("say() { :; }\nSTATE=" + repr(str(state)) + "\nTS=T\n" + func
                       + "\nrestore_state_previous\n")
-            proc = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=5)
+            proc = subprocess.run([POSIX_SH, "-c", script], capture_output=True, text=True, timeout=5)
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertEqual((state / "owner.txt").read_text(encoding="utf-8"), "old-state")
             self.assertFalse(previous.exists())
@@ -431,7 +434,7 @@ class DeployScriptTests(unittest.TestCase):
             (previous / "owner.txt").write_text("old-state-2", encoding="utf-8")
             state.mkdir()
             (state / "incoming.txt").write_text("incomplete-new-state", encoding="utf-8")
-            proc = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=5)
+            proc = subprocess.run([POSIX_SH, "-c", script], capture_output=True, text=True, timeout=5)
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertEqual((state / "owner.txt").read_text(encoding="utf-8"), "old-state-2")
             self.assertTrue((root / "state.failed-T" / "incoming.txt").is_file())
@@ -449,7 +452,7 @@ class DeployScriptTests(unittest.TestCase):
             (state / "incoming.txt").write_text("unverified-incoming", encoding="utf-8")
             script = ("say() { :; }\nSTATE=" + repr(str(state)) + "\nTS=T\n" + func
                       + "\nrestore_state_previous\n")
-            proc = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=5)
+            proc = subprocess.run([POSIX_SH, "-c", script], capture_output=True, text=True, timeout=5)
             self.assertNotEqual(proc.returncode, 0)
             self.assertTrue((state / "incoming.txt").is_file())
 
@@ -470,17 +473,20 @@ class DeployScriptTests(unittest.TestCase):
             "lock_for_state_rollback() { return 0; }\nrequire_state_locks() { return 0; }\n"
             "restore_state_previous() { " + log("restore") + "; return 0; }\n"
             "start_and_wait() { " + log("start") + "; return 0; }\n"
+            "state_matches_backup() { return 0; }\npython3() { return 0; }\n"   # content unchanged, lock free
             "unlock_state() { :; }\ncp() { :; }\nmv() { :; }\n" + stubs +
             "CUTOVER=1; BK=fixture; STATE=/missing/state; TS=T; FINISH_STATE=/missing; PREV_RUN=/missing/run.old; "
             "S=/missing/service; ROLLBACK_CONF=c; ROLLBACK_RID=r\n"
-            + func("ensure_down") + func("rollback_cutover") + func("on_exit") + "\nfalse\non_exit\n")
+            + "DOWN_MARKER_PREEXISTED=0\n"
+            + func("service_down_proven") + func("ensure_down") + func("clear_down_marker")
+            + func("rollback_cutover") + func("on_exit") + "\nfalse\non_exit\n")
 
     def test_on_exit_keeps_service_down_when_state_rollback_fails(self):
         import tempfile
         with tempfile.TemporaryDirectory(prefix="hg-on-exit-fail-closed-") as td:
             calls, script = self._trap_script(Path(td), layout="SWAPPED", run="ORIGINAL",
                                               stubs="restore_state_previous() { return 1; }\n")
-            proc = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=5)
+            proc = subprocess.run([POSIX_SH, "-c", script], capture_output=True, text=True, timeout=5)
             self.assertNotEqual(proc.returncode, 0)
             self.assertEqual(calls.read_text(encoding="utf-8").splitlines(),
                              ["sv -w 60 -v down hg-runtime", "sv status hg-runtime",      # proven DOWN first
@@ -492,7 +498,7 @@ class DeployScriptTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="hg-on-exit-lock-lost-") as td:
             calls, script = self._trap_script(Path(td), layout="MOVED_ASIDE", run="ORIGINAL",
                                               stubs="require_state_locks() { return 1; }\n")
-            proc = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=5)
+            proc = subprocess.run([POSIX_SH, "-c", script], capture_output=True, text=True, timeout=5)
             self.assertNotEqual(proc.returncode, 0)
             seen = calls.read_text(encoding="utf-8").splitlines()
             self.assertNotIn("restore", seen)
@@ -505,7 +511,7 @@ class DeployScriptTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="hg-on-exit-not-down-") as td:
             calls, script = self._trap_script(Path(td), layout="SWAPPED", run="NEW",
                                               status_line="run: hg-runtime: (pid 7) 9s")
-            proc = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=5)
+            proc = subprocess.run([POSIX_SH, "-c", script], capture_output=True, text=True, timeout=5)
             self.assertNotEqual(proc.returncode, 0)
             self.assertEqual(calls.read_text(encoding="utf-8").splitlines(),
                              ["sv -w 60 -v down hg-runtime", "sv status hg-runtime"])
@@ -523,7 +529,7 @@ class DeployScriptTests(unittest.TestCase):
                     "echo $((n + 1)) > " + repr(str(seen)) + "; "
                     "if [ \"$n\" = 0 ]; then echo UNKNOWN; else echo ORIGINAL; fi; }\n")
             calls, script = self._trap_script(root, layout="UNKNOWN", run="ORIGINAL", stubs=stub)
-            proc = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=5)
+            proc = subprocess.run([POSIX_SH, "-c", script], capture_output=True, text=True, timeout=5)
             got = calls.read_text(encoding="utf-8").splitlines()
             self.assertNotIn("start", got)
             self.assertNotIn("restore", got)
@@ -534,15 +540,217 @@ class DeployScriptTests(unittest.TestCase):
         import tempfile
         with tempfile.TemporaryDirectory(prefix="hg-on-exit-unproven-pair-") as td:
             calls, script = self._trap_script(Path(td), layout="SWAPPED", run="ORIGINAL")
-            proc = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=5)
+            proc = subprocess.run([POSIX_SH, "-c", script], capture_output=True, text=True, timeout=5)
             seen = calls.read_text(encoding="utf-8").splitlines()
             self.assertIn("restore", seen)
             self.assertNotIn("start", seen)
             self.assertIn("ROLLBACK_INCOMPLETE_SERVICE_DOWN", proc.stdout.splitlines())
 
+
+    @staticmethod
+    def _funcs(*names):
+        full = (DEPLOY / "switch_service.sh").read_text(encoding="utf-8")
+        out = []
+        for name in names:
+            start = full.index(f"{name}() {{")
+            out.append(full[start:full.index("\n}\n", start) + 3])
+        return "".join(out)
+
+    def test_a04_on_exit_never_rolls_back_a_committed_switch(self):
+        """After the verified start the switch is committed: a later failure or signal reports,
+        it never rolls back (and never discards writes the new pair accepted)."""
+        import tempfile
+        with tempfile.TemporaryDirectory(prefix="hg-on-exit-committed-") as td:
+            calls, script = self._trap_script(Path(td), layout="SWAPPED", run="NEW",
+                                              stubs="CUTOVER=1; COMMITTED=1\n")
+            script = script.replace("CUTOVER=1; BK=fixture", "CUTOVER=1; COMMITTED=1; BK=fixture")
+            proc = subprocess.run([POSIX_SH, "-c", script], capture_output=True, text=True, timeout=5)
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertFalse(calls.exists() and calls.read_text(encoding="utf-8").strip(),
+                             "a committed switch was touched: " + (calls.read_text() if calls.exists() else ""))
+            self.assertIn("COMMITTED", proc.stdout)
+            self.assertNotIn("ROLLED_BACK_AFTER_FAILURE", proc.stdout)
+        full = (DEPLOY / "switch_service.sh").read_text(encoding="utf-8")
+        for start_call in ('start_and_wait "$NEWCONF" "$NEW"', 'start_and_wait "$OLD_RUNCONF" "$OLD_RID"'):
+            after = full[full.index(start_call):].splitlines()
+            self.assertEqual(after[1].strip(), "COMMITTED=1", start_call)          # nothing in between
+        fwd = full[full.index("# ---------------------------------------------------------------- switch forward"):]
+        self.assertLess(fwd.index('> "$BK/hashes.after"'), fwd.index('start_and_wait "$NEWCONF" "$NEW"'))
+        rst = full[full.index("# ---------------------------------------------------------------- --restore"):]
+        self.assertLess(rst.index('> "$BK/run.restored.sha256"'), rst.index('start_and_wait "$OLD_RUNCONF"'))
+
+    def test_a06_dash_exec_redirection_semantics_pin(self):
+        """Pins the dash behaviour the lock code depends on: a failed plain `exec 9< file` kills
+        the shell even inside `|| return 1`; `command exec` fails like a normal command."""
+        if not shutil.which("dash"):
+            self.skipTest("no dash on this host")
+        for form, survives in (("exec", False), ("command exec", True)):
+            script = ("f() { " + form + " 9< /nonexistent/hg-lock || return 1; }\n"
+                      "f || echo HANDLED\necho END\n")
+            proc = subprocess.run(["dash", "-c", script], capture_output=True, text=True, timeout=5)
+            self.assertEqual("END" in proc.stdout, survives, (form, proc.stdout, proc.stderr))
+
+    def test_a06_every_lock_descriptor_is_opened_with_command_exec(self):
+        full = (DEPLOY / "switch_service.sh").read_text(encoding="utf-8")
+        import re
+        opens = re.findall(r"(\S*\s*)exec [789]<\s*\"", full)
+        self.assertTrue(opens, "no lock descriptor opens found")
+        for prefix in opens:
+            self.assertEqual(prefix.strip(), "command", f"bare exec for a lock descriptor: {prefix!r}")
+
+    def test_a06_unopenable_lock_fails_inside_the_trap_without_killing_it(self):
+        import os
+        import tempfile
+        if os.geteuid() == 0:
+            self.skipTest("root bypasses file permissions, so the open cannot be made to fail here")
+        with tempfile.TemporaryDirectory(prefix="hg-lock-unopenable-") as td:
+            root = Path(td)
+            lock = root / ".writer.lock"
+            lock.touch(mode=0o000)
+            os.chmod(lock, 0o000)
+            script = ("say() { echo \"$*\"; }\nHERE=/nonexistent\nSTATE_LOCK_HELD=0; INCOMING_LOCK_HELD=0\n"
+                      + self._funcs("lock_state_dir")
+                      + "on_exit() { lock_state_dir " + repr(str(root)) + " live || echo HANDLED; echo TRAP_END; }\n"
+                      + "trap on_exit EXIT\nfalse\n")
+            proc = subprocess.run([POSIX_SH, "-c", script], capture_output=True, text=True, timeout=5)
+            self.assertIn("HANDLED", proc.stdout, proc.stderr)
+            self.assertIn("TRAP_END", proc.stdout, proc.stderr)
+
+    def test_a10_space_check_counts_the_incoming_copies_of_restore_state(self):
+        import tempfile
+        with tempfile.TemporaryDirectory(prefix="hg-space-") as td:
+            root = Path(td)
+            stub = ('du() { case "$2" in */src-state) echo "4000\t$2";; *) echo "1000\t$2";; esac; }\n'
+                    'df() { printf "Filesystem 1K-blocks Used Available Use%% Mounted\\nfs 1 1 %s 1%% /\\n" "$AVAIL"; }\n'
+                    "say() { echo \"$*\"; }\n")
+            base = stub + "STATE=" + repr(str(root / "live")) + "\nHOME=" + repr(str(root)) + "\n" + self._funcs("space_ok")
+            ok = subprocess.run([POSIX_SH, "-c", base + "AVAIL=4000\nspace_ok && echo PASS\n"],
+                                capture_output=True, text=True, timeout=5)
+            self.assertIn("PASS", ok.stdout, ok.stderr)                     # 2*1000+1024 <= 4000
+            need = subprocess.run([POSIX_SH, "-c", base + "AVAIL=4000\nspace_ok " + repr(str(root / "src-state"))
+                                   + " && echo PASS\n"], capture_output=True, text=True, timeout=5)
+            self.assertNotIn("PASS", need.stdout, "restore-state also needs room for two copies of the source")
+            enough = subprocess.run([POSIX_SH, "-c", base + "AVAIL=11100\nspace_ok " + repr(str(root / "src-state"))
+                                     + " && echo PASS\n"], capture_output=True, text=True, timeout=5)
+            self.assertIn("PASS", enough.stdout, enough.stderr)              # 2*1000+2*4000+1024 = 11024
+        full = (DEPLOY / "switch_service.sh").read_text(encoding="utf-8")
+        rst = full[full.index("# ---------------------------------------------------------------- --restore"):
+                   full.index("# ---------------------------------------------------------------- switch forward")]
+        self.assertIn('space_ok "$SRC/state"', rst)
+
+    def test_a02_cutover_in_place_checks_run_and_state_from_the_filesystem(self):
+        cases = [("NEW", "SWAPPED", "SWAPPED", "o", "n", 0), ("NEW", "ORIGINAL", "ORIGINAL", "o", "n", 0),
+                 ("ORIGINAL", "ORIGINAL", "ORIGINAL", "same", "same", 0),      # same release: same hash
+                 ("ORIGINAL", "SWAPPED", "SWAPPED", "o", "n", 1),              # run swap did not happen
+                 ("UNKNOWN", "SWAPPED", "SWAPPED", "o", "n", 1),
+                 ("NEW", "ORIGINAL", "SWAPPED", "o", "n", 1),                  # renames did not happen
+                 ("NEW", "MOVED_ASIDE", "SWAPPED", "o", "n", 1)]
+        for run, state, want, orig, new, rc in cases:
+            script = (f"say() {{ :; }}\nclassify_run() {{ echo {run}; }}\nclassify_state() {{ echo {state}; }}\n"
+                      f"ORIG_RUN_SHA={orig}; NEW_RUN_SHA={new}\n" + self._funcs("cutover_in_place")
+                      + f"cutover_in_place {want}\n")
+            proc = subprocess.run([POSIX_SH, "-c", script], capture_output=True, text=True, timeout=5)
+            self.assertEqual(proc.returncode, rc, (run, state, want))
+
+    def test_a02_every_run_script_swap_step_ends_the_script_on_failure(self):
+        full = (DEPLOY / "switch_service.sh").read_text(encoding="utf-8")
+        main = full[full.index("# ---------------------------------------------------------------- --install-finish"):]
+        for line in main.splitlines():
+            code = line.split("#", 1)[0].strip()
+            if code.startswith(("install ", "mv ", "cp ")) and '"$S/run.tmp"' in code:   # the run-script swap
+                self.assertTrue(code.endswith("|| exit 1"), f"not guarded: {code}")
+            self.assertFalse(code.startswith(("install ", "cp ", "mv ")) and " && " in code, f"AND-list: {code}")
+        for start in ('start_and_wait "$NEWCONF" "$NEW"', 'start_and_wait "$OLD_RUNCONF" "$OLD_RID"'):
+            before = main[:main.index(start)].rsplit("unlock_state", 1)[0]
+            self.assertIn("cutover_in_place", before.rsplit("require_state_locks", 1)[1], start)
+
+    def test_a07_service_down_proof_accepts_only_a_settled_down(self):
+        """Regex guard alone: whatever sv down returned, the status must say down with nothing pending."""
+        log = "; run: log: (pid 77) 99s"
+        cases = [(f"down: hg-runtime: 3s, normally up{log}", 0),
+                 ("down: hg-runtime: 3s", 0),                                   # ./down marker present
+                 (f"down: hg-runtime: 0s, normally up, want up{log}", 1),       # runsv about to start it
+                 (f"down: hg-runtime: 2s, normally up, paused{log}", 1),
+                 (f"run: hg-runtime: (pid 7) 9s{log}", 1),
+                 ("warning: hg-runtime: unable to open supervise/ok: file does not exist", 1),
+                 (f"run: log: (pid 77) 99s; down: hg-runtime: 3s, normally up", 1)]
+        for line, rc in cases:
+            script = ("sv() { echo " + repr(line) + "; }\n" + self._funcs("service_down_proven")
+                      + "service_down_proven\n")
+            proc = subprocess.run([POSIX_SH, "-c", script], capture_output=True, text=True, timeout=5)
+            self.assertEqual(proc.returncode, rc, line)
+
+    def test_a07_ensure_down_requires_sv_to_confirm_the_stop(self):
+        """sv-confirmation guard alone: a stop sv reports as failed is not DOWN, even if a status
+        sampled afterwards happens to read down."""
+        for down_rc, want in ((0, 0), (1, 1)):
+            script = ('sv() { if [ "$1" = status ]; then echo "down: hg-runtime: 3s, normally up"; '
+                      f'else return {down_rc}; fi; }}\n'
+                      + self._funcs("service_down_proven", "ensure_down") + "ensure_down\n")
+            proc = subprocess.run([POSIX_SH, "-c", script], capture_output=True, text=True, timeout=5)
+            self.assertEqual(proc.returncode, want, down_rc)
+
+    def test_m07_classify_state_rejects_a_foreign_prev_dir_beside_an_intact_live_state(self):
+        import os
+        import tempfile
+        with tempfile.TemporaryDirectory(prefix="hg-classify-") as td:
+            root = Path(td)
+            live = root / "state"
+            live.mkdir()
+            ident = lambda p: f"{os.lstat(p).st_dev}:{os.lstat(p).st_ino}"
+            base = ("STATE=" + repr(str(live)) + "\nTS=T\nLIVE_ID=" + ident(live) + "\nINCOMING_ID=\n"
+                    + self._funcs("absent", "dir_id", "classify_state") + "classify_state\n")
+            run = lambda: subprocess.run([POSIX_SH, "-c", base], capture_output=True, text=True,
+                                         timeout=10).stdout.strip()
+            self.assertEqual(run(), "ORIGINAL")
+            (root / "state.prev-T").mkdir()                       # something this switch did not create
+            self.assertEqual(run(), "UNKNOWN")
+
+    def test_m12_backup_refuses_when_the_lock_is_lost_during_the_copy(self):
+        """The backup proves ownership again after the copy and hashes: losing the lock while
+        `cp` runs must not produce an attestation (the outer shell check is a second, separate guard)."""
+        import fcntl
+        import os
+        import tempfile
+        import threading
+        import time
+        tmp = self._tmp()
+        live = self._state_copy(tmp, "live-lost-mid-copy")
+        (tmp / "bk").mkdir()
+        dst = tmp / "bk" / "state"
+        stubs = Path(tempfile.mkdtemp(prefix="hg-cp-pause-"))
+        self.addCleanup(shutil.rmtree, stubs, ignore_errors=True)
+        real_cp = shutil.which("cp")
+        (stubs / "cp").write_text(f"#!{shutil.which('sh')}\n: > {stubs}/copying\n"
+                                  f"while [ ! -e {stubs}/go ]; do sleep 0.01; done\nexec {real_cp} \"$@\"\n")
+        os.chmod(stubs / "cp", 0o755)
+        owner = os.open(live / ".writer.lock", os.O_RDONLY)
+        fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+        def lose_lock_mid_copy():
+            deadline = time.monotonic() + 20
+            while not (stubs / "copying").exists() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            fcntl.flock(owner, fcntl.LOCK_UN)                     # same open file description as the child's
+            (stubs / "go").touch()
+        thread = threading.Thread(target=lose_lock_mid_copy)
+        thread.start()
+        try:
+            env = {k: v for k, v in os.environ.items() if k not in ("HG_STATE_LOCK_FD", "HG_STATE_LOCK_HELD")}
+            env.update(PATH=f"{stubs}{os.pathsep}{os.environ.get('PATH', '')}", HG_STATE_LOCK_FD=str(owner))
+            proc = subprocess.run([sys.executable, "-I", "-", str(live), str(dst), str(DEPLOY / "state_lock.py")],
+                                  input=self._backup_body(), text=True, capture_output=True, timeout=60,
+                                  env=env, pass_fds=(owner,))
+        finally:
+            thread.join(timeout=30)
+            os.close(owner)
+        self.assertNotEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("not owned by the switch", proc.stderr)
+        self.assertFalse((dst / ".hg-state-copy.json").exists(), "an attestation was written without the lock")
+
     def test_restore_state_never_makes_a_copy_attestation_live(self):
         text = (DEPLOY / "switch_service.sh").read_text(encoding="utf-8")
-        branch = text.split('if [ "$MODE" = "--restore-state" ]; then', 1)[1].split("else", 1)[0]
+        branch = text.split('if [ "$MODE" = "--restore-state" ]; then\n    require_state_locks', 1)[1].split("else", 1)[0]
         self.assertLess(branch.index("precheck_with"), branch.index('rm -f "$STATE.incoming-$TS/.hg-state-copy.json"'))
         self.assertLess(branch.index(".hg-state-copy.json"), branch.index('mv "$STATE.incoming-$TS" "$STATE"'))
         self.assertIn('HG_RUNTIME_STATE_DIR="$STATE" HG_SERVICE_CONFIG="$OLDCONF"', text)
@@ -614,6 +822,49 @@ class StateLockHelperTests(unittest.TestCase):
                 os.close(probe)
         finally:
             os.close(owner)
+
+    def test_a05_verify_never_retakes_a_lock_released_by_a_competitor_mid_check(self):
+        """Review A-05: the switch's descriptor lost the lock; a competitor holds it and lets go
+        right after verify's independent probe was refused. verify must still answer NOT HELD."""
+        import fcntl
+        import importlib.util
+        import os
+        spec = importlib.util.spec_from_file_location("hg_state_lock_under_test", DEPLOY / "state_lock.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _root, lock = self._lock_file()
+        owner = os.open(lock, os.O_RDONLY)
+        competitor = os.open(lock, os.O_RDWR)
+        try:
+            fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(owner, fcntl.LOCK_UN)                     # lost
+            fcntl.flock(competitor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+            class Interleave:
+                fired = False
+
+                def flock(self, fd, op):
+                    try:
+                        return fcntl.flock(fd, op)
+                    except BlockingIOError:
+                        if fd not in (owner, competitor) and not Interleave.fired:
+                            Interleave.fired = True
+                            fcntl.flock(competitor, fcntl.LOCK_UN)   # competitor lets go right now
+                        raise
+
+                def __getattr__(self, name):
+                    return getattr(fcntl, name)
+            mod.fcntl = Interleave()
+            with self.assertRaises(mod.LockNotHeld):
+                mod.verify_held(owner, str(lock))
+            probe = os.open(lock, os.O_RDONLY)
+            try:                                                  # and it did not take the lock
+                fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            finally:
+                os.close(probe)
+        finally:
+            os.close(owner)
+            os.close(competitor)
 
     def test_acquire_reports_contention_and_takes_nothing(self):
         import fcntl
