@@ -164,6 +164,22 @@ class RepairTests(HomeBase):
         self.assertTrue((self.home / report["backup"]).read_bytes().endswith(b'"ki'))
         self.assertEqual(len(self.nb.active()), 2)
 
+    def test_parseable_last_line_without_terminator_is_torn_and_repaired(self):
+        self.nb.add("Ghi chú một.", origin="test")
+        good = (self.home / "notes.jsonl").read_bytes()
+        self.nb.add("Ghi chú hai.", origin="test")
+        path = self.home / "notes.jsonl"
+        full = path.read_bytes()
+        path.write_bytes(full[:-1])                 # crash between the JSON and its "\n"
+        with self.assertRaises(MAEPError):
+            self.nb.active()
+        self.assertEqual(inspect(path)["status"], "TORN_LAST_LINE")
+        report = next(r for r in repair(self.home) if r["file"] == "notes.jsonl")
+        self.assertEqual(report["status"], "REPAIRED")
+        self.assertEqual(path.read_bytes(), good)
+        self.assertEqual((self.home / report["backup"]).read_bytes(), full[:-1])
+        self.assertEqual(len(self.nb.active()), 1)
+
     def test_damage_in_the_middle_is_not_touched(self):
         self.nb.add("Ghi chú một.", origin="test")
         self.nb.add("Ghi chú hai.", origin="test")

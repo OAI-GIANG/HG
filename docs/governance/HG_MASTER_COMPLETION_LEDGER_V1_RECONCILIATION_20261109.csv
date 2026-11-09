@@ -1,0 +1,16 @@
+id,workstream,status_2026_11_06,status_2026_11_09,delta_2026_11_09,next_action
+WS-01,"World Model, state ownership and consistency",IN_PROGRESS,IN_PROGRESS,"PR #83 merged (61d26cf): final ledger record without terminator is refused (C1, part 1 of T-EC07-FIX). Status unchanged.","Keep open: state-owner and state_dir inventory; EC03-EC06. EC07 part 2 (evidence_operation_id) is a separate work package."
+WS-02,C1-C4 Core Contracts and interfaces,REMAINING,REMAINING,No delta.,Contract conformance work not started.
+WS-03,"Governance, Policy Gate and bounded execution",IN_PROGRESS,IN_PROGRESS,No delta on main. PR #81 and PR #77 are HOLD.,Close caller/write-path coverage and principal identity separation (T-1) with negative tests.
+WS-04,"Evidence, independent verifier and acceptance",IN_PROGRESS,IN_PROGRESS,"PR #82 merged (5536c59): evidence ledger cross-store failure recovery tests. PR #83 merged (61d26cf): ledger C1 hardening. Status unchanged.","Independent false-accept oracle; cross-store recovery acceptance; evidence idempotency (EC07 part 2) not implemented."
+WS-05,Native Memory Intelligence PoC (HNMI),BLOCKED,BLOCKED,No delta.,Owner authorization for isolated PoC after design review.
+WS-06,Compression and Intelligence Density,REMAINING,REMAINING,No delta.,"Restore original compression target, metrics and device benchmark plan."
+WS-07,"Self-Questioning, Experiment Selector, VoI and EDE",REMAINING,REMAINING,No delta.,Owner decisions OD-02/OD-03/OD-05 and source recovery.
+WS-08,"Cache, Procedure, Router/Council and budget",IN_PROGRESS,IN_PROGRESS,No delta.,"Dependency fingerprint, invalidation and budget reconciliation tests."
+WS-09,H1-A/H1-B Android hardware and safety,REMAINING,REMAINING,No delta.,Minimal collector run only when device and authorization allow.
+WS-10,Ha Phong vertical slice and TTS,REMAINING,REMAINING,No delta.,Wait for WS-09 gates; ARM64/ONNX benchmark.
+WS-11,Cognitive Capability Integration and Cross-Agent,BLOCKED,BLOCKED,No delta.,Recover primary seven-interface artifact.
+WS-12,"Operational reliability, H1.2-H1.3.1 and release",IN_PROGRESS,IN_PROGRESS,"PR #77 head is c096cbf (ahead 16 / behind 5 vs main 61d26cf, 67 files). Unit tests 3.13/3.14 and RT06 green. l5-capability-gate BLOCKED. Zero formal reviews. PR #77 HOLD. main 61d26cf deployed on the phone (release 363fbc3a..., SWITCH_OK 2026-11-09 11:18 +07).","Owner decision on L5 evidence requirement and runner. Independent review of the 67-file diff. Rebuild candidate on current main before any merge decision."
+WS-13,HG V1 product quality and acceptance closure,BLOCKED,BLOCKED,No delta.,Owner decision F-D4; clean independent holdout set.
+WS-14,MAEP runtime.service migration and production cutover,BLOCKED,BLOCKED,No delta. PR #61 remains merged only to stt/maep-v1-20261022.,Owner inputs O-1..O-6 and A-1; ADR-012 gates.
+WS-15,Memory Intelligence research extensions (IR-33..IR-38),REMAINING,REMAINING,No delta.,Hypothesis cards and locked Vietnamese baseline.
