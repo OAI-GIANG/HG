@@ -10,10 +10,18 @@ import os
 import stat
 import threading
 import time
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
 from .core import MAEPError
+
+
+class LedgerAppendRefused(MAEPError):
+    """append_event refused the event before writing any event byte; no record was added.
+
+    Opening with O_CREAT may still have created an empty ledger file or its parent directory,
+    which reads as an empty ledger.
+    """
 
 _LOCKS_GUARD = threading.Lock()
 _LOCKS = {}
@@ -166,15 +174,24 @@ def _append_unlocked(fd, event):
 
 
 def append_event(path, event):
-    """Append a unique event under the canonical cross-instance/process ledger lock."""
+    """Append a unique event under the canonical cross-instance/process ledger lock.
+
+    Every refusal before the write (invalid event, lock or open failure, unsafe file, unreadable
+    or torn ledger, duplicate event_id) raises LedgerAppendRefused: no event byte was written. An
+    OSError from the write or the fsync is not a refusal; the bytes may be in the file.
+    """
     if not isinstance(event, dict) or not isinstance(event.get("event_id"), str) or not event["event_id"]:
-        raise MAEPError("event must have a non-empty event_id")
+        raise LedgerAppendRefused("event must have a non-empty event_id")
     path = Path(path)
-    with ledger_lock(path, exclusive=True, create=True) as fd:
-        current = _read_events_unlocked(path, fd)
-        _require_terminated_tail(fd)
+    with ExitStack() as stack:
+        try:
+            fd = stack.enter_context(ledger_lock(path, exclusive=True, create=True))
+            current = _read_events_unlocked(path, fd)
+            _require_terminated_tail(fd)
+        except (MAEPError, OSError) as exc:
+            raise LedgerAppendRefused(str(exc)) from exc
         if any(existing["event_id"] == event["event_id"] for existing in current):
-            raise MAEPError("event_id already exists; append an amendment with a new ID")
+            raise LedgerAppendRefused("event_id already exists; append an amendment with a new ID")
         _append_unlocked(fd, event)
     return event["event_id"]
 
