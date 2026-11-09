@@ -120,6 +120,23 @@ class TaskStoreRefusedAppendTests(unittest.TestCase):
         self.assertIn("state unchanged", str(loser))
         self.assertEqual(len(read_events(self.ledger)), 1)
 
+    def test_torn_tail_appearing_before_the_append_is_state_unchanged(self):
+        # Another writer leaves a torn tail after this store refreshed. append_event refuses before
+        # writing; the old readback then failed on the torn ledger and reported IN_DOUBT.
+        def tear_then_append(path, event):
+            with open(path, "ab") as stream:
+                stream.write(b'{"event_id":"FOREIGN@1"}')
+            return append_event(path, event)
+
+        store = TaskStore(self.ledger, policy_evaluator=self.evaluator, clock=Clock(),
+                          ledger_append=tear_then_append)
+        with self.assertRaises(MAEPError) as caught:
+            store.create_task(draft_task())
+        self.assertIs(type(caught.exception), MAEPError)
+        self.assertIn("state unchanged", str(caught.exception))
+        self.assertIn("torn ledger tail", str(caught.exception))
+        self.assertEqual(self.ledger.read_bytes(), b'{"event_id":"FOREIGN@1"}')
+
     def test_error_after_the_write_is_still_in_doubt(self):
         def append_then_fail(path, event):
             append_event(path, event)
