@@ -75,8 +75,12 @@ def _python_syntax(root, path):
         os.close(fd)
     digest = hashlib.sha256(raw).hexdigest()
     try:
-        source = raw.decode("utf-8")
-        compile(source, str(target), "exec", dont_inherit=True)
+        # Policy: verified sources are UTF-8 (an optional UTF-8 BOM is allowed).
+        raw.decode("utf-8-sig")
+        # Compile the bytes, not decoded text: the interpreter decodes a file by its
+        # BOM and PEP 263 coding declaration, and compiling text would ignore both,
+        # attesting files the interpreter refuses to load (e.g. an unknown codec).
+        compile(raw, str(target), "exec", dont_inherit=True)
     except UnicodeDecodeError as exc:
         return {"check": "PYTHON_SYNTAX", "status": "FAIL", "sha256": digest,
                 "bytes": len(raw), "reason": "source is not valid UTF-8", "offset": exc.start}
