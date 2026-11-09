@@ -1,0 +1,10 @@
+test_single_identity_and_no_external_approval_close_the_task (hg.tests.test_no_mandatory_independent_review_runtime.NoIndependentReviewerTests.test_single_identity_and_no_external_approval_close_the_task) ... ok
+test_task_closes_with_no_reviewer_of_any_kind (hg.tests.test_no_mandatory_independent_review_runtime.NoIndependentReviewerTests.test_task_closes_with_no_reviewer_of_any_kind) ... ok
+test_failing_verifier_still_blocks_closure (hg.tests.test_no_mandatory_independent_review_runtime.TechnicalControlsStillHoldTests.test_failing_verifier_still_blocks_closure) ... ok
+test_missing_authorization_still_prevents_the_effect (hg.tests.test_no_mandatory_independent_review_runtime.TechnicalControlsStillHoldTests.test_missing_authorization_still_prevents_the_effect) ... ok
+test_missing_verifier_is_unverified_not_closed (hg.tests.test_no_mandatory_independent_review_runtime.TechnicalControlsStillHoldTests.test_missing_verifier_is_unverified_not_closed) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.117s
+
+OK
