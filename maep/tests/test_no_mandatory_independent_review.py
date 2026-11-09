@@ -15,7 +15,8 @@ DECISION = ROOT / "docs" / "governance" / "OWNER_DECISION_OD-IR-20261109.md"
 CHECKLIST = ROOT / "maep" / "spec" / "ACCEPTANCE_CHECKLIST_V1.md"
 
 ROOT_FILES = ("CLAUDE.md", "README.md", "AGENTS.md", "CONTRIBUTING.md")
-GOVERNING_DIRS = ("maep", "docs", "deploy", ".claude", ".github/workflows")
+ROOT_GLOBS = ("*.md", "*.mdx", "*.rst", "*.txt", "*.yml", "*.yaml", "*.json", "*.toml")
+GOVERNING_DIRS = ("maep", "docs", "deploy", ".claude", ".github")
 TEXT_SUFFIXES = {".md", ".mdx", ".rst", ".txt", ".yml", ".yaml", ".json", ".toml", ".sh"}
 
 # Immutable dated records and evidence retain their historical wording; they do not govern.
@@ -74,6 +75,8 @@ def governing_files():
         path = ROOT / name
         if path.is_file():
             found.add(path)
+    for pattern in ROOT_GLOBS:
+        found.update(path for path in ROOT.glob(pattern) if path.is_file())
     for directory in GOVERNING_DIRS:
         base = ROOT / directory
         if not base.exists():
@@ -94,10 +97,15 @@ def mandates(text):
     """Return (line number, excerpt) for every line imposing independent review."""
     found = []
     for number, line in enumerate(text.splitlines(), 1):
-        if EXPLICITLY_NOT_REQUIRED.search(line):
-            continue
-        for match in MANDATE.finditer(line):
-            found.append((number, line[max(0, match.start() - 40):match.end() + 20].strip()))
+        # Evaluate each clause separately. A negative statement earlier in the same line
+        # must not hide a later contradictory positive gate after "but", ";" or a sentence end.
+        clauses = re.split(r"(?<=[.!?;])\s+|\s*;\s*|\b(?:but|however|nevertheless|yet)\b",
+                           line, flags=re.IGNORECASE)
+        for clause in clauses:
+            if EXPLICITLY_NOT_REQUIRED.search(clause):
+                continue
+            for match in MANDATE.finditer(clause):
+                found.append((number, clause[max(0, match.start() - 40):match.end() + 20].strip()))
     return found
 
 
@@ -117,6 +125,9 @@ class MandateScannerTests(unittest.TestCase):
             "Do not deploy without a separate technical reviewer",
             "A task cannot close without an independent reviewer",
             "The gate waits for another reviewer before release",
+            "No independent review is required, but do not merge until an independent reviewer approves",
+            "No independent approval is required; however, release waits for a different reviewer",
+            "Independent review is not required. Do not deploy without a separate security reviewer",
         )
         for text in cases:
             with self.subTest(text=text):

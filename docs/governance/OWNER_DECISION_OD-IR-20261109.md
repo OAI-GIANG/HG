@@ -97,3 +97,19 @@ Before/after evidence: `docs/evidence/HG-IR-20261109/` (public-safe) and `~/hg-v
 ## 7. Rollback
 
 Revert the pull request that added this file. Ruleset: not changed by this work; its before-state is `docs/evidence/HG-IR-20261109/ruleset_25706034_before.json`. Schedule prompt: unchanged, nothing to restore. A rollback that re-introduces an independent review is itself a new owner decision.
+
+## 8. Continuation update — 2026-11-09 (later execution)
+
+This section records later external changes. Sections 5 and 7 above preserve what was true at the time of the original decision; this dated continuation is the newer read-back.
+
+| Item | Later action and verified state |
+|---|---|
+| GitHub ruleset main-maep (id 25706034) | Updated successfully. required_approving_review_count=0; require_extra_approval_for_unattributed_changes=false; require_code_owner_review=false; require_last_push_approval=false; required_review_thread_resolution=false; required_reviewers=[]. Required status checks remain unittest (3.13) and unittest (3.14). Deletion and non-fast-forward protections remain enabled; enforcement remains active. Exact current read-back: docs/evidence/HG-IR-20261109/ruleset_25706034_after_readback.json. |
+| PR #87 | Description's independent-review conditions replaced by OD-IR-20261109 governance language; Draft flag successfully cleared using GitHub's Ready for review transition. It is OPEN / READY, head unchanged 5ac666df81216cfc3b6421eb3917e81e25718e2e. No merge or deployment was performed. |
+| PR #88 | Description updated to remove independent-review requirement. It remains OPEN / DRAFT because its scoped technical acceptance and broader G1 / EC01–EC12 acceptance status remain separate technical questions, not because a reviewer is missing. |
+| PR #77 | Description updated to remove independent-review and different-login requirements. It remains OPEN with technical HOLD for L5 process-observation capability, L3 trust-anchor provenance and actual target/listener evidence. |
+| PR #89 remediation branch | The policy scanner was hardened and governing-language supersession made explicit in CLAUDE.md; see continuation test results and commit recorded in docs/evidence/HG-IR-20261109/RESULTS.md. |
+| ChatGPT task automations | Master Planned Work Completion and HG G0 Mission Follow-up prompts were updated to remove mandatory independent-review dependencies. Both were already disabled and remain disabled; their schedules/enabled states were not changed. These automations are not the separate Claude hourly task below. |
+| Claude hourly task trig_01Ec7zQi4e5TGp7t2arV8rbv | Still NOT_CHANGED. Its proposed V1.2 prompt amendment remains in docs/evidence/HG-IR-20261109/schedule_prompt_V1.2_proposed.diff; the schedule's control plane was not accessible through the connected tools. The owner's latest decision and this record supersede its older V1.1 wording, but the separate prompt still needs to be updated in its own control plane. |
+
+No PR was merged and no production deployment was performed during this continuation. No changes were made to the original ~/HG worktree or its pre-existing uncommitted files.
