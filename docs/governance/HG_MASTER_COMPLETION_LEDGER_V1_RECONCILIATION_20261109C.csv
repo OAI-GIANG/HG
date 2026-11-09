@@ -1,0 +1,16 @@
+id,workstream,status_2026_11_09C,delta_2026_11_09C,next_action
+WS-01,"World Model, state ownership and consistency",IN_PROGRESS,No delta.,EC03-EC06 matrix needs the G1 V2.2 source (BLOCKED_SOURCE); decide whether ledger-level admission is in v1 scope (Q3: same-UID out of scope).
+WS-02,C1-C4 Core Contracts and interfaces,REMAINING,No delta.,Contract conformance work not started.
+WS-03,"Governance, Policy Gate and bounded execution",IN_PROGRESS,No delta.,"Owner decisions on #11 (AUDIT_ONLY, HG_AUDIT grant, guard rewrite), #55 (jev third-party MCP), #64 (close as v1 out of scope)."
+WS-04,"Evidence, independent verifier and acceptance",IN_PROGRESS,"PR #88 (B3, head 3c9b355) no longer waits for an independent review (owner decision OD-IR-20261109); exact-head CI 6/6 green; exact-head device evidence UNVERIFIED. False-accept oracle stays a technical acceptance item.",Exact-head device evidence for PR #88; false-accept oracle and cross-store recovery acceptance.
+WS-05,Native Memory Intelligence PoC (HNMI),BLOCKED,No delta.,Owner authorization for isolated PoC after design review.
+WS-06,Compression and Intelligence Density,REMAINING,No delta.,"Restore original compression target, metrics and device benchmark plan."
+WS-07,"Self-Questioning, Experiment Selector, VoI and EDE",REMAINING,No delta.,Owner decisions OD-02/OD-03/OD-05 and source recovery.
+WS-08,"Cache, Procedure, Router/Council and budget",IN_PROGRESS,No delta.,"Dependency fingerprint, invalidation and budget reconciliation tests; PR #55 model-routing part pending owner decision on jev."
+WS-09,H1-A/H1-B Android hardware and safety,REMAINING,No delta.,Minimal collector run only when device and authorization allow.
+WS-10,Ha Phong vertical slice and TTS,REMAINING,No delta.,Wait for WS-09 gates; ARM64/ONNX benchmark.
+WS-11,Cognitive Capability Integration and Cross-Agent,BLOCKED,No delta.,Recover primary seven-interface artifact.
+WS-12,"Operational reliability, H1.2-H1.3.1 and release",IN_PROGRESS,"Owner decision OD-IR-20261109: no mandatory independent review. PR #87 (B4, head 5ac666d) hold superseded: CI 6/6 green and Termux R4 ALL_DEVICE_GATES_PASS on the exact head, mergeable clean; Draft flag left for the owner (platform control refused). PR #77 independent-review items superseded; HOLD stays for L5 BLOCKED and its technical/owner items.","PR #87: Ready for review (owner), exact-head merge, push CI on merge SHA, deploy with authenticated READY. Hourly prompt V1.2 (owner). PR #77 owner decision on L5 environment."
+WS-13,HG V1 product quality and acceptance closure,BLOCKED,"No delta. The clean independent holdout set is a technical measurement requirement, not a reviewer; unchanged by OD-IR-20261109.",Owner decision F-D4; clean independent holdout set.
+WS-14,MAEP runtime.service migration and production cutover,BLOCKED,No delta.,Owner inputs O-1..O-6 and A-1; ADR-012 gates.
+WS-15,Memory Intelligence research extensions (IR-33..IR-38),REMAINING,No delta.,Hypothesis cards and locked Vietnamese baseline.
