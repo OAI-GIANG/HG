@@ -94,6 +94,25 @@ def ledger_lock(path, *, exclusive=True, create=False, wait_s=5.0, poll_s=0.02):
         local.release()
 
 
+def _check_line(line, line_number, events, seen):
+    if not line.strip():
+        raise MAEPError(f"blank ledger line at {line_number}")
+    try:
+        event = json.loads(line)
+    except json.JSONDecodeError as exc:
+        raise MAEPError(f"invalid ledger JSON at line {line_number}") from exc
+    if not line.endswith("\n"):
+        # A record is committed only with its terminator (C1). A parseable final line
+        # without one is a torn write: refuse it, never repair or truncate here.
+        raise MAEPError(f"torn ledger tail at line {line_number}: missing record terminator")
+    if not isinstance(event, dict) or not isinstance(event.get("event_id"), str) or not event["event_id"]:
+        raise MAEPError(f"invalid event record at line {line_number}")
+    if event["event_id"] in seen:
+        raise MAEPError(f"duplicate event_id at line {line_number}")
+    seen.add(event["event_id"])
+    events.append(event)
+
+
 def _read_events_unlocked(path, fd=None):
     path = Path(path)
     if fd is None and not path.exists():
@@ -101,24 +120,19 @@ def _read_events_unlocked(path, fd=None):
     events = []
     seen = set()
     if fd is None:
-        stream_context = path.open("r", encoding="utf-8")
+        stream_context = path.open("r", encoding="utf-8", newline="\n")
     else:
         os.lseek(fd, 0, os.SEEK_SET)
-        stream_context = os.fdopen(os.dup(fd), "r", encoding="utf-8")
+        stream_context = os.fdopen(os.dup(fd), "r", encoding="utf-8", newline="\n")
+    # newline="\n": records end only at "\n" (a "\r\n" line keeps its "\r" as JSON whitespace),
+    # so a lone "\r" can neither end nor split a record.
     with stream_context as stream:
-        for line_number, line in enumerate(stream, 1):
-            if not line.strip():
-                raise MAEPError(f"blank ledger line at {line_number}")
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError as exc:
-                raise MAEPError(f"invalid ledger JSON at line {line_number}") from exc
-            if not isinstance(event, dict) or not isinstance(event.get("event_id"), str) or not event["event_id"]:
-                raise MAEPError(f"invalid event record at line {line_number}")
-            if event["event_id"] in seen:
-                raise MAEPError(f"duplicate event_id at line {line_number}")
-            seen.add(event["event_id"])
-            events.append(event)
+        line_number = 0
+        try:
+            for line_number, line in enumerate(stream, 1):
+                _check_line(line, line_number, events, seen)
+        except UnicodeDecodeError as exc:
+            raise MAEPError(f"invalid ledger encoding (not UTF-8) after line {line_number}") from exc
     return events
 
 
@@ -129,6 +143,15 @@ def read_events(path):
         return []
     with ledger_lock(path, exclusive=False, create=False) as fd:
         return _read_events_unlocked(path, fd)
+
+
+def _require_terminated_tail(fd):
+    """Refuse to append onto a ledger whose last byte is not a record terminator."""
+    size = os.fstat(fd).st_size
+    if size == 0:
+        return
+    if os.pread(fd, 1, size - 1) != b"\n":
+        raise MAEPError("torn ledger tail: missing record terminator; refusing to append")
 
 
 def _append_unlocked(fd, event):
@@ -149,6 +172,7 @@ def append_event(path, event):
     path = Path(path)
     with ledger_lock(path, exclusive=True, create=True) as fd:
         current = _read_events_unlocked(path, fd)
+        _require_terminated_tail(fd)
         if any(existing["event_id"] == event["event_id"] for existing in current):
             raise MAEPError("event_id already exists; append an amendment with a new ID")
         _append_unlocked(fd, event)
@@ -160,6 +184,7 @@ def append_generated(path, factory):
     path = Path(path)
     with ledger_lock(path, exclusive=True, create=True) as fd:
         current = _read_events_unlocked(path, fd)
+        _require_terminated_tail(fd)
         event = factory(current)
         if (not isinstance(event, dict) or not isinstance(event.get("event_id"), str)
                 or not event["event_id"]):

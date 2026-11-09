@@ -191,5 +191,27 @@ class PlanTests(Base):
         self.assertEqual((snap["task"]["state"], snap["plan"]), ("ASSESSED", PLAN))
 
 
+class TornTailRestoreTests(Base):
+    """C1 through the real TaskStore: a torn final task event is never replayed."""
+
+    def test_torn_final_task_event_is_refused_and_operator_recovery_restores(self):
+        self.to_blocked()
+        committed = self.ledger.read_bytes()
+        expected = self.store.snapshot("T-1")
+        events_before = len(read_events(self.ledger))
+        self.restore().record_reassessment(
+            "T-1", resolution_evidence_refs=["E-1"], risk_assessment="safe",
+            expected_version=self.v())
+        full = self.ledger.read_bytes()
+        self.assertEqual(len(read_events(self.ledger)), events_before + 1)
+        self.ledger.write_bytes(full[:-1])          # crash before the final "\n"
+        torn = self.ledger.read_bytes()
+        with self.assertRaisesRegex(MAEPError, f"torn ledger tail at line {events_before + 1}"):
+            self.restore()
+        self.assertEqual(self.ledger.read_bytes(), torn)
+        self.ledger.write_bytes(committed)          # operator recovery: drop the torn record
+        self.assertEqual(self.restore().snapshot("T-1"), expected)
+
+
 if __name__ == "__main__":
     unittest.main()
