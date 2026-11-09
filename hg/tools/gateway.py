@@ -481,8 +481,13 @@ class ActionGateway:
         if pending is None:
             raise MAEPError("no pending action with that id")
         adapter = self._adapters.get(pending["tool"])
-        finding = adapter.reconcile(pending["intent"]) if adapter else "UNKNOWN"
-        if finding not in {"APPLIED", "NOT_APPLIED", "UNKNOWN"}:
+        try:
+            finding = adapter.reconcile(pending["intent"]) if adapter else "UNKNOWN"
+            if finding not in ("APPLIED", "NOT_APPLIED", "UNKNOWN"):
+                finding = "UNKNOWN"
+        except Exception:
+            # A failed or malformed inspection cannot establish that an external
+            # effect did not happen. Preserve the pending action and fail closed.
             finding = "UNKNOWN"
         known = finding != "UNKNOWN"
         decision = recovery_decision(known, bool(adapter and adapter.idempotent), known)
