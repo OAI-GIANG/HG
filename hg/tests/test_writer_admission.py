@@ -17,6 +17,7 @@ from hg.assistant.config import save as save_config
 from hg.memory.store import MemoryStore
 from hg.verification.evidence import EventLog
 from maep.task_store import TaskStore
+from maep.ledger import append_event, append_generated, read_events, LedgerAppendRefused
 from maep.core import POLICY_VERSION
 
 
@@ -159,6 +160,42 @@ print(json.dumps({"result":result}))
                 TaskStore(path, writer_session=session)
                 EventLog(root / "actions.jsonl", writer_session=session)
                 MemoryStore(root / "memory.jsonl", writer_session=session)
+            finally:
+                session.close()
+
+
+class LowLevelLedgerAdmissionTests(unittest.TestCase):
+    def test_low_level_append_primitives_require_the_runtime_lifetime_session(self):
+        with tempfile.TemporaryDirectory(prefix="hg-d3-ledger-admission-") as td:
+            root = Path(td) / "state"
+            root.mkdir()
+            marker = root / ".writer.lock"
+            marker.touch(mode=0o600)
+            task_path = root / "tasks.jsonl"
+            action_path = root / "actions.jsonl"
+
+            # Calling the public ledger primitives directly cannot bypass store admission.
+            with self.assertRaisesRegex(LedgerAppendRefused, "active lifetime session"):
+                append_event(task_path, {"event_id": "T-1@1"})
+            self.assertFalse(task_path.exists())
+            with self.assertRaisesRegex(MAEPError, "active lifetime session"):
+                append_generated(action_path, lambda current: {"event_id": "A-1"})
+            self.assertFalse(action_path.exists())
+
+            session = RuntimeWriterSession(root, os.open(marker, os.O_RDWR))
+            try:
+                append_event(task_path, {"event_id": "T-1@1"}, writer_session=session)
+                append_generated(action_path, lambda current: {"event_id": "A-1"},
+                                 writer_session=session)
+                self.assertEqual([e["event_id"] for e in read_events(task_path)], ["T-1@1"])
+                self.assertEqual([e["event_id"] for e in read_events(action_path)], ["A-1"])
+
+                # The standard store wrappers propagate the exact same capability.
+                store = TaskStore(root / "store-tasks.jsonl", writer_session=session)
+                store.create_task(_draft("T-STORE"))
+                log = EventLog(root / "store-actions.jsonl", writer_session=session)
+                log.append("ADMISSION_TEST", "T-STORE", {"ok": True})
+                self.assertEqual(log.events()[0]["kind"], "ADMISSION_TEST")
             finally:
                 session.close()
 

@@ -44,12 +44,15 @@ class DeployScriptTests(unittest.TestCase):
             "space_ok",                               # room for the state backup
             'sh -n "$BK/run.new"',                   # rendered run script parses
             "stop_service",                           # only now stop (graceful sv down)
-            'backup_state "$BK/state"',              # copy under the service's own writer lock
+            'lock_state_dir "$STATE" live',            # exclusive lock survives the complete cutover
+            'backup_state "$BK/state"',              # copy while the switch-owned lock is held
             'precheck_with "$ROOT"',                  # the new release must read that state
             'mv "$S/run.tmp" "$S/run"',               # then swap the run script
+            "unlock_state",                            # release only when the next service can acquire it
             'start_and_wait "$NEWCONF" "$NEW"')]      # READY on the new release with a stable pid
         self.assertEqual(order, sorted(order))
         self.assertIn("trap on_exit EXIT", full)
+        self.assertIn("restore_state_previous || say", full)
         for sig in ("HUP", "INT", "TERM"):
             self.assertRegex(full, rf"trap 'exit \d+' {sig}")
         stop = full[full.index("stop_service() {"):full.index("start_and_wait() {")]
@@ -65,8 +68,12 @@ class DeployScriptTests(unittest.TestCase):
         self.assertIn('PREV_RUN="$BK/run.current"', text)          # failure returns to the release that was running
         self.assertIn("the shared config changed since the switch", text)
         order = [text.index(m) for m in ("quota_ok", 'release_ok "$OLD_RUNCONF" "$OLD_RID"', "stop_service",
-                                         'backup_state "$BK/state"', 'precheck_with "$OLD_ROOT"',
-                                         'cp -p "$SRC/run.old" "$S/run.tmp"', 'start_and_wait "$OLD_RUNCONF" "$OLD_RID"')]
+                                         'lock_state_dir "$STATE" live', 'backup_state "$BK/state"',
+                                         'precheck_with "$OLD_ROOT"',
+                                         'lock_state_dir "$STATE.incoming-$TS" incoming',
+                                         'mv "$STATE" "$STATE.prev-$TS"',
+                                         'cp -p "$SRC/run.old" "$S/run.tmp"', "unlock_state",
+                                         'start_and_wait "$OLD_RUNCONF" "$OLD_RID"')]
         self.assertEqual(order, sorted(order))
         self.assertIn('sha256sum -c --quiet "$SRC/state.sha256"', text)
 
@@ -274,6 +281,91 @@ class DeployScriptTests(unittest.TestCase):
         rc, report = self._precheck(tmp, dst)
         self.assertEqual((rc, report["result"]), (0, "PASS"), report)
 
+
+    def test_backup_state_uses_existing_switch_lock_without_releasing_it(self):
+        import fcntl
+        import json
+        import os
+        import tempfile
+        import time
+
+        text = (DEPLOY / "switch_service.sh").read_text(encoding="utf-8")
+        body = text.split("backup_state() {", 1)[1].split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
+        tmp = self._tmp()
+        live = self._state_copy(tmp, "live-externally-locked")
+        (live / ".hg-state-copy.json").write_text('{"copy_id": "stale"}', encoding="utf-8")
+        os.chmod(live / ".hg-state-copy.json", 0o600)
+        (tmp / "bk").mkdir()
+        dst = tmp / "bk" / "state"
+        ready, release = tmp / "writer.ready", tmp / "writer.release"
+        lock_path = live / ".writer.lock"
+        helper = DEPLOY / "state_lock.py"
+        proc = subprocess.Popen(
+            [sys.executable, "-I", str(helper), "hold", str(lock_path), str(ready),
+             str(release), str(os.getpid())],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        contender = os.open(lock_path, os.O_RDWR)
+        try:
+            deadline = time.monotonic() + 5
+            while not ready.exists() and proc.poll() is None and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertTrue(ready.is_file(), "external switch lock helper did not become ready")
+            env = dict(os.environ, HG_STATE_LOCK_HELD="1")
+            result = subprocess.run([sys.executable, "-I", "-", str(live), str(dst)],
+                                    input=body, text=True, capture_output=True, timeout=60, env=env)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("state backed up:", result.stdout)
+            self.assertTrue((dst / ".hg-state-copy.json").is_file())
+            doc = json.loads((dst / ".hg-state-copy.json").read_text(encoding="utf-8"))
+            self.assertNotEqual(doc.get("copy_id"), "stale")
+            self.assertNotIn(".hg-state-copy.json", {i["path"] for i in doc["inventory"]})
+
+            # backup_state must not unlock the switch owner's still-live exclusive flock.
+            with self.assertRaises(BlockingIOError):
+                fcntl.flock(contender, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            release.touch()
+            out, err = proc.communicate(timeout=5)
+            self.assertEqual(proc.returncode, 0, out + err)
+            fcntl.flock(contender, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(contender, fcntl.LOCK_UN)
+        finally:
+            release.touch()
+            if proc.poll() is None:
+                proc.terminate()
+                proc.wait(timeout=3)
+            os.close(contender)
+
+    def test_restore_state_rollback_restores_previous_if_incoming_rename_failed(self):
+        import tempfile
+
+        full = (DEPLOY / "switch_service.sh").read_text(encoding="utf-8")
+        start = full.index("restore_state_previous() {")
+        func = full[start:full.index("\n}\n", start) + 3]
+        with tempfile.TemporaryDirectory(prefix="hg-state-rollback-") as td:
+            root = Path(td)
+            state = root / "state"
+            previous = root / "state.prev-T"
+            previous.mkdir()
+            (previous / "owner.txt").write_text("old-state", encoding="utf-8")
+            script = ("say() { :; }\nSTATE=" + repr(str(state)) + "\nTS=T\n" + func
+                      + "\nrestore_state_previous\n")
+            proc = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=5)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertEqual((state / "owner.txt").read_text(encoding="utf-8"), "old-state")
+            self.assertFalse(previous.exists())
+            shutil.rmtree(state)
+
+            # If an incoming state did become live, preserve it as FAILED and restore old state.
+            previous.mkdir()
+            (previous / "owner.txt").write_text("old-state-2", encoding="utf-8")
+            state.mkdir()
+            (state / "incoming.txt").write_text("incomplete-new-state", encoding="utf-8")
+            proc = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=5)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertEqual((state / "owner.txt").read_text(encoding="utf-8"), "old-state-2")
+            self.assertTrue((root / "state.failed-T" / "incoming.txt").is_file())
+
     def test_restore_state_never_makes_a_copy_attestation_live(self):
         text = (DEPLOY / "switch_service.sh").read_text(encoding="utf-8")
         branch = text.split('if [ "$MODE" = "--restore-state" ]; then', 1)[1].split("else", 1)[0]
@@ -285,6 +377,63 @@ class DeployScriptTests(unittest.TestCase):
         text = (DEPLOY / "install_release.sh").read_text(encoding="utf-8")
         self.assertIn('grep -q "HG command shim"', text)
         self.assertIn("not overwriting", text)
+
+
+class StateLockHelperTests(unittest.TestCase):
+    def test_switch_lock_holder_excludes_other_writers_until_explicit_release(self):
+        import fcntl
+        import os
+        import tempfile
+        import time
+
+        helper = DEPLOY / "state_lock.py"
+        with tempfile.TemporaryDirectory(prefix="hg-state-lock-") as td:
+            root = Path(td)
+            lock_path = root / ".writer.lock"
+            lock_path.touch(mode=0o600)
+            ready, release = root / "ready", root / "release"
+            parent_pid = os.getpid()
+            proc = subprocess.Popen(
+                [sys.executable, "-I", str(helper), "hold", str(lock_path), str(ready),
+                 str(release), str(parent_pid)],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            )
+            contender = os.open(lock_path, os.O_RDWR)
+            try:
+                deadline = time.monotonic() + 5
+                while not ready.exists() and proc.poll() is None and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                self.assertTrue(ready.is_file(), "lock helper did not publish readiness")
+                with self.assertRaises(BlockingIOError):
+                    fcntl.flock(contender, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                release.touch()
+                out, err = proc.communicate(timeout=5)
+                self.assertEqual(proc.returncode, 0, out + err)
+                fcntl.flock(contender, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(contender, fcntl.LOCK_UN)
+            finally:
+                release.touch()
+                if proc.poll() is None:
+                    proc.terminate()
+                    proc.wait(timeout=3)
+                os.close(contender)
+
+    def test_switch_lock_helper_refuses_a_symlink_lock_file(self):
+        import os
+        import tempfile
+        with tempfile.TemporaryDirectory(prefix="hg-state-lock-symlink-") as td:
+            root = Path(td)
+            target = root / "target"
+            target.touch(mode=0o600)
+            lock = root / ".writer.lock"
+            lock.symlink_to(target)
+            proc = subprocess.run(
+                [sys.executable, "-I", str(DEPLOY / "state_lock.py"), "hold",
+                 str(lock), str(root / "ready"), str(root / "release"), str(os.getpid())],
+                capture_output=True, text=True, timeout=5,
+            )
+            self.assertEqual(proc.returncode, 4)
+            self.assertIn("writer lock refused", proc.stderr)
 
 
 class InstallSealOrderTests(unittest.TestCase):

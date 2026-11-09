@@ -29,6 +29,10 @@ MIN_QUOTA="${HG_MIN_QUOTA:-20}"
 STOPPED=0          # 1 once a stop was requested (set BEFORE sv down: a timed-out stop still counts)
 SWAPPED=0          # 1 while $S/run is not the script that was running before this invocation
 STATE_SWAPPED=0    # 1 while the live state dir is the restored copy (--restore-state)
+STATE_LOCK_PID=""
+STATE_LOCK_RELEASE=""
+INCOMING_LOCK_PID=""
+INCOMING_LOCK_RELEASE=""
 BK=""              # recovery dir of this invocation
 PREV_RUN=""        # run script to put back on failure
 
@@ -62,13 +66,12 @@ on_exit() {
       sv -w 60 -v down hg-runtime > /dev/null 2>&1 || true
     fi
     if [ "$STATE_SWAPPED" = 1 ]; then
-      if [ -d "$STATE.prev-$TS" ]; then
-        mv "$STATE" "$STATE.failed-$TS" && mv "$STATE.prev-$TS" "$STATE" && say "state put back"
-      fi
+      restore_state_previous || say "state rollback incomplete; inspect $STATE.prev-$TS and $STATE.failed-$TS"
     fi
     if [ "$SWAPPED" = 1 ] && [ -n "$PREV_RUN" ]; then
       cp -p "$PREV_RUN" "$S/run.tmp" && mv "$S/run.tmp" "$S/run" && say "previous run script put back"
     fi
+    unlock_state
     if [ "$STOPPED" = 1 ] || [ "$SWAPPED" = 1 ] || [ "$STATE_SWAPPED" = 1 ]; then
       rm -f "$FINISH_STATE/hg-runtime-finish.count" "$FINISH_STATE/hg-runtime.HELD"
       sv up hg-runtime && say "hg-runtime started again (check: sv status hg-runtime)"
@@ -110,6 +113,61 @@ finish_ok() {
     || { say "hg-runtime/finish is not the reviewed version: run --install-finish first"; return 1; }
 }
 
+lock_state_dir() {   # lock_state_dir <state dir> <live|incoming>
+  lock_root="$1"; lock_kind="$2"
+  ready="$BK/.writer-$lock_kind.ready"
+  release="$BK/.writer-$lock_kind.release"
+  log="$BK/.writer-$lock_kind.log"
+  rm -f "$ready" "$release"
+  python3 -I -B "$HERE/state_lock.py" hold "$lock_root/.writer.lock" "$ready" "$release" "$$" > "$log" 2>&1 &
+  holder=$!
+  attempts=0
+  while [ ! -f "$ready" ] && kill -0 "$holder" 2>/dev/null && [ "$attempts" -lt 200 ]; do
+    sleep 0.05
+    attempts=$((attempts + 1))
+  done
+  if [ ! -f "$ready" ] || ! kill -0 "$holder" 2>/dev/null; then
+    touch "$release"
+    wait "$holder" 2>/dev/null || true
+    say "could not acquire $lock_kind state writer lock: $(tail -n 5 "$log" 2>/dev/null)"
+    return 1
+  fi
+  if [ "$lock_kind" = "live" ]; then
+    STATE_LOCK_PID="$holder"; STATE_LOCK_RELEASE="$release"
+  elif [ "$lock_kind" = "incoming" ]; then
+    INCOMING_LOCK_PID="$holder"; INCOMING_LOCK_RELEASE="$release"
+  else
+    say "unknown state lock kind: $lock_kind"
+    touch "$release"; wait "$holder" 2>/dev/null || true
+    return 1
+  fi
+  export HG_STATE_LOCK_HELD=1
+  say "$lock_kind state writer lock held by helper PID $holder"
+}
+
+unlock_state() {
+  if [ -n "$INCOMING_LOCK_PID" ]; then
+    touch "$INCOMING_LOCK_RELEASE"
+    wait "$INCOMING_LOCK_PID" 2>/dev/null || true
+    INCOMING_LOCK_PID=""; INCOMING_LOCK_RELEASE=""
+  fi
+  if [ -n "$STATE_LOCK_PID" ]; then
+    touch "$STATE_LOCK_RELEASE"
+    wait "$STATE_LOCK_PID" 2>/dev/null || true
+    STATE_LOCK_PID=""; STATE_LOCK_RELEASE=""
+  fi
+  unset HG_STATE_LOCK_HELD
+}
+
+restore_state_previous() {   # restore the old state even if the incoming rename never created $STATE
+  if [ -d "$STATE" ]; then
+    mv "$STATE" "$STATE.failed-$TS" || return 1
+  fi
+  if [ -d "$STATE.prev-$TS" ]; then
+    mv "$STATE.prev-$TS" "$STATE" && say "state put back" || return 1
+  fi
+}
+
 space_ok() {   # room for two copies of the state dir plus 1 MB
   need=$(( $(du -sk "$STATE" | cut -f1) * 2 + 1024 ))
   avail=$(df -Pk "$HOME" | awk 'NR==2 {print $4}')
@@ -118,10 +176,17 @@ space_ok() {   # room for two copies of the state dir plus 1 MB
 
 backup_state() {   # backup_state <dest>: copy the stopped state dir under its writer lock, hash both trees
   python3 -I - "$STATE" "$1" <<'PY'
-import datetime, fcntl, hashlib, json, os, subprocess, sys, uuid
+import datetime, fcntl, hashlib, json, os, stat, subprocess, sys, uuid
 src, dst = sys.argv[1], sys.argv[2]
-fd = os.open(os.path.join(src, ".writer.lock"), os.O_RDWR | getattr(os, "O_NOFOLLOW", 0))
-fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)          # fails if any writer still holds the state
+lock_path = os.path.join(src, ".writer.lock")
+fd = None
+if os.environ.get("HG_STATE_LOCK_HELD") == "1":
+    info = os.lstat(lock_path)
+    if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
+        sys.exit("state writer lock is not a regular non-symlink file")
+else:
+    fd = os.open(lock_path, os.O_RDWR | getattr(os, "O_NOFOLLOW", 0))
+    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)  # standalone use: no live writer may hold the state
 subprocess.run(["cp", "-a", src, dst], check=True)
 def tree(root):
     out = {}
@@ -137,7 +202,8 @@ def tree(root):
                 out[os.path.relpath(p, root)] = hashlib.sha256(f.read()).hexdigest()
     return out
 a, b = tree(src), tree(dst)
-os.close(fd)
+if fd is not None:
+    os.close(fd)
 if a != b:
     sys.exit("state copy differs from the source state")
 if any(value == "symlink" for value in a.values()):
@@ -228,11 +294,13 @@ if [ "${1:-}" = "--restore" ] || [ "${1:-}" = "--restore-state" ]; then
   finish_ok
   space_ok
   stop_service
+  lock_state_dir "$STATE" live
   backup_state "$BK/state"
   if [ "$MODE" = "--restore-state" ]; then
     cp -a "$SRC/state" "$STATE.incoming-$TS"
     precheck_with "$OLD_ROOT" "$STATE.incoming-$TS" "$BK/state-precheck.json"
     rm -f "$STATE.incoming-$TS/.hg-state-copy.json"   # the copy attestation must not become live state
+    lock_state_dir "$STATE.incoming-$TS" incoming
     mv "$STATE" "$STATE.prev-$TS"
     STATE_SWAPPED=1
     mv "$STATE.incoming-$TS" "$STATE"
@@ -242,6 +310,7 @@ if [ "${1:-}" = "--restore" ] || [ "${1:-}" = "--restore-state" ]; then
   fi
   cp -p "$SRC/run.old" "$S/run.tmp" && mv "$S/run.tmp" "$S/run"
   SWAPPED=1
+  unlock_state
   start_and_wait "$OLD_RUNCONF" "$OLD_RID"
   SWAPPED=0; STATE_SWAPPED=0
   sha256sum "$S/run" > "$BK/run.restored.sha256"
@@ -295,12 +364,14 @@ if grep -q "@ROOT@\|@CONF@" "$BK/run.new"; then say "run template not fully rend
 
 # 4. stop, back up the state under the service's own lock, prove the new release can read it
 stop_service
+lock_state_dir "$STATE" live
 backup_state "$BK/state"
 precheck_with "$ROOT" "$BK/state" "$BK/state-precheck.json"
 
 # 5. new run script, start, READY on the new release with a stable pid
 install -m 700 "$BK/run.new" "$S/run.tmp" && mv "$S/run.tmp" "$S/run"
 SWAPPED=1
+unlock_state
 start_and_wait "$NEWCONF" "$NEW"
 SWAPPED=0
 sha256sum "$S/run" "$S/finish" "$NEWCONF" > "$BK/hashes.after"

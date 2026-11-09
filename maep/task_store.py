@@ -188,7 +188,10 @@ class TaskStore:
         self._ledger_path = ledger_path
         self._evaluator = policy_evaluator
         self._clock = clock or _utc_now
-        self._append = ledger_append or append_event
+        # The default low-level writer receives the same lifetime capability checked above.
+        # An injected append function is an explicit trusted test/extension boundary.
+        self._append = (ledger_append if ledger_append is not None else
+                        lambda path, event: append_event(path, event, writer_session=self._writer_session))
         self._records = {}
         self._lock = threading.RLock()
         self._writer_key = None
