@@ -83,3 +83,16 @@ FACT (defects, reproduced before the fix, 19 failing cases): (1) `repair` blocke
 FACT: PR #104 squash-merged as `dc55ba08906086db12367cc9cb9c05d9643e7e47` (tree identical to head `b816bb3`); PR CI on `b816bb3` success (runs 42761364540, 42761335488 unittest 3.13/3.14; 42761364672 rt06-anchor 3.13/3.14). Local: oracle 19 OK, MAEP 362 OK, HG 626 OK (skip 3), hooks 32 OK, selfcheck 0, bench 0. Recovery branch `recovery/main-pre-pr104-20261110` = `6f9daa7`.
 
 Deploy: NOT_EXECUTED (no phone access in this run). The change affects the owner's `hg repair` / config loading, not the runtime service; install with the next runtime batch. Production stays `7698097` (release `13c335cc`).
+
+## 10. Addendum 2026-11-10 13:17–13:40 +07 (hourly run, phone reachable, deploy deferred) — WS-04 release read oracle (#106)
+
+FACT: `hg/tests/test_release_read_false_accept_oracle.py` builds a release from a real Git commit and damages the installed tree (14 cases: flipped/truncated/appended/emptied/swapped bytes, missing/extra file, injected bytecode, exec bit added/removed, FIFO, file→directory, symlinked file/directory), the root (symlink, wrong release id), the manifest (13 cases) or the archive (7 cases), and asserts that `verify_root` / `verify_archive` raise `ReleaseError` within 5 s and never return VERIFIED. Control: the intact release verifies. Every installed-tree case was already refused.
+
+FACT (defects, reproduced before the fix, 7 failing subcases): (1) a FIFO at the manifest or archive path blocked `verify_root`/`verify_archive` until a writer opened it — `verify_root` runs on every `/ready` and `/v1/integrity`, so the request thread never answered; (2) a symlinked manifest or archive was followed, while service preflight refuses a symlinked manifest; (3) a directory archive escaped as `IsADirectoryError`. Fix in `hg/release.py`: `_read_regular_file` (`O_NOFOLLOW|O_NONBLOCK`, `S_ISREG`, blocking restored, every failure → `ReleaseError`). Not covered by design: owner write bits on installed files (deploy verifies before sealing), extra empty directories.
+
+FACT: PR #106 squash-merged as `09a131d0b13c354f1ff039bad1527f3f58acc61c` (tree `69e05f8b…` identical to head `612d65d`); PR CI on `612d65d` success (runs 42768572097, 42768541704 unittest 3.13/3.14; 42768571991 rt06-anchor 3.13/3.14). Local: oracle + `test_release` 23 OK (skip 2, euid 0), MAEP 362 OK, HG 633 OK (skip 3), hooks 32 OK, selfcheck 0, bench 0. Recovery branch `recovery/main-pre-pr106-20261110` = `ea90bd8`.
+
+FACT (phone, read-only): `hg-runtime` pid 9512 up since ≈12:06 +07 (log `HG_RUNTIME_READY` 05:06:24 UTC), same release `13c335cc…`; the restart since pid 15043 (§8) has an UNVERIFIED cause. `.autonomous-run.lock` is in RELEASED state.
+
+Deploy: NOT_EXECUTED by choice. Another session was running tests on the phone at 13:18 +07 (`~/HG-RCME-INTEGRATION-20261110`, evidence `audit-rcme-integration-20261110`, `audit-pr77-*`); a deploy runs the Termux suites (5 s oracle deadlines) and switches the service, so it was not started concurrently. #104 and #106 are fail-closed robustness fixes, not false accepts; install them together with the next batch when the phone is idle. Production stays `7698097` (release `13c335cc`).
+
