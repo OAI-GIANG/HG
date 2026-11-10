@@ -17,6 +17,7 @@ reconcile() inspects live state.
 import concurrent.futures
 import hashlib
 import os
+import stat
 import tempfile
 import threading
 import uuid
@@ -93,6 +94,38 @@ class _Permit:
         """Re-ask authority at the moment of the effect; anything but a fresh True refuses."""
         if self._recheck is None or self._recheck() is not True:
             raise AdapterRefused("authority for this effect is no longer valid")
+
+
+def read_regular_file(path, max_bytes=None):
+    """Bytes of the regular file at `path`, never following a final symlink or blocking.
+
+    O_NOFOLLOW refuses a symlink; O_NONBLOCK keeps a FIFO from blocking the open; the
+    fstat check then refuses anything that is not a regular file before a read. Raises
+    OSError on every refusal. Returns None if the file is larger than `max_bytes`.
+    Parent components are checked by the caller (`_RootedFileAdapter._rel`).
+    """
+    flags = (os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+             | getattr(os, "O_CLOEXEC", 0))
+    fd = os.open(path, flags)
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            raise OSError(f"not a regular file: {Path(path).name}")
+        if max_bytes is not None and st.st_size > max_bytes:
+            return None
+        os.set_blocking(fd, True)
+        chunks, total = [], 0
+        while True:
+            chunk = os.read(fd, 1 << 16)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            total += len(chunk)
+            if max_bytes is not None and total > max_bytes:
+                return None
+        return b"".join(chunks)
+    finally:
+        os.close(fd)
 
 
 def _sha256(data):
@@ -179,6 +212,10 @@ class _RootedFileAdapter(ToolAdapter):
         full = (self._root / path).resolve()
         if full != self._root and self._root not in full.parents:
             raise AdapterInputError("path escapes the adapter root")
+        if full != self._root.joinpath(*path.parts):
+            # Authorization and scope are checked on the lexical path; a symlink in any
+            # component would make the effect land on a different file than the one allowed.
+            raise AdapterInputError("path must not pass through a symlink")
         return path.as_posix(), full
 
     def resource_for(self, params):
@@ -225,16 +262,21 @@ class LocalFileWriteAdapter(_RootedFileAdapter):
 
     def verify(self, params, observed):
         _rel, full = self._rel(params["path"])
-        return full.is_file() and _sha256(full.read_bytes()) == observed.get("sha256")
+        try:
+            return _sha256(read_regular_file(full)) == observed.get("sha256")
+        except OSError:
+            return False
 
     def reconcile(self, intent):
         try:
             _rel, full = self._rel(intent["path"])
         except (AdapterInputError, KeyError):
             return "UNKNOWN"
-        if full.is_file() and _sha256(full.read_bytes()) == intent.get("sha256"):
-            return "APPLIED"
-        return "NOT_APPLIED"
+        try:
+            data = read_regular_file(full)
+        except OSError:
+            return "NOT_APPLIED"  # absent, or not the regular file our atomic replace leaves
+        return "APPLIED" if _sha256(data) == intent.get("sha256") else "NOT_APPLIED"
 
 
 class LocalFileReadAdapter(_RootedFileAdapter):
@@ -251,9 +293,10 @@ class LocalFileReadAdapter(_RootedFileAdapter):
 
     def _perform(self, params):
         rel, full = self._rel(params["path"])
-        if not full.is_file():
-            raise AdapterFailure("file does not exist")
-        data = full.read_bytes()
+        try:
+            data = read_regular_file(full)
+        except OSError:
+            raise AdapterFailure("path is not an existing regular file")
         return {"path": rel, "sha256": _sha256(data), "bytes": len(data),
                 "content": data.decode("utf-8", errors="replace")}
 
