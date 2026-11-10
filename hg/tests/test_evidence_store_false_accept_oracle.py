@@ -22,6 +22,9 @@ from maep.core import MAEPError
 _PAYLOAD = b"raw evidence: 12 passed, 0 failed\n"
 _OTHER = b"different evidence bytes\n"
 _PROMPT_SECONDS = 5.0
+# Android (Termux) Python has no os.link: apps cannot create hard links there, so the
+# hardlink damage case cannot arise on that platform.
+_HAS_LINK = hasattr(os, "link")
 
 
 def _task(task_id):
@@ -133,6 +136,7 @@ class EvidenceStoreReadOracleTests(unittest.TestCase):
         os.replace(self.store._blob_path(other["sha256"]), self.blob)
         self._assert_never_accepted("swapped blob")
 
+    @unittest.skipUnless(_HAS_LINK, "platform cannot create hard links")
     def test_hardlink_to_another_blob_is_never_accepted(self):
         other = self.store.put(_OTHER)
         self._replace_blob(lambda p: os.link(self.store._blob_path(other["sha256"]), p))
