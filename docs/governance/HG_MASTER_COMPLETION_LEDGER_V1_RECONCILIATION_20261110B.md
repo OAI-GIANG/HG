@@ -134,3 +134,13 @@ FACT (defects, reproduced before the fix, 11 of 15 cases failing): (1) the gatew
 FACT: PR #113 squash-merged as `4eaac81132ae57028cf2432eec911a01b6ecf1fd` (tree `e2144894…` identical to head `b448ccc`); PR CI on `b448ccc` success (runs 42798868753, 42798901032 unittest 3.13/3.14; 42798901359 rt06-anchor 3.13/3.14). Local (Linux, Python 3.13.18, uid 0): oracle 15 OK, MAEP 370 OK, HG 653 OK (skip 3), hooks 32 OK, selfcheck 0, bench 0. Recovery branch `recovery/main-pre-pr113-20261110` = `5ef8054`.
 
 Deploy: BLOCKED_EXTERNAL_ACTION (same cause as §12–§13; not retried this run — two consecutive launch refusals by the session's permission control). Undeployed merged runtime changes: #109, #111, #113. Production stays `5476315` (release `adff9c8d`). Risk while blocked: the running service still follows symlinks inside a granted file scope; exploitation needs a symlink placed in the adapter root (untrusted workspace content or a same-UID writer). Unblock: launch a deploy of current `main` on the phone (re-prepare from `deploy-b2a2ad3-20261110` with `C`/`MAIN`/`TREE` updated), or allow the hourly session to launch it.
+
+## 15. Addendum 2026-11-10 18:14–18:30 +07 (hourly run, phone reachable) — #109/#111/#113 deployed (code `4eaac81`, main `34c10fb`)
+
+FACT: phone idle before the run (only `hg serve` pid 20590, release `adff9c8d`; lock RELEASED). Push CI on `4eaac81`: unittest 3.13/3.14 success. `4eaac81..34c10fb` touches only the ledger 20261110B files; `deploy/` and `hg/release.py` unchanged since `5476315`.
+
+FACT: deploy prepared in `~/hg-v1-evidence/deploy-4eaac81-20261110/` (clean clone `~/hg-deploy-control/4eaac81…/repo`, HEAD `4eaac81` / tree `e2144894…`, 0 dirty; `run-deploy.sh` = `deploy-b2a2ad3…` script with only `C`, `MAIN`, `TREE`, smoke tag changed, `diff.log`). This time the launch was not refused. `RESULT=PASS`, `DEPLOY_FIX_COMPLETE` 18:22:22 +07: release `030a88d534bd…`, Termux MAEP 370 OK (skip 3), HG 653 OK (skip 1), switch `switch-20261110T112210Z`, smoke write/readback/replay/409 PASS. `SHA256SUMS` re-checked, 0 mismatches.
+
+FACT (independent re-read after the run): `sv status` pid 30577 up; `ready` 200 READY / integrity VERIFIED / trust LOADED / `trust_commit` `34c10fb`; `~/.config/hg/assistant-release` → `030a88d5…`. Rollback: `sh deploy/termux/switch_service.sh --restore ~/hg-v1-evidence/switch-20261110T112210Z`.
+
+So production now includes #109 (pinned verifier worker bytes), #111 (trust-root read oracle) and #113 (file adapter path oracle). The symlink risk recorded in §14 is closed. No merged runtime change is left undeployed.
