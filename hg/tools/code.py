@@ -18,13 +18,14 @@ import difflib
 import hashlib
 import os
 import re
+import stat
 import subprocess
 import sys
 import urllib.error
 import urllib.parse
 import urllib.request
 
-from hg.tools.gateway import AdapterFailure, AdapterInputError, ToolAdapter, _RootedFileAdapter
+from hg.tools.gateway import AdapterFailure, AdapterInputError, ToolAdapter, _RootedFileAdapter, read_regular_file
 
 SKIP_DIRS = {".git", "__pycache__", ".venv", "node_modules"}
 MAX_FILE_BYTES = 1_000_000
@@ -32,9 +33,17 @@ MAX_MATCHES = 200
 
 
 def _iter_text_files(full):
-    if full.is_file():
+    """Candidate files under `full`. os.walk does not descend into symlinked directories;
+    symlinked or non-regular files are skipped later by `_read_text`."""
+    try:
+        mode = os.lstat(full).st_mode
+    except OSError:
+        raise AdapterFailure("path does not exist")
+    if stat.S_ISREG(mode):
         yield full
         return
+    if not stat.S_ISDIR(mode):
+        raise AdapterFailure("path is not a regular file or directory")
     for dirpath, dirnames, filenames in os.walk(full):
         dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS and not d.startswith("."))
         for name in sorted(filenames):
@@ -42,10 +51,14 @@ def _iter_text_files(full):
 
 
 def _read_text(path):
+    """UTF-8 text of a regular, non-symlinked file of at most MAX_FILE_BYTES, else None.
+
+    Never follows a symlinked file (it may point outside the root or the authorized scope)
+    and never blocks on a FIFO or device.
+    """
     try:
-        if path.stat().st_size > MAX_FILE_BYTES:
-            return None
-        return path.read_bytes().decode("utf-8")
+        data = read_regular_file(path, MAX_FILE_BYTES)
+        return None if data is None else data.decode("utf-8")
     except (OSError, UnicodeDecodeError):
         return None
 
