@@ -91,3 +91,20 @@ No production Runtime/Ollama lifecycle operation, inference, data migration, rel
 - Gradle 9.9.1 release/security notes: https://gradle.org/releases/
 
 External pages establish package/version/build-tool context only; they do not replace the actual CI execution evidence.
+
+
+## 8. CI execution history and remediation
+
+### Run #1 / initial push
+
+GitHub Actions run `42895305112` (commit `5bb0ce0686a18b4c2cde28089796f34e59b85215`) failed in the `android-actions/setup-android@v3` step before Gradle build. The runner's preinstalled command-line tools were detected, but the action attempted to install the obsolete SDK package `tools`; `sdkmanager` returned `Failed to find package 'tools'`. No Broker or probe APK was built, and no Android security test ran.
+
+### Run #2 / first hosted-SDK direct invocation
+
+GitHub Actions runs `42895661350` (push) and `42895672476` (pull_request), on commit `6378345c288d01534390ad59b30a4210a5e04b93`, failed at the SDK installation step before build. The runner log confirmed the Android SDK root and the preinstalled command-line tools path, but the SDK manager directory was not in PATH; `command -v sdkmanager` was empty and the guarded step exited 1. No APK was built and no Binder call was attempted.
+
+### Current correction
+
+The workflow now resolves the SDK manager by the verified hosted-runner path `$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager`, with a version-sorted fallback search beneath `$ANDROID_HOME/cmdline-tools`. It invokes the resolved executable directly. This change is being pushed in a new commit so CI can test the correction. The prior failures are retained as evidence and are not counted as successful tests.
+
+**Qualification state remains PENDING.** A new successful build/unit job is required before the emulator job can begin; final emulator negative Binder proof remains separate and still does not establish physical OPPO device behavior or positive Termux caller behavior.
