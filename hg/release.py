@@ -13,6 +13,7 @@ import io
 import json
 import os
 from pathlib import Path, PurePosixPath
+import stat
 import subprocess
 import tarfile
 import tempfile
@@ -153,9 +154,38 @@ def build_release(repo: str | Path, commit: str, archive_path: str | Path, manif
     return doc
 
 
-def _load_manifest(path: str | Path):
+def _read_regular_file(path: str | Path, what: str) -> bytes:
+    """Read a manifest or archive that must be a regular file at the named path.
+
+    O_NOFOLLOW refuses a symlink in the final component (the service preflight already
+    requires a symlink-free manifest path; per-request checks must agree). O_NONBLOCK keeps
+    a FIFO from blocking the caller -- a blocked `/ready` thread never answers -- and the
+    regular-file check then refuses it. Every failure is a ReleaseError.
+    """
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0)
     try:
-        raw = Path(path).read_bytes()
+        fd = os.open(path, flags)
+    except OSError as exc:
+        raise ReleaseError(f"release {what} cannot be opened as a regular, non-symlink file") from exc
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise ReleaseError(f"release {what} must be a regular file")
+        os.set_blocking(fd, True)
+        chunks = []
+        while True:
+            chunk = os.read(fd, 1 << 20)
+            if not chunk:
+                return b"".join(chunks)
+            chunks.append(chunk)
+    except OSError as exc:
+        raise ReleaseError(f"release {what} could not be read") from exc
+    finally:
+        os.close(fd)
+
+
+def _load_manifest(path: str | Path):
+    raw = _read_regular_file(path, "manifest")
+    try:
         doc = json.loads(raw.decode("utf-8"), object_pairs_hook=_unique_object,
                          parse_constant=_reject_constant)
     except (OSError, UnicodeError, ValueError) as exc:
@@ -232,7 +262,7 @@ def _verify_content_map(expected_rows, actual_files):
 
 def verify_archive(repo: str | Path, archive_path: str | Path, manifest_path: str | Path):
     repo = Path(repo).resolve()
-    archive = Path(archive_path).read_bytes()
+    archive = _read_regular_file(archive_path, "archive")
     doc = _load_manifest(manifest_path)
     if doc.get("archive_sha256") != _sha256(archive):
         raise ReleaseError("release archive SHA-256 mismatch")
