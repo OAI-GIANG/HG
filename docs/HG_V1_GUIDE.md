@@ -106,6 +106,7 @@ Model tắt hoặc chưa tải: `hg ask` vẫn chạy, đưa nguyên văn ghi ch
 |---|---|
 | `Sổ cái hỏng hoặc không đọc được … Chạy: hg repair` | `hg repair` — HG sao lưu file rồi bỏ đúng dòng cuối bị cắt (xảy ra khi Android tắt Termux giữa lúc ghi). Hỏng ở giữa file thì HG không tự sửa |
 | `torn ledger tail at line N: missing record terminator` | Bản ghi cuối bị cắt trước ký tự xuống dòng nên chưa được ghi xong; HG từ chối đọc thay vì coi nó là đã ghi. Sổ cái trợ lý (thư mục `HG_HOME`): `hg repair`. Sổ cái của dịch vụ (`tasks.jsonl`, `actions.jsonl`, `memory.jsonl` trong thư mục trạng thái dịch vụ) không có công cụ tự sửa: `sv down hg-runtime`, sao lưu file, xóa đúng dòng cuối không có ký tự xuống dòng, rồi `sv up hg-runtime` |
+| `duplicate JSON key in ledger record at line N` | Một bản ghi trong sổ cái lặp lại cùng một khóa JSON. HG không bao giờ ghi như vậy, nên file đã bị sửa ngoài HG; HG từ chối đọc thay vì chọn một trong hai giá trị. Không tự sửa: dừng dịch vụ, sao lưu file, khôi phục từ bản sao lưu đáng tin |
 | `model MISSING` | `ollama pull qwen3:1.7b` rồi `hg model use qwen3:1.7b` |
 | `supervised Ollama is not running` | `sv up ollama` |
 | `digest changed` | Kiểm tra lại, rồi `hg model use <tên>` để ghim lại |

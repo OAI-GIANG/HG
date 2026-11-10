@@ -69,7 +69,9 @@ def ledger_lock(path, *, exclusive=True, create=False, wait_s=5.0, poll_s=0.02):
     fd = None
     try:
         flags = (os.O_RDWR | os.O_CREAT | os.O_APPEND) if create else os.O_RDONLY
-        flags |= getattr(os, "O_NOFOLLOW", 0)
+        # O_NONBLOCK: opening a FIFO for reading would otherwise wait for a writer, hanging
+        # runtime start and every status read; the regular-file check below then refuses it.
+        flags |= getattr(os, "O_NOFOLLOW", 0) | os.O_NONBLOCK
         try:
             fd = os.open(target, flags, 0o600)
         except OSError as exc:
@@ -79,6 +81,7 @@ def ledger_lock(path, *, exclusive=True, create=False, wait_s=5.0, poll_s=0.02):
         # created 0600 above; confidentiality is enforced by the private state/home directory.
         if not stat.S_ISREG(st.st_mode) or st.st_uid != os.getuid() or stat.S_IMODE(st.st_mode) & 0o022:
             raise MAEPError("ledger must be an owner-owned regular file that no other user can write")
+        os.set_blocking(fd, True)   # regular file confirmed; restore ordinary I/O semantics
         mode = (fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH) | fcntl.LOCK_NB
         deadline = time.monotonic() + max(0.0, wait_s)
         while True:
@@ -105,11 +108,29 @@ def ledger_lock(path, *, exclusive=True, create=False, wait_s=5.0, poll_s=0.02):
         local.release()
 
 
+class _DuplicateKey(ValueError):
+    pass
+
+
+def _unique_object(pairs):
+    # json.loads keeps the last value of a repeated key, while other parsers may keep the
+    # first. The writer serialises dicts and never repeats a key, so a record that does is
+    # ambiguous and is refused rather than read one way.
+    obj = {}
+    for key, value in pairs:
+        if key in obj:
+            raise _DuplicateKey(key)
+        obj[key] = value
+    return obj
+
+
 def _check_line(line, line_number, events, seen):
     if not line.strip():
         raise MAEPError(f"blank ledger line at {line_number}")
     try:
-        event = json.loads(line)
+        event = json.loads(line, object_pairs_hook=_unique_object)
+    except _DuplicateKey as exc:
+        raise MAEPError(f"duplicate JSON key in ledger record at line {line_number}") from exc
     except json.JSONDecodeError as exc:
         raise MAEPError(f"invalid ledger JSON at line {line_number}") from exc
     if not line.endswith("\n"):
