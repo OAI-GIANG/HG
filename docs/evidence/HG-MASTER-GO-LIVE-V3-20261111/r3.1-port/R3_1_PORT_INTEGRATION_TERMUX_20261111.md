@@ -91,3 +91,23 @@ At the latest read-only observation on 2026-11-11 around 03:09 Asia/Bangkok:
 These PIDs differ from the earlier CP01 process observation. This task did not invoke `sv restart`, `sv down/up`, kill, or any Runtime/Ollama lifecycle action. The service log proves a fresh supervisor start at the timestamp above, but the available evidence does not identify who or what initiated it; root cause is **UNDETERMINED**. Treat this as an observed process-lifecycle change, not as evidence of an STT-initiated restart. No inference request was sent.
 
 Evidence checksum-manifest SHA-256: `14c4cea9c6f631a91f2232159ffc9730144d971e113444a3f104817fcb856dbd` (`SHA256SUMS`).
+
+
+## 8. Independent hosted CI verification — GitHub Actions run #342
+
+Run `42893260136` for commit `62eb07670c327b9e17a7dd0c7e0f5f114b0b8ee5` completed **SUCCESS** on both hosted Python environments: Python 3.13.18 (job `130099591150`) and Python 3.14.10 (job `130099590581`).
+
+Each job passed:
+- MAEP: 370 tests
+- HG runtime: 735 tests
+- Agent Guard hooks: 32 tests
+- Runtime self-check, benchmark and deterministic release build/verification
+
+Each benchmark reported 10/10 cases, unauthorized effects 0, false closures 0. Deterministic release builds ran twice per job and matched byte-for-byte: 350 files, archive SHA-256 `8dc9610d54b26a2eb86a0fb8d79b0bb3ef33b83da1eeef8dc239e93af6726d01`, release ID `0f5e2e3b466d8f2a82013b2fb370ac2514f9f0566397466e53d55154a52c00a1`, tree `fa697de190ec38e93be90575850609526ea079b9`, verification `VERIFIED`.
+
+Run record and checksums:
+- `GITHUB_ACTIONS_RUN_42893260136.json`
+- `GITHUB_ACTIONS_RUN_42893260136.sha256`
+- `SHA256SUMS` (current manifest SHA-256: `4ecca0ac878d5aaa0a7484b587257519c2806906198a8c591710c80bad126388`)
+
+The CI self-check's explicit limitations are retained: authorization grants are in-process test fixtures, not anchored to the trust root (RT-06 BLOCKED), and verifiers are internal, not independent review. This run does not supply Android Broker, physical device UID/Binder, runtime trust provenance, full model-call gating, staging recovery or production E2E evidence. Therefore component G3 is strengthened, but global G3 remains PARTIAL and the V3 mission remains NO-GO.

@@ -1,0 +1,99 @@
+{
+  "schema": "hg.github-actions-ci-attestation.v1",
+  "repository": "OAI-GIANG/HG",
+  "branch": "stt/hg-memory-continuity-r3.1-port-20261111",
+  "commit": "62eb07670c327b9e17a7dd0c7e0f5f114b0b8ee5",
+  "workflow": "MAEP tests",
+  "workflow_id": 393755439,
+  "run_id": 42893260136,
+  "run_number": 342,
+  "event": "push",
+  "html_url": "https://github.com/OAI-GIANG/HG/actions/runs/42893260136",
+  "created_at_utc": "2026-11-10T20:14:08Z",
+  "updated_at_utc": "2026-11-10T20:17:02Z",
+  "run_conclusion": "success",
+  "jobs": [
+    {
+      "job_id": 130099591150,
+      "name": "unittest (3.13)",
+      "python_version": "3.13.18",
+      "conclusion": "success",
+      "tests": {
+        "maep": 370,
+        "hg_runtime": 735,
+        "agent_guard": 32
+      },
+      "steps": {
+        "maep_unit_tests": "success",
+        "hg_runtime_tests": "success",
+        "hg_runtime_selfcheck": "success",
+        "benchmark": "success",
+        "agent_guard_hooks": "success",
+        "deterministic_release_build_and_verification": "success"
+      },
+      "release": {
+        "files": 350,
+        "archive_sha256": "8dc9610d54b26a2eb86a0fb8d79b0bb3ef33b83da1eeef8dc239e93af6726d01",
+        "release_id": "0f5e2e3b466d8f2a82013b2fb370ac2514f9f0566397466e53d55154a52c00a1",
+        "tree": "fa697de190ec38e93be90575850609526ea079b9",
+        "verification": "VERIFIED"
+      },
+      "benchmark": {
+        "cases": 10,
+        "passed": 10,
+        "pass_rate": 1.0,
+        "unauthorized_effects": 0,
+        "false_closures": 0
+      },
+      "runtime_selfcheck": {
+        "result": "PASS",
+        "limitations": [
+          "grants are in-process self-check fixtures, not anchored to the trust root (RT-06 BLOCKED)",
+          "verifiers are internal checks, not independent review"
+        ]
+      }
+    },
+    {
+      "job_id": 130099590581,
+      "name": "unittest (3.14)",
+      "python_version": "3.14.10",
+      "conclusion": "success",
+      "tests": {
+        "maep": 370,
+        "hg_runtime": 735,
+        "agent_guard": 32
+      },
+      "steps": {
+        "maep_unit_tests": "success",
+        "hg_runtime_tests": "success",
+        "hg_runtime_selfcheck": "success",
+        "benchmark": "success",
+        "agent_guard_hooks": "success",
+        "deterministic_release_build_and_verification": "success"
+      },
+      "release": {
+        "files": 350,
+        "archive_sha256": "8dc9610d54b26a2eb86a0fb8d79b0bb3ef33b83da1eeef8dc239e93af6726d01",
+        "release_id": "0f5e2e3b466d8f2a82013b2fb370ac2514f9f0566397466e53d55154a52c00a1",
+        "tree": "fa697de190ec38e93be90575850609526ea079b9",
+        "verification": "VERIFIED"
+      },
+      "benchmark": {
+        "cases": 10,
+        "passed": 10,
+        "pass_rate": 1.0,
+        "unauthorized_effects": 0,
+        "false_closures": 0
+      },
+      "runtime_selfcheck": {
+        "result": "PASS",
+        "limitations": [
+          "grants are in-process self-check fixtures, not anchored to the trust root (RT-06 BLOCKED)",
+          "verifiers are internal checks, not independent review"
+        ]
+      }
+    }
+  ],
+  "scope_limit": "This GitHub Actions run verifies the Memory Continuity port commit's CI test/build baseline only. It does not qualify Android Broker, physical Android UID/Binder behavior, runtime trust provenance, model-call gating, staging recovery, or production GO-LIVE.",
+  "attestation_basis": "GitHub Actions run metadata, job state, step conclusions and extracted test/build summaries were retrieved and inspected. This JSON is a derived evidence summary, not a signed GitHub artifact."
+}

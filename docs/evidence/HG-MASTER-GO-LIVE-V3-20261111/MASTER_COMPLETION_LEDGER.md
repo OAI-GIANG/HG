@@ -215,3 +215,35 @@ Production Runtime and Ollama were not restarted, changed or sent an inference r
 ## CP02 runtime note
 
 The read-only process check during CP02 found new runit children: `hg-runtime` PID 21771 and `ollama` PID 21775, both with approximately 193 seconds uptime. The runtime log recorded `HG_RUNTIME_READY` at 2026-11-10 20:09:12Z for the same production release ID. Authenticated health/live, health/ready and integrity endpoints returned HTTP 200; integrity reported 303 checked files; Ollama /api/version returned 0.40.14. These PIDs differ from CP01. No runtime lifecycle command was issued by this task; the initiator/root cause of the fresh supervisor start is undetermined. No inference was invoked. WP0 remains PARTIAL until the process-lifecycle event is attributed and stability is demonstrated.
+
+
+## V3-CP03 — Independent GitHub Actions CI attestation for Memory R3.1
+
+**Observed:** 2026-11-11 (Asia/Bangkok)
+**Repository:** OAI-GIANG/HG
+**Branch:** `stt/hg-memory-continuity-r3.1-port-20261111`
+**Commit:** `62eb07670c327b9e17a7dd0c7e0f5f114b0b8ee5`
+**GitHub Actions:** [MAEP tests — run #342](https://github.com/OAI-GIANG/HG/actions/runs/42893260136)
+**Run ID:** `42893260136` — **SUCCESS**
+
+Both independent hosted jobs completed successfully:
+- Python 3.13.18 — job `130099591150`
+- Python 3.14.10 — job `130099590581`
+
+Each job ran MAEP 370 tests, HG runtime 735 tests and Agent Guard 32 tests with success; self-check, benchmark, and deterministic release build/verification steps also succeeded. Each benchmark reported 10/10, pass rate 1.0, unauthorized effects 0 and false closures 0.
+
+The release build was executed twice per job and produced the same archive bytes:
+- Files: 350
+- Archive SHA-256: `8dc9610d54b26a2eb86a0fb8d79b0bb3ef33b83da1eeef8dc239e93af6726d01`
+- Release ID: `0f5e2e3b466d8f2a82013b2fb370ac2514f9f0566397466e53d55154a52c00a1`
+- Tree: `fa697de190ec38e93be90575850609526ea079b9`
+- Release verification: `VERIFIED`
+
+Evidence:
+- `r3.1-port/GITHUB_ACTIONS_RUN_42893260136.json`
+- `r3.1-port/GITHUB_ACTIONS_RUN_42893260136.sha256`
+- `r3.1-port/SHA256SUMS` (manifest SHA-256 `4ecca0ac878d5aaa0a7484b587257519c2806906198a8c591710c80bad126388`)
+
+**Scope limits:** this CI verifies the Memory R3.1 branch's repository tests, MAEP guard/benchmark and reproducible application release packaging. It does not qualify Android Broker, physical Android UID/Binder security, runtime trust provenance, universal model-call gating, production staging/recovery or full practical GO-LIVE. The runtime self-check explicitly states that its grant fixtures are in-process and not trust-root anchored (RT-06 remains BLOCKED), and that the verifiers are internal checks.
+
+**Gate effect:** G3 evidence is materially strengthened for the Memory R3.1 component and the V3 repository runtime baseline, but global G3 remains PARTIAL because platform skips and Android-specific security qualification remain open. G1, G2, G4, G5, G6, G7 and G8 retain their previous non-PASS dispositions. **GO-LIVE remains NO-GO.**
