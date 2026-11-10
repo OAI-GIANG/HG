@@ -108,3 +108,16 @@ GitHub Actions runs `42895661350` (push) and `42895672476` (pull_request), on co
 The workflow now resolves the SDK manager by the verified hosted-runner path `$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager`, with a version-sorted fallback search beneath `$ANDROID_HOME/cmdline-tools`. It invokes the resolved executable directly. This change is being pushed in a new commit so CI can test the correction. The prior failures are retained as evidence and are not counted as successful tests.
 
 **Qualification state remains PENDING.** A new successful build/unit job is required before the emulator job can begin; final emulator negative Binder proof remains separate and still does not establish physical OPPO device behavior or positive Termux caller behavior.
+
+
+## 9. Run #3 — API 37 package identifier correction
+
+GitHub Actions run `42895882025`, job `130108783841`, commit `717b4cbac0d1632fc8d6887aed984d8eda50da13` failed during SDK provisioning. The runner resolved the SDK manager successfully this time, but `sdkmanager` returned `Warning: Failed to find package 'platforms;android-37'`. Gradle, APK build and emulator steps were skipped.
+
+The Android 17 preview package is identified by the SDK package name `platforms;android-37.0` (not `platforms;android-37`). This distinction is confirmed in SDK package documentation and tooling guidance. The workflow is corrected to request preview channel 3 with:
+- build job: `platforms;android-37.0` and `build-tools;37.0.0`;
+- emulator job: `build-tools;37.0.0`, `platform-tools`, `emulator`, and `system-images;android-35;google_apis;x86_64`.
+
+The build job creates a local SDK path alias `platforms/android-37` pointing to the installed `platforms/android-37.0` directory to accommodate Gradle tooling that checks the compile SDK directory by API number. The emulator job does not download API 37 a second time because it runs an API 35 image and only needs the build/ADB/emulator tools.
+
+**Run #3 is a provisioning failure, not a code or test failure. No APK was built and no Binder call was made. The corrected workflow has not yet been executed at the time of this report.**
