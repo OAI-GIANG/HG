@@ -147,3 +147,35 @@ No APK was produced; APK signer checks and emulator/Binder steps were skipped. T
 The Android SDK's public `android.os.Process` reference does not expose `getUidForPid`; Android's AOSP implementation marks it hidden. The Java `Process.pid()` surface is documented separately and can be absent on older Android runtime levels. The reflection path therefore preserves compilation across the supported SDK and fails closed when the runtime cannot expose a PID.
 
 **Run #4 is FAIL at Java compilation. No Binder call was run.** The source remediation is uncommitted at this note and will be pushed as a new commit for CI re-verification. Even a later compile/emulator pass would not demonstrate physical OPPO behavior or positive Termux Binder use.
+
+
+## 11. Run #11 — Broker APK build passed; Termux signer pin check stopped before emulator
+
+GitHub Actions PR run `42896994761` (workflow run #11) on the PR merge ref `8200c951eb47c0db5c26136c096155fd31f295a4`, build job `130112604424`, completed **SUCCESS**:
+
+- Android SDK provisioning succeeded.
+- Gradle `:app:testDebugUnitTest`, `:app:assembleDebug`, and `:probe:assembleDebug` completed; overall `BUILD SUCCESSFUL in 1m 12s`.
+- APK verification succeeded for both APKs using APK Signature Scheme v2.
+- Package identities were verified:
+  - Broker: `org.hg.cim.broker`, version 1.0.0, compile SDK 37 / Android 17.
+  - Negative-caller probe: `org.hg.cim.broker.probe`, version 1.0.0, compile SDK 37 / Android 17.
+- Both CI debug APKs were signed by the same temporary debug certificate, SHA-256 `a5115d7a71ea6614c6e5dc2dc777b9f06335a56eddb1b8c5b43715eed2a10785`, public-key SHA-256 `10248189d8971b02ba69fae9a14f5723e188a19227f530fdb638b9cea5c0d532`.
+- Uploaded Broker build artifact ZIP SHA-256: `04ef74b1a7879f3244c76935dae489373236f4795c51b696ac9343a9a23e3bc6`.
+
+The dependent emulator job `130113482625` provisioned the emulator SDK and downloaded the pinned Termux F-Droid APK (108.6 MiB), but stopped in the signer-verification step before installing any APK. The workflow captured the signer command output into a shell variable, and only the equality test's exit status was observable; the exact apksigner output and observed fingerprint were not persisted. The job therefore did **not** establish that the pinned certificate was wrong, only that the current check did not pass.
+
+No Termux, Broker or probe package was installed in the emulator. No PackageManager UID observation, Broker owner pairing, Binder call, or negative-caller result exists from Run #11.
+
+### Run #11 remediation
+
+The workflow now:
+- captures full `apksigner verify --verbose --print-certs` stdout/stderr in `termux-apksigner-output.txt`;
+- checks the apksigner exit code explicitly;
+- parses the SHA-256 certificate fingerprint from the captured evidence;
+- prints both expected and observed fingerprint values;
+- requires a non-empty observed digest and an exact match to the already pinned F-Droid signer;
+- stores the apk badging, APK SHA-256, apksigner output, and any later emulator UID/Binder logs as workflow artifacts even on failure.
+
+The trusted signer pin is intentionally unchanged until the observed output is independently inspected. The uploaded debug Broker APK certificate is not the F-Droid Termux certificate and must not be confused with it.
+
+**Disposition:** Broker build/unit job PASS; Termux signer verification not qualified; emulator install/UID/Binder tests SKIPPED. G7 remains PARTIAL/BLOCKED for the unexecuted cross-UID Binder/physical-device requirements. GO-LIVE remains NO-GO.

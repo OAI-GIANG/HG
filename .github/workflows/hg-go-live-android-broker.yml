@@ -120,10 +120,21 @@ jobs:
           curl --fail --location --retry 3 \
             https://f-droid.org/repo/com.termux_1002.apk \
             --output termux-fdroid-0.118.3.apk
-          TERMUX_SIGNER="$(apksigner verify --print-certs termux-fdroid-0.118.3.apk \
-            | awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print tolower($2); exit}')"
-          test "$TERMUX_SIGNER" = "228fb2cfe90831c1499ec3ccaf61e96e8e1ce70766b9474672ce427334d41c42"
-          aapt dump badging termux-fdroid-0.118.3.apk | grep -F "package: name='com.termux'"
+          set +e
+          apksigner verify --verbose --print-certs termux-fdroid-0.118.3.apk \
+            > termux-apksigner-output.txt 2>&1
+          APKSIGNER_EXIT=$?
+          set -e
+          cat termux-apksigner-output.txt
+          test "$APKSIGNER_EXIT" -eq 0
+          TERMUX_SIGNER="$(sed -nE 's/.*Signer #1 certificate SHA-256 digest:[[:space:]]*([0-9A-Fa-f:]+).*/\1/p' \
+            termux-apksigner-output.txt | head -n 1 | tr -d ':' | tr 'A-F' 'a-f')"
+          test -n "$TERMUX_SIGNER"
+          EXPECTED_TERMUX_SIGNER="228fb2cfe90831c1499ec3ccaf61e96e8e1ce70766b9474672ce427334d41c42"
+          printf 'EXPECTED_TERMUX_SIGNER_SHA256=%s\n' "$EXPECTED_TERMUX_SIGNER"
+          printf 'OBSERVED_TERMUX_SIGNER_SHA256=%s\n' "$TERMUX_SIGNER"
+          test "$TERMUX_SIGNER" = "$EXPECTED_TERMUX_SIGNER"
+          aapt dump badging termux-fdroid-0.118.3.apk | tee termux-apk-badging.txt | grep -F "package: name='com.termux'"
           sha256sum termux-fdroid-0.118.3.apk | tee termux-apk-sha256.txt
           printf 'TERMUX_SIGNER_SHA256=%s\n' "$TERMUX_SIGNER" | tee -a termux-apk-sha256.txt
       - name: Install distinct-UID Android emulator and test actual Binder caller denial
@@ -229,5 +240,7 @@ jobs:
           if-no-files-found: warn
           path: |
             termux-apk-sha256.txt
+            termux-apksigner-output.txt
+            termux-apk-badging.txt
             android-emulator-uid-evidence.txt
             android-emulator-binder-negative.log
