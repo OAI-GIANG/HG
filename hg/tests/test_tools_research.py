@@ -161,6 +161,15 @@ class UrlReadTests(ToolBase):
             with self.assertRaises(PlanRejected, msg=url):
                 self.plan({"operations": [{"op": "fetch", "url": url}]}, self.url_task())
 
+    def test_dot_segments_cannot_leave_a_url_scope(self):
+        # Scope is a URL prefix; "docs/../page" starts with "docs/" but names a path outside it.
+        from hg.brain.planner import PlanRejected
+        task = make_task()
+        task["scope"]["include"] = [self.base + "docs/"]
+        for url in (self.base + "docs/../page", self.base + "docs/%2e%2e/page", self.base + "docs/./x/../../page"):
+            with self.assertRaises(PlanRejected, msg=url):
+                self.plan({"operations": [{"op": "fetch", "url": url}]}, task)
+
     def test_anchored_runtime_denies_urls_the_manifest_does_not_list(self):
         source = CanonicalManifest.from_github(http_get=FakeGitHub(files={MAIN_SHA: manifest(
             actions=("maep.read",), scope=("file:out/",))}).get, max_age_s=0, clock=self.clock)

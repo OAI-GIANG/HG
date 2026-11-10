@@ -24,7 +24,8 @@ import urllib.request
 from datetime import datetime, timezone
 
 from maep.authority.trust_anchor import (
-    CANONICAL_BRANCH, CANONICAL_REPO, MANIFEST_PATH, TrustAnchorError, fingerprint, load_manifest,
+    CANONICAL_BRANCH, CANONICAL_REPO, MANIFEST_PATH, TrustAnchorError, _reject_duplicate_keys, fingerprint,
+    load_manifest,
 )
 
 API_ROOT = "https://api.github.com"
@@ -59,7 +60,9 @@ def _get_json(http_get, url, what):
     if status != 200:
         raise TrustAnchorError(f"{what} unavailable (status={status})")
     try:
-        data = json.loads(body)
+        data = json.loads(body, object_pairs_hook=_reject_duplicate_keys)
+    except TrustAnchorError as exc:
+        raise TrustAnchorError(f"{what} response: {exc}")
     except (TypeError, ValueError) as exc:
         raise TrustAnchorError(f"{what} is not valid JSON: {exc}")
     if not isinstance(data, dict):
@@ -85,7 +88,9 @@ def load_canonical_manifest(http_get=urllib_get):
     if contents.get("encoding") != "base64" or not isinstance(contents.get("content"), str):
         raise TrustAnchorError("manifest content is not base64-encoded text")
     try:
-        text = base64.b64decode(contents["content"], validate=False).decode("utf-8")
+        # GitHub wraps base64 content with line breaks; any other non-alphabet byte is refused.
+        packed = contents["content"].replace("\r", "").replace("\n", "")
+        text = base64.b64decode(packed, validate=True).decode("utf-8")
     except (binascii.Error, ValueError) as exc:
         raise TrustAnchorError(f"manifest content cannot be decoded: {exc}")
     doc = load_manifest(lambda _path: (200, text), repo=CANONICAL_REPO, branch=CANONICAL_BRANCH,
@@ -125,8 +130,10 @@ class CanonicalManifest:
         """Return (doc, provenance); raises TrustAnchorError if it cannot be (re)loaded."""
         with self._lock:
             now = self._clock()
+            # A clock that moved backwards (negative age) also reloads, so max_age_s stays
+            # an upper bound on how long a revoked grant can be honoured.
             fresh = (self._loaded_at is not None
-                     and (now - self._loaded_at).total_seconds() < self._max_age_s)
+                     and 0 <= (now - self._loaded_at).total_seconds() < self._max_age_s)
             if not fresh:
                 self._doc = self._provenance = self._loaded_at = None
                 try:

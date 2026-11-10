@@ -8,6 +8,7 @@ import copy
 import hashlib
 import json
 import re
+import urllib.parse
 from datetime import datetime, timezone
 
 from maep.policy import GRANT_ACTIONS
@@ -45,6 +46,23 @@ def _parse_ts(value, field):
     if parsed.tzinfo is None:
         raise TrustAnchorError(f"{field} must include a timezone")
     return parsed
+
+
+def _require_canonical_resource(resource):
+    """Refuse a resource whose path is not in canonical form.
+
+    Scope matching is a string prefix test, so "file:out/../x" would otherwise match the
+    scope "file:out/" while naming a path outside it. Dot segments (also percent-encoded),
+    backslashes and control or whitespace characters are refused; for "url:" resources only
+    the URL path is segmented, so a query string may contain "/../".
+    """
+    if any(ch == "\\" or ch.isspace() or ord(ch) < 0x20 or ord(ch) == 0x7F for ch in resource):
+        raise TrustAnchorError("resource is not in canonical form")
+    namespace, _, path = resource.partition(":")
+    if namespace == "url":
+        path = urllib.parse.urlsplit(path).path
+    if any(urllib.parse.unquote(seg) in (".", "..") for seg in path.split("/")):
+        raise TrustAnchorError("resource is not in canonical form")
 
 
 def _reject_duplicate_keys(pairs):
@@ -129,6 +147,7 @@ def authorize(doc, *, principal, action, resource, policy_version, now=None):
         raise TrustAnchorError("action is required")
     if not isinstance(resource, str) or not resource:
         raise TrustAnchorError("resource is required")
+    _require_canonical_resource(resource)
     if policy_version != doc["policy_version"]:
         raise TrustAnchorError("policy_version mismatch between request and manifest")
     matched = []
