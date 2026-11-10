@@ -36,11 +36,17 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "9.9.1"
-      - uses: android-actions/setup-android@v3
-      - name: Install pinned Android SDK components
+      - name: Install pinned Android SDK components from hosted runner
         run: |
-          sdkmanager "platforms;android-37" "build-tools;36.0.0"
-          sdkmanager --list_installed
+          set -euo pipefail
+          : "${ANDROID_HOME:=${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          export ANDROID_HOME
+          export ANDROID_SDK_ROOT="$ANDROID_HOME"
+          SDKMANAGER="$(command -v sdkmanager || true)"
+          test -n "$SDKMANAGER"
+          "$SDKMANAGER" "platforms;android-37" "build-tools;36.0.0"
+          "$SDKMANAGER" --list_installed
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
           echo "$ANDROID_HOME/build-tools/36.0.0" >> "$GITHUB_PATH"
       - name: Run JVM policy tests and build Broker + negative-caller APKs
         run: |
@@ -80,12 +86,19 @@ jobs:
         with:
           name: hg-cim-broker-build-${{ github.sha }}
           path: broker-artifacts
-      - uses: android-actions/setup-android@v3
-      - name: Install emulator and verification tools
+      - name: Install emulator and verification tools from hosted runner
         run: |
-          sdkmanager "platforms;android-37" "build-tools;36.0.0" "platform-tools" \
+          set -euo pipefail
+          : "${ANDROID_HOME:=${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          export ANDROID_HOME
+          export ANDROID_SDK_ROOT="$ANDROID_HOME"
+          SDKMANAGER="$(command -v sdkmanager || true)"
+          test -n "$SDKMANAGER"
+          "$SDKMANAGER" "platforms;android-37" "build-tools;36.0.0" "platform-tools" \
             "emulator" "system-images;android-35;google_apis;x86_64"
-          sdkmanager --list_installed
+          "$SDKMANAGER" --list_installed
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+          echo "$ANDROID_HOME/emulator" >> "$GITHUB_PATH"
           echo "$ANDROID_HOME/build-tools/36.0.0" >> "$GITHUB_PATH"
       - name: Download and verify the pinned F-Droid Termux caller package
         run: |
