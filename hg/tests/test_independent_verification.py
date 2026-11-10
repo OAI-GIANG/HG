@@ -1,6 +1,7 @@
 import hashlib
 import os
 import sqlite3
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -10,7 +11,9 @@ from hg.runtime import build_runtime
 from hg.tests.support import TempDirMixin, grant, make_task, write_step
 from hg.verification.artifacts import EvidenceArtifactError, EvidenceArtifactStore
 from hg.verification.bounded import EvidenceWindowError, extract_log_window
-from hg.verification.independent import IndependentVerifier, python_syntax_verifier
+from hg.verification.independent import (
+    IndependentVerificationError, IndependentVerifier, python_syntax_verifier,
+)
 from maep.admission import RuntimeWriterSession
 from maep.core import MAEPError, validate_evidence
 
@@ -354,6 +357,70 @@ class IndependentVerifierTests(unittest.TestCase):
         link.symlink_to(outside)
         report = self.verifier.verify_python_syntax(self.root, "link.py", candidate_ref="candidate-E")
         self.assertEqual(report["status"], "BLOCKED")
+
+    def _forging_worker(self):
+        # A worker that reports PASS for anything: what an attacker would swap in.
+        return (b'import json, sys\n'
+                b'print(json.dumps({"check": "PYTHON_SYNTAX", "status": "PASS", "forged": True}))\n')
+
+    def _pinned_copy(self):
+        worker_dir = Path(tempfile.mkdtemp(dir=self.root.parent))
+        self.addCleanup(lambda: __import__("shutil").rmtree(worker_dir, ignore_errors=True))
+        original = Path(IndependentVerifier().worker_path)
+        copy = worker_dir / "worker.py"
+        copy.write_bytes(original.read_bytes())
+        return copy
+
+    def test_worker_swapped_after_pin_check_still_runs_pinned_bytes(self):
+        # The worker is replaced between the digest re-check and the exec (TOCTOU).
+        # The process must execute the pinned bytes, so the syntax error is still a FAIL.
+        (self.root / "bad.py").write_text("def broken(:\n    pass\n", encoding="utf-8")
+        worker = self._pinned_copy()
+        verifier = IndependentVerifier(worker_path=worker, timeout_s=5)
+        forged = self._forging_worker()
+        real_run = subprocess.run
+
+        def swap_then_run(*args, **kwargs):
+            worker.write_bytes(forged)
+            return real_run(*args, **kwargs)
+
+        with mock.patch("hg.verification.independent.subprocess.run", side_effect=swap_then_run):
+            report = verifier.verify_python_syntax(self.root, "bad.py", candidate_ref="candidate-T")
+        self.assertEqual(worker.read_bytes(), forged)
+        self.assertEqual(report["status"], "FAIL")
+        self.assertNotIn("forged", report)
+
+    def test_worker_changed_before_the_call_is_inconclusive(self):
+        (self.root / "bad.py").write_text("def broken(:\n    pass\n", encoding="utf-8")
+        worker = self._pinned_copy()
+        verifier = IndependentVerifier(worker_path=worker, timeout_s=5)
+        worker.write_bytes(self._forging_worker())
+        report = verifier.verify_python_syntax(self.root, "bad.py", candidate_ref="candidate-U")
+        self.assertEqual(report["status"], "INCONCLUSIVE")
+        self.assertIn("changed after it was pinned", report["reason"])
+
+    def test_module_planted_in_candidate_root_is_not_imported(self):
+        # The worker runs with cwd = candidate root; a planted json.py must not shadow stdlib.
+        (self.root / "json.py").write_text(
+            "raise SystemExit('planted module imported')\n", encoding="utf-8")
+        (self.root / "good.py").write_text("x = 1\n", encoding="utf-8")
+        report = self.verifier.verify_python_syntax(self.root, "good.py", candidate_ref="candidate-V")
+        self.assertEqual(report["status"], "PASS")
+
+    def test_worker_bytes_that_cannot_be_pinned_are_refused(self):
+        worker_dir = Path(tempfile.mkdtemp(dir=self.root.parent))
+        self.addCleanup(lambda: __import__("shutil").rmtree(worker_dir, ignore_errors=True))
+        cases = {
+            "nul.py": b"x = 1\0\n",
+            "latin.py": b"x = '\xff'\n",
+            "big.py": b"#" + b"x" * (64 * 1024) + b"\n",
+        }
+        for name, raw in cases.items():
+            with self.subTest(name=name):
+                path = worker_dir / name
+                path.write_bytes(raw)
+                with self.assertRaises(IndependentVerificationError):
+                    IndependentVerifier(worker_path=path)
 
     def test_sqlite_integrity_passes_read_only_and_does_not_change_bytes(self):
         db_path = self.root / "state.sqlite3"

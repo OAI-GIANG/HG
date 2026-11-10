@@ -18,6 +18,11 @@ class IndependentVerificationError(RuntimeError):
     pass
 
 
+# The pinned worker source is passed to the interpreter as one argv string (``-c``),
+# so it must fit well under Linux MAX_ARG_STRLEN (128 KiB) and contain no NUL.
+MAX_WORKER_BYTES = 64 * 1024
+
+
 class IndependentVerifier:
     def __init__(self, *, python=sys.executable, worker_path=None, timeout_s=7.0, max_output_bytes=16 * 1024):
         if not isinstance(python, str) or not python:
@@ -31,6 +36,16 @@ class IndependentVerifier:
         self.timeout_s = float(timeout_s)
         self.max_output_bytes = max_output_bytes
         raw = self.worker_path.read_bytes()
+        if len(raw) > MAX_WORKER_BYTES:
+            raise IndependentVerificationError("verification worker is too large to pin")
+        if b"\0" in raw:
+            raise IndependentVerificationError("verification worker contains a NUL byte")
+        try:
+            # Run exactly these bytes: executing worker_path would re-read the file
+            # after the digest check, so a swap in between would run unpinned code.
+            self._worker_source = raw.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise IndependentVerificationError("verification worker is not UTF-8") from exc
         self.worker_sha256 = hashlib.sha256(raw).hexdigest()
 
     def _run(self, operation, root, relative_path, *, candidate_ref, expected_sha256=None):
@@ -50,7 +65,7 @@ class IndependentVerifier:
         env = {"PATH": os.environ.get("PATH", ""), "PYTHONIOENCODING": "utf-8", "LANG": "C"}
         try:
             completed = subprocess.run(
-                [self.python, "-I", "-B", str(self.worker_path)],
+                [self.python, "-I", "-B", "-c", self._worker_source],
                 input=json.dumps(request, separators=(",", ":")),
                 text=True, encoding="utf-8", errors="replace",
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,

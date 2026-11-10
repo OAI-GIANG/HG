@@ -1,7 +1,8 @@
 """Standalone read-only verification worker.
 
 This file intentionally imports only the Python standard library so it can run as
-python -I -B worker.py in a separate process. The process boundary reduces accidental
+python -I -B -c <pinned source> in a separate process (the caller passes
+the bytes it hashed, not this path). The process boundary reduces accidental
 coupling; it is NOT OS isolation because the worker has the same UID and filesystem access.
 """
 from __future__ import annotations
