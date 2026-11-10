@@ -59,3 +59,17 @@ FACT (defect, reproduced before the fix): a FIFO at a blob path blocked `get`, `
 FACT: PR #99 squash-merged as `227881f59d644cd2ce2dd8a10efe97fd3c861478`; PR CI on `65acc33` (runs 42742555498, 42742591860 unittest 3.13/3.14; 42742592102 rt06-anchor) success. Local: MAEP 362 OK, HG 599 OK (skip 3), hooks 32 OK, selfcheck 0, bench 0. Recovery branch `recovery/main-pre-pr99-20261110` = `f86ac2b`.
 
 Deploy: NOT_EXECUTED (no phone access in this run). Production stays on `ad42ad8` (release `423730c9`); the change is a robustness fix to a fail-closed path, not a false-accept, so no urgency. Install with the next runtime batch.
+
+## 8. Addendum 2026-11-10 10:13–11:40 +07 (hourly run, phone reachable) — WS-04 ledger read oracle; #99/#101/#102 deployed
+
+FACT: `hg/tests/test_ledger_read_false_accept_oracle.py` damages `tasks.jsonl` and `actions.jsonl` written through the runtime (symlink, directory, writable modes, FIFO, torn tail, truncation, blank line, invalid JSON, non-UTF-8, BOM, non-object, missing `event_id`, duplicated record, duplicate JSON keys, removed or reordered records, rewritten identity or sequence) and asserts that `read_events`, runtime restart and the read-only TaskStore/EventLog views refuse within 5 s.
+
+FACT (defects, reproduced before the fix, 18 subcases): (1) a FIFO at a ledger path blocked `read_events` and so runtime start, `TaskStore.restore` and `EventLog` until a writer opened it; (2) a record repeating a JSON key was read last-value-wins. Fix in `maep/ledger.py`: open `O_NONBLOCK` (blocking restored after the regular-file check); refuse duplicate keys. Every other case was already refused. Not covered by design: no hash chain or anchor, so removing whole tail records or a consistent rewrite is not detectable from the file alone.
+
+FACT: PR #101 squash-merged as `f774734969c2…`; PR CI on `6d604d9` (runs 42748875733, 42748913250 unittest 3.13/3.14; 42748913491 rt06-anchor) success. Local: MAEP 362 OK, HG 607 OK (skip 3), hooks 32 OK, selfcheck 0, bench 0. Recovery branch `recovery/main-pre-pr101-20261110` = `bf1802f`.
+
+FACT: deploy of `f774734` (`~/hg-v1-evidence/deploy-f774734-20261110/`, `RESULT=FAILED`) stopped before the switch: on Termux `test_hardlink_to_another_blob_is_never_accepted` (from #99) raised `AttributeError: module 'os' has no attribute 'link'` (Android has no hard links). Script restored the assistant pointer; service untouched (pid 12146, release `423730c9`). Fixed by PR #102 (`7698097ef3d6…`): the case is skipped only where `os.link` is absent, same guard as `maep/tests/test_sqlite_nofollow.py`. PR CI (runs 42755282458, 42755308840, 42755308596) and push CI on `7698097` success. Recovery branch `recovery/main-pre-pr102-20261110` = `f774734`.
+
+FACT: deploy of `7698097` (`~/hg-v1-evidence/deploy-7698097-20261110/`, script = `deploy-ad42ad8…` with only `C`, `MAIN`, `TREE`, smoke tag changed) `RESULT=PASS`, `DEPLOY_FIX_COMPLETE` 11:33:45 +07: release `13c335cc05d5…`, Termux MAEP 362 OK (skip 3), HG 607 OK (skip 1, the hardlink case), switch `switch-20261110T043332Z`, smoke write/readback/replay/409 PASS. Independent re-read: `sv status` pid 15043 up; `ready` 200 READY / integrity VERIFIED / trust LOADED / `trust_commit` `7698097`; `~/.config/hg/assistant-release` → `13c335cc…`. Rollback: `sh deploy/termux/switch_service.sh --restore ~/hg-v1-evidence/switch-20261110T043332Z`.
+
+So production now includes #99 (evidence-store FIFO) and #101 (ledger FIFO, duplicate keys).
