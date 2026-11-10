@@ -9,6 +9,12 @@ on:
     paths:
       - "android/cim-broker/**"
       - ".github/workflows/hg-go-live-android-broker.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "android/cim-broker/**"
+      - ".github/workflows/hg-go-live-android-broker.yml"
 
 permissions:
   contents: read
