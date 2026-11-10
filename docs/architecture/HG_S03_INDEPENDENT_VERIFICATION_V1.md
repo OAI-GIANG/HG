@@ -77,7 +77,7 @@ The SHA-256 reference detects content change relative to the trusted metadata re
 
 ### 3.3 Read and recovery
 
-Reads require a SHA-256 reference, owner-owned regular file, no symlink at the final payload, a configured byte limit, exact length and digest match. `find_orphans()` only lists unreferenced blobs; it is deliberately non-destructive.
+Reads require a SHA-256 reference, owner-owned regular file, no symlink at the final payload, a configured byte limit, exact length and digest match. `find_orphans()` only lists unreferenced blobs; it is deliberately non-destructive. Payloads are opened `O_NONBLOCK`, so a FIFO planted at a blob path fails the regular-file check instead of blocking `get`, `verify_metadata` or `put` until a writer appears (found by `hg/tests/test_evidence_store_false_accept_oracle.py`, 2026-11-10; the verification worker opens candidates the same way, so a FIFO candidate is BLOCKED at once instead of INCONCLUSIVE after the worker timeout).
 
 ### 3.4 Evidence operation idempotency (EC07 part 2, revision 2026-11-09)
 

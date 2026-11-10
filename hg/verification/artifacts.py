@@ -98,7 +98,11 @@ class EvidenceArtifactStore:
             os.close(fd)
 
     def _read_path(self, path, *, expected_digest, max_bytes):
-        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+        # O_NONBLOCK: opening a FIFO planted at a blob path must fail the type check
+        # below instead of blocking until a writer appears. It has no effect on reads
+        # of regular files.
+        flags = (os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+                 | getattr(os, "O_NONBLOCK", 0))
         try:
             fd = os.open(path, flags)
         except OSError as exc:

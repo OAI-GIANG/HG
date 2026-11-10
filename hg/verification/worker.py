@@ -39,7 +39,10 @@ def _target(root_text, relative, limit):
         if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode):
             raise ValueError("path parent is not a real directory")
     target = current / parts[-1]
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+    # O_NONBLOCK: a FIFO candidate is rejected by the type check below instead of
+    # blocking the worker until its timeout. No effect on regular-file reads.
+    flags = (os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+             | getattr(os, "O_NONBLOCK", 0))
     fd = os.open(target, flags)
     st = os.fstat(fd)
     if not stat.S_ISREG(st.st_mode) or st.st_uid != os.getuid():
