@@ -227,6 +227,9 @@ class UrlReadAdapter(ToolAdapter):
             raise AdapterInputError("url must be absolute http(s)")
         if parts.username or parts.password:
             raise AdapterInputError("credentials in URLs are not allowed")
+        if any(urllib.parse.unquote(seg) in (".", "..") for seg in parts.path.split("/")):
+            # Scope is a prefix test; a dot segment would name a path outside the prefix.
+            raise AdapterInputError("url path must not contain dot segments")
         netloc = parts.hostname.lower() + (f":{parts.port}" if parts.port else "")
         return urllib.parse.urlunsplit((parts.scheme, netloc, parts.path or "/", parts.query, ""))
 
