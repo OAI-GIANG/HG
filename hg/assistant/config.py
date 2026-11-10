@@ -42,18 +42,50 @@ class ConfigError(Exception):
     """Unusable settings or an untrusted local model (exit 78)."""
 
 
+class _DuplicateKey(ValueError):
+    pass
+
+
+def _unique_object(pairs):
+    # json.loads keeps the last value of a repeated key; a reader of the file may see the
+    # first. save() never repeats a key, so a file that does is ambiguous and refused.
+    obj = {}
+    for key, value in pairs:
+        if key in obj:
+            raise _DuplicateKey(f"duplicate key {key!r}")
+        obj[key] = value
+    return obj
+
+
+def _read_json(path):
+    """Read config.json like a ledger: no symlink, no FIFO wait, owner-owned, not writable by others."""
+    try:
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | os.O_NONBLOCK)
+    except OSError as exc:
+        raise ConfigError("config.json must be a regular file owned by this user (not a symlink)") from exc
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode) or st.st_uid != os.getuid():
+            raise ConfigError("config.json must be a regular file owned by this user")
+        if stat.S_IMODE(st.st_mode) & 0o022:
+            raise ConfigError("config.json must not be writable by group/other (chmod 600)")
+        os.set_blocking(fd, True)
+        with os.fdopen(os.dup(fd), "rb") as stream:
+            raw = stream.read()
+    finally:
+        os.close(fd)
+    try:
+        return json.loads(raw.decode("utf-8"), object_pairs_hook=_unique_object)
+    except ValueError as exc:
+        raise ConfigError(f"config.json is not valid JSON: {exc}") from exc
+
+
 def load(home, *, wait_s=5.0):
     with locked(home, exclusive=False, wait_s=wait_s):
         path = Path(home) / "config.json"
         config = dict(DEFAULTS)
-        if path.exists():
-            st = path.lstat()
-            if stat.S_ISLNK(st.st_mode) or not stat.S_ISREG(st.st_mode) or st.st_uid != os.getuid():
-                raise ConfigError("config.json must be a regular file owned by this user")
-            try:
-                data = json.loads(path.read_text(encoding="utf-8"))
-            except ValueError as exc:
-                raise ConfigError(f"config.json is not valid JSON: {exc}") from exc
+        if os.path.lexists(path):
+            data = _read_json(path)
             if not isinstance(data, dict) or set(data) - set(DEFAULTS):
                 raise ConfigError("config.json keys must be among: " + ", ".join(sorted(DEFAULTS)))
             config.update(data)
