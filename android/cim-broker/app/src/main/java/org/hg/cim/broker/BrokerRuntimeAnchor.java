@@ -75,7 +75,7 @@ final class BrokerRuntimeAnchor {
         return out.toString();
     }
 
-    private static boolean hex64(String s) {
+    static boolean hex64(String s) {
         if (s == null || s.length() != 64) return false;
         for (int i=0;i<s.length();i++) if (!((s.charAt(i)>='0'&&s.charAt(i)<='9')||(s.charAt(i)>='a'&&s.charAt(i)<='f'))) return false;
         return true;

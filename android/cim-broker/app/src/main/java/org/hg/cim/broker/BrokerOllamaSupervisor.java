@@ -84,8 +84,9 @@ final class BrokerOllamaSupervisor {
         builder.redirectErrorStream(true);
         builder.redirectOutput(ProcessBuilder.Redirect.appendTo(log));
         process = builder.start();
-        pid = Math.toIntExact(process.pid());
-        if (!BrokerOllamaProcessLiveness.isSameProcess(process, pid, android.os.Process.myUid())) {
+        pid = BrokerOllamaProcessLiveness.pidOf(process);
+        if (pid <= 0 || !BrokerOllamaProcessLiveness.isSameProcess(
+                process, pid, android.os.Process.myUid())) {
             stop();
             throw new SecurityException("backend process UID/PID could not be bound to ProcessBuilder handle");
         }

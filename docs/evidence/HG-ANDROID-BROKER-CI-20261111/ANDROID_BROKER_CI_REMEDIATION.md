@@ -5,18 +5,18 @@
 **Worktree:** `~/HG-ANDROID-BROKER-CI`
 **Branch:** `stt/hg-android-broker-ci-v1-20261111`
 **Base HEAD:** `e465db2ef8143d013d6195abfa077f5010b3fd1c`
-**Current state:** isolated implementation in progress; not yet built by Android CI; not merged or deployed
+**Current state:** SDK provisioning verified in GitHub Actions; first Android compile exposed inherited source errors; remediation in progress; not merged or deployed
 
 ## 1. Preservation and source origin
 
 The original source remains in `~/HG-GO-LIVE-CANDIDATE` on branch `stt/hg-go-live-certification-20261111`, HEAD `e465db2ef8143d013d6195abfa077f5010b3fd1c`. That candidate remains dirty and was only read.
 
-The new worktree was created from the exact base commit above. The Broker source, workflow and architecture document were copied without overwriting the source candidate. Comparison against the original candidate's current source tree found 23 imported files: 17 remain byte-identical and six are intentionally changed in this isolated worktree. The original candidate status was re-read and remains unchanged by this work.
+The new worktree was created from the exact base commit above. The Broker source, workflow and architecture document were copied without overwriting the source candidate. Comparison against the original candidate's current source tree found 23 imported files: 14 remain byte-identical and nine are intentionally changed in this isolated worktree. The original candidate status was re-read and remains unchanged by this work.
 
 Source manifest: `CANDIDATE_ANDROID_BROKER_SOURCE.sha256`
 Manifest SHA-256: `736a201126bdf5448ef357306a48f7b00898314a450303f36ae074aaf9a2a867`
 
-The six intentional file changes are:
+The nine intentional file changes are:
 
 1. `app/build.gradle.kts`: remove unused instrumentation runner and unused AndroidX instrumentation dependencies; retain JVM JUnit tests.
 2. `AndroidManifest.xml`: remove the unneeded Termux RUN_COMMAND permission request; the status Binder contract does not use it.
@@ -24,6 +24,9 @@ The six intentional file changes are:
 4. `settings.gradle.kts`: include a separate negative-caller probe APK module.
 5. `hg-go-live-android-broker.yml`: replace the ineffective instrumentation invocation with an actual distinct-UID installed-app Binder negative-call workflow.
 6. `HG_ANDROID_LISTENER_ATTESTATION_BROKER_V1.md`: append the remediation design, execution state and explicit Android/GO-LIVE limits.
+7. `BrokerOllamaProcessLiveness.java`: replace unavailable Android `Process.getUidForPid()` and direct `Process.pid()` calls with reflection fail-closed PID discovery and kernel procfs owner checks.
+8. `BrokerOllamaSupervisor.java`: consume the fail-closed process-handle PID helper and stop if it cannot bind the spawned process.
+9. `BrokerRuntimeAnchor.java`: expose package-local SHA-256 hex validation for use by the model anchor without duplicating validation logic.
 
 ## 2. Findings corrected
 
@@ -54,11 +57,11 @@ The emulator job is designed to:
 
 The Broker unit suite gains tests for exact peer UID/PID acceptance, wrong UID/PID rejection, invalid peer rejection, request ID/nonce/digest correlation, malformed response digest refusal, request envelope byte binding, and empty/oversized request rejection. The independent probe package is not granted Broker permissions and does not spoof Binder identity.
 
-The CI uses Gradle 9.9.1, JDK 17, Android Gradle Plugin 9.5.0, compile SDK 37 and Build Tools 36.0.0. Gradle 9.9.1 is selected instead of 9.9.0 because the 9.9.1 patch release contains security fixes. Android's AGP compatibility table supports API 37 and Gradle 9.6+ with JDK 17.
+The CI uses Gradle 9.9.1, JDK 17, Android Gradle Plugin 9.5.0, compile SDK 37 and Build Tools 37.0.0 (Android 17 preview channel). Gradle 9.9.1 is selected instead of 9.9.0 because the 9.9.1 patch release contains security fixes. Android's AGP compatibility table supports API 37 and Gradle 9.6+ with JDK 17.
 
 ## 4. What this does and does not prove
 
-**Not yet proven:** at the time of this report, the new workflow has not run. There is no APK build, signer report, emulator install, distinct-UID observation or negative Binder execution result from this branch. Termux does not have local Gradle, Java/JDK, Android SDK, ADB or emulator, so a local Android build cannot be performed here.
+**Not yet proven:** the workflow has reached the Android build stage, but the first Java compilation failed (Run #4; see Section 10). There is still no APK build, signer report, emulator install, distinct-UID observation or negative Binder execution result from this branch. Termux does not have local Gradle, Java/JDK, Android SDK, ADB or emulator, so a local Android build cannot be performed here.
 
 Even after the emulator workflow passes, it will establish only emulator negative-caller behavior. It does not prove:
 
@@ -121,3 +124,26 @@ The Android 17 preview package is identified by the SDK package name `platforms;
 The build job creates a local SDK path alias `platforms/android-37` pointing to the installed `platforms/android-37.0` directory to accommodate Gradle tooling that checks the compile SDK directory by API number. The emulator job does not download API 37 a second time because it runs an API 35 image and only needs the build/ADB/emulator tools.
 
 **Run #3 is a provisioning failure, not a code or test failure. No APK was built and no Binder call was made. The corrected workflow has not yet been executed at the time of this report.**
+
+
+## 10. Run #4 — SDK provisioning passed; Java/Android source compile exposed inherited API errors
+
+GitHub Actions Android workflow run `42896286339` (commit `7d6749795b515676028cb9ced418b37286d7d33a`), build job `130110151825`, successfully completed Android SDK provisioning. The build then reached `:app:compileDebugJavaWithJavac` and failed with six compiler errors in three source files:
+
+- `BrokerOllamaProcessLiveness.java`: `java.lang.Process.pid()` is not present in the selected Android compile API, and `android.os.Process.getUidForPid(int)` is not exposed as a public SDK method.
+- `BrokerOllamaSupervisor.java`: direct use of `java.lang.Process.pid()` fails for the same reason.
+- `BrokerModelAnchor.java`: calls `BrokerRuntimeAnchor.hex64(String)`, but the validator was private.
+
+No APK was produced; APK signer checks and emulator/Binder steps were skipped. This was an actual Java compile failure, not an SDK provisioning failure.
+
+### Remediation
+
+- `BrokerOllamaProcessLiveness.pidOf()` now obtains `java.lang.Process.pid()` reflectively. If the runtime does not expose it, the method returns invalid PID and the supervisor refuses to start/qualify that child. This is intentionally fail-closed.
+- UID observation now uses `android.system.Os.stat("/proc/<pid>").st_uid`, which is a public Android API; it samples while the same `ProcessBuilder` handle is alive and rechecks liveness, PID and procfs UID after the observation. Any permission or procfs error refuses qualification.
+- `BrokerOllamaSupervisor` uses the new PID helper and stops/refuses when the PID cannot be bound to the returned process handle.
+- `BrokerRuntimeAnchor.hex64` is package-visible so `BrokerModelAnchor` can reuse the same digest validator.
+- Added JVM tests for null process PID handling, PID discovery from a real host process handle, and digest validation.
+
+The Android SDK's public `android.os.Process` reference does not expose `getUidForPid`; Android's AOSP implementation marks it hidden. The Java `Process.pid()` surface is documented separately and can be absent on older Android runtime levels. The reflection path therefore preserves compilation across the supported SDK and fails closed when the runtime cannot expose a PID.
+
+**Run #4 is FAIL at Java compilation. No Binder call was run.** The source remediation is uncommitted at this note and will be pushed as a new commit for CI re-verification. Even a later compile/emulator pass would not demonstrate physical OPPO behavior or positive Termux Binder use.
