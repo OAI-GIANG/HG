@@ -152,8 +152,10 @@ class ChatService:
                      for s in receipt.get("sentences") or []]
         brain = {
             "router": ROUTER, "provider_policy": PROVIDER_POLICY,
-            "ledger": f"asks-{self._clock():%Y-%m}.jsonl",
-            "model_calls": [{"event_id": e["event_id"], "seq": e["seq"], "status": e["payload"].get("status"),
+            # The ledger the receipt was written to, not a fresh clock read (the month may have changed).
+            "ledger": receipts[0]["ledger"] if receipts else None,
+            "model_calls": [{"event_id": e["event_id"], "seq": e["seq"], "ledger": e["ledger"],
+                             "status": e["payload"].get("status"),
                              "provider": e["payload"].get("provider"), "model": e["payload"].get("model"),
                              "duration_ms": e["payload"].get("duration_ms"), "error": e["payload"].get("error"),
                              "usage": e["payload"].get("usage"),

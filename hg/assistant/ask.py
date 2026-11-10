@@ -174,7 +174,10 @@ def append_receipt(home, kind, payload, *, clock, lock_wait_s=5.0):
     path = home / f"asks-{now:%Y-%m}.jsonl"
     with locked(home, exclusive=True, wait_s=lock_wait_s):
         private_file(path)
-        return EventLog(path, clock=clock).append(kind, None, payload)
+        event = EventLog(path, clock=clock).append(kind, None, payload)
+    # The file actually written: a later clock read may fall in another month.
+    event["ledger"] = path.name
+    return event
 
 
 def ask(question, *, notebook, router_factory, listener=None, model_check=None, out=print, color=False,
