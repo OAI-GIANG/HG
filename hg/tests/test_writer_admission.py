@@ -396,8 +396,11 @@ class AppendOutcomeTests(unittest.TestCase):
             snapshot = {"task": {"task_id": "T-1", "state": "CLOSED_VERIFIED", "objective": "synthetic"},
                         "version": 7, "result": None, "evidence": {}}
             with self._flaky_once():
-                with self.assertRaises(OSError):
-                    memory.record_task_outcome(snapshot)            # best-effort caller swallows this
+                # MemoryStore re-reads the durable ledger after an ambiguous fsync error.
+                # When the exact episode is present, it can safely resolve the operation
+                # as committed instead of surfacing an unknown write outcome.
+                recorded = memory.record_task_outcome(snapshot)
+                self.assertEqual(recorded["subject"], "task:T-1")
                 memory.remember(layer="SEMANTIC", kind="NOTE", subject="next", content="later write",
                                 source="USER", source_ref="synthetic")
             reloaded = MemoryStore(path)                           # what `hg serve` does at startup

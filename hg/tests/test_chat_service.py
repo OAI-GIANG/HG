@@ -287,6 +287,67 @@ class ChatOverHTTPTests(ChatServiceBase):
         self.assertEqual(body["brain"]["model_calls"][0]["status"], "OK")
         self.assertEqual([e["kind"] for e in self.ledger()], ["MODEL_CALL", "ASK"])
 
+        receipt_id = body["brain"]["receipt_event_id"]
+        # MODEL_DERIVED must be an exact excerpt of the immutable ASK answer.
+        restatement = self.text
+        preview_body = json.dumps({"receipt_id": receipt_id, "subject": "phap-thu-do",
+                                   "text": restatement}, ensure_ascii=False).encode()
+        conn = http.client.HTTPConnection(host, port, timeout=15)
+        conn.request("POST", "/v1/chat/save-preview", body=preview_body, headers={
+            "Authorization": "Bearer " + self.TOKEN.decode(), "Content-Type": "application/json",
+            "Content-Length": str(len(preview_body))})
+        preview_response = conn.getresponse()
+        preview = json.loads(preview_response.read().decode("utf-8"))
+        conn.close()
+        self.assertEqual(preview_response.status, 200)
+        self.assertFalse(preview["will_write"])
+        self.assertFalse((self.home / "notes.jsonl").exists())
+
+        save_payload = {"receipt_id": receipt_id, "subject": "phap-thu-do", "text": restatement,
+                        "confirm_sha256": preview["confirmation_sha256"]}
+        save_body = json.dumps(save_payload, ensure_ascii=False).encode()
+        conn = http.client.HTTPConnection(host, port, timeout=15)
+        conn.request("POST", "/v1/chat/save", body=save_body, headers={
+            "Authorization": "Bearer " + self.TOKEN.decode(), "Content-Type": "application/json",
+            "Content-Length": str(len(save_body))})
+        save_response = conn.getresponse()
+        saved = json.loads(save_response.read().decode("utf-8"))
+        conn.close()
+        self.assertEqual(save_response.status, 200)
+        self.assertTrue(saved["created"])
+        note = Notebook(self.home).active()[0]
+        self.assertEqual(note["source"], "USER")
+        self.assertIn(receipt_id, note["source_ref"])
+        self.assertEqual(note["authorized_principal_id"], self.server.owner_principal_id)
+        self.assertTrue(note["source_ref"].startswith(f"ask:{receipt_id}:v2:"))
+        self.assertNotIn(self.TOKEN.decode(), note["authorized_principal_id"])
+
+        conn = http.client.HTTPConnection(host, port, timeout=15)
+        conn.request("POST", "/v1/chat/save", body=save_body, headers={
+            "Authorization": "Bearer " + self.TOKEN.decode(), "Content-Type": "application/json",
+            "Content-Length": str(len(save_body))})
+        retry_response = conn.getresponse()
+        retried = json.loads(retry_response.read().decode("utf-8"))
+        conn.close()
+        self.assertEqual(retry_response.status, 200)
+        self.assertFalse(retried["created"])
+        self.assertEqual(len(Notebook(self.home).active()), 1)
+
+        # Exact replay becomes inactive after owner retraction; HTTP must expose 409,
+        # and the old note must not be recreated by the same ASK receipt.
+        Notebook(self.home).forget(note["memory_id"], reason="owner retracted this saved note")
+        conn = http.client.HTTPConnection(host, port, timeout=15)
+        conn.request("POST", "/v1/chat/save", body=save_body, headers={
+            "Authorization": "Bearer " + self.TOKEN.decode(), "Content-Type": "application/json",
+            "Content-Length": str(len(save_body))})
+        inactive_response = conn.getresponse()
+        inactive = json.loads(inactive_response.read().decode("utf-8"))
+        conn.close()
+        self.assertEqual(inactive_response.status, 409)
+        self.assertEqual(inactive["error"], "memory_save_inactive")
+        self.assertEqual(Notebook(self.home).active(), [])
+        self.assertEqual(len(Notebook(self.home).snapshot()), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
@@ -313,5 +374,6 @@ class CreateServiceWiringTests(unittest.TestCase):
         self.addCleanup(server.server_close)
         self.assertIsInstance(server.chat, ChatService)
         self.assertEqual((server.chat.home, server.chat.release_id), (tmp / "assistant", "f" * 64))
-        self.assertEqual(set(server.ui_assets), {"/ui/", "/ui/index.html", "/ui/app.js", "/ui/styles.css"})
+        self.assertEqual(set(server.ui_assets), {"/ui/", "/ui/index.html", "/ui/app.js",
+                                                   "/ui/memory-save-flow.js", "/ui/styles.css"})
         self.assertFalse((tmp / "assistant").exists())       # never created by the service

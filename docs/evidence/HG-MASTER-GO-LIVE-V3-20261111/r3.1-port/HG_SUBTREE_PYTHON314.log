@@ -1,0 +1,83 @@
+....................................................................../data/data/com.termux/files/usr/lib/python3.14/unittest/case.py:673: ResourceWarning: unclosed <socket.socket fd=4, family=2, type=1, proto=0, laddr=('127.0.0.1', 39517)>
+  self.doCleanups()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+....................................................................................................ss....................................................................../data/data/com.termux/files/usr/lib/python3.14/threading.py:290: ResourceWarning: unclosed <socket.socket fd=4, family=2, type=1, proto=0, laddr=('127.0.0.1', 45611)>
+  def __init__(self, lock=None):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/data/data/com.termux/files/usr/lib/python3.14/threading.py:290: ResourceWarning: unclosed <socket.socket fd=5, family=2, type=1, proto=0, laddr=('127.0.0.1', 41901)>
+  def __init__(self, lock=None):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+.....s................................./data/data/com.termux/files/home/HG-MEMORY-CONTINUITY-R3.1-PORT/hg/tests/test_finish_script.py:124: ResourceWarning: unclosed file <_io.TextIOWrapper name='/proc/sys/kernel/random/boot_id' mode='r' encoding='utf-8'>
+  boot = open("/proc/sys/kernel/random/boot_id").read().strip() if os.path.exists(
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+......................................................................................................./data/data/com.termux/files/usr/lib/python3.14/socketserver.py:818: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7ecd8004f0>
+  self.wfile = _SocketWriter(self.connection)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/data/data/com.termux/files/usr/lib/python3.14/socketserver.py:818: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7ecd803f10>
+  self.wfile = _SocketWriter(self.connection)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/data/data/com.termux/files/usr/lib/python3.14/socketserver.py:818: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7ecd800220>
+  self.wfile = _SocketWriter(self.connection)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/data/data/com.termux/files/usr/lib/python3.14/socketserver.py:818: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7ecc1e97b0>
+  self.wfile = _SocketWriter(self.connection)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/data/data/com.termux/files/usr/lib/python3.14/socketserver.py:818: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7ecc1e89a0>
+  self.wfile = _SocketWriter(self.connection)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/data/data/com.termux/files/usr/lib/python3.14/socketserver.py:818: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7ecc1e96c0>
+  self.wfile = _SocketWriter(self.connection)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/data/data/com.termux/files/usr/lib/python3.14/socketserver.py:818: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7ecc1e8b80>
+  self.wfile = _SocketWriter(self.connection)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/data/data/com.termux/files/usr/lib/python3.14/socketserver.py:818: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7ecc1e8c70>
+  self.wfile = _SocketWriter(self.connection)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/data/data/com.termux/files/usr/lib/python3.14/socketserver.py:818: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7ecc1e88b0>
+  self.wfile = _SocketWriter(self.connection)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/data/data/com.termux/files/usr/lib/python3.14/socketserver.py:818: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7ecc1e9a80>
+  self.wfile = _SocketWriter(self.connection)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/data/data/com.termux/files/usr/lib/python3.14/socketserver.py:818: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7ecc1e86d0>
+  self.wfile = _SocketWriter(self.connection)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/data/data/com.termux/files/usr/lib/python3.14/socketserver.py:818: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7ecc1e8f40>
+  self.wfile = _SocketWriter(self.connection)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/data/data/com.termux/files/usr/lib/python3.14/socketserver.py:818: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7ecc1e9030>
+  self.wfile = _SocketWriter(self.connection)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/data/data/com.termux/files/usr/lib/python3.14/socketserver.py:818: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7ecc1e8e50>
+  self.wfile = _SocketWriter(self.connection)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/data/data/com.termux/files/usr/lib/python3.14/socketserver.py:818: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7ecc1e8d60>
+  self.wfile = _SocketWriter(self.connection)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/data/data/com.termux/files/usr/lib/python3.14/socketserver.py:818: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7ecc1e9300>
+  self.wfile = _SocketWriter(self.connection)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/data/data/com.termux/files/usr/lib/python3.14/socketserver.py:818: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7ecc1e8310>
+  self.wfile = _SocketWriter(self.connection)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+............................................................................................................................................................................................................................................................................................................................................../data/data/com.termux/files/home/HG-MEMORY-CONTINUITY-R3.1-PORT/maep/ledger.py:123: ResourceWarning: unclosed <socket.socket [closed] fd=5, family=2, type=1, proto=6>
+  obj[key] = value
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/data/data/com.termux/files/usr/lib/python3.14/tempfile.py:484: ResourceWarning: Implicitly cleaning up <HTTPError 404: 'Not Found'>
+  _warnings.warn(self.warn_message, ResourceWarning)
+/data/data/com.termux/files/home/HG-MEMORY-CONTINUITY-R3.1-PORT/maep/ledger.py:123: ResourceWarning: unclosed <socket.socket [closed] fd=6, family=2, type=1, proto=6>
+  obj[key] = value
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/data/data/com.termux/files/home/HG-MEMORY-CONTINUITY-R3.1-PORT/maep/ledger.py:123: ResourceWarning: unclosed <socket.socket [closed] fd=7, family=2, type=1, proto=6>
+  obj[key] = value
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+.................
+----------------------------------------------------------------------
+Ran 735 tests in 267.506s
+
+OK (skipped=3)
+
+[guard dev] false-positive rate = 0.019 (1/52); flagged: [('FP008', ['ai-addressee', 'answer-instruction'])]
+
+[guard dev] recall = 1.000 (66/66); missed: []

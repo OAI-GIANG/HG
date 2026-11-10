@@ -37,7 +37,8 @@ from maep.core import MAEPError
 from hg.assistant import config as cfg
 from hg.assistant.ask import append_receipt, ask, safe
 from hg.assistant.home import Busy, HomeError, ensure_home
-from hg.assistant.notes import Notebook
+from hg.assistant.notes import Notebook, NoteConflict, NoteError, NoteInactive
+from hg.assistant.ask_archive import AskArchiveError, preview_model_derived_save, save_model_derived_content
 from hg.http_api import HTTPBoundaryError
 
 CHANNEL = "http:/v1/chat"
@@ -83,6 +84,56 @@ class ChatService:
             return self._answer(message, general)
         finally:
             self._busy.release()
+
+    def preview_memory_save(self, receipt_id, *, subject, text, principal_id=None):
+        """Return a no-write preview of MODEL_DERIVED content pending owner authorization."""
+        try:
+            home = ensure_home(self.home, create=False)
+            return preview_model_derived_save(
+                home, receipt_id, subject=subject, text=text, principal_id=principal_id)
+        except Busy as exc:
+            raise HTTPBoundaryError(503, "assistant_busy", "another HG command is using the memory ledger") from exc
+        except HomeError as exc:
+            raise HTTPBoundaryError(503, "assistant_unavailable", "HG_HOME is not usable") from exc
+        except AskArchiveError as exc:
+            raise HTTPBoundaryError(400, "invalid_memory_save", str(exc)) from exc
+        except NoteError as exc:
+            raise HTTPBoundaryError(400, "invalid_memory_save", str(exc)) from exc
+        except MAEPError as exc:
+            raise HTTPBoundaryError(503, "notes_ledger_damaged", "memory ledger cannot be read safely") from exc
+
+    def save_model_derived_memory(self, receipt_id, *, subject, text, confirm_sha256, principal_id=None):
+        """Persist exact digest-confirmed MODEL_DERIVED content; owner authorization is not truth verification."""
+        try:
+            home = ensure_home(self.home, create=False)
+            record, created = save_model_derived_content(
+                home, receipt_id, subject=subject, text=text, confirm_sha256=confirm_sha256,
+                principal_id=principal_id, clock=self._clock, lock_wait_s=self._wait)
+            return {
+                "created": created, "memory_id": record["memory_id"], "subject": record["subject"],
+                "source_ref": record["source_ref"], "status": record["status"],
+                "provenance": {
+                    "content_origin": record.get("content_origin", "UNKNOWN"),
+                    "authorized_by": record.get("authorized_by", "UNKNOWN"),
+                    "owner_confirmed": record.get("owner_confirmed") is True,
+                    "ask_receipt_id": record.get("ask_receipt_id"),
+                    "authorized_principal_id": record.get("authorized_principal_id"),
+                    "verified_truth": False,
+                },
+            }
+        except Busy as exc:
+            raise HTTPBoundaryError(503, "assistant_busy", "another HG command is using the memory ledger") from exc
+        except HomeError as exc:
+            raise HTTPBoundaryError(503, "assistant_unavailable", "HG_HOME is not usable") from exc
+        except NoteInactive as exc:
+            raise HTTPBoundaryError(409, "memory_save_inactive",
+                                    "this ASK receipt is already bound to a retracted or superseded note; create a new ASK receipt") from exc
+        except NoteConflict as exc:
+            raise HTTPBoundaryError(409, "memory_conflict", "this subject already has a different active note") from exc
+        except (AskArchiveError, NoteError) as exc:
+            raise HTTPBoundaryError(400, "invalid_memory_save", str(exc)) from exc
+        except MAEPError as exc:
+            raise HTTPBoundaryError(503, "notes_ledger_damaged", "memory ledger cannot be written safely") from exc
 
     # ---------- steps ----------
 

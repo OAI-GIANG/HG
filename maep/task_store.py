@@ -297,6 +297,11 @@ class TaskStore:
             view["open_blockers"] = [b for b in view.pop("blockers").values() if not b["resolved"]]
             return view
 
+    def task_ids(self):
+        """Sorted immutable task identifiers for read-only reconciliation/inspection."""
+        with self._lock:
+            return tuple(sorted(self._records))
+
     # ----- creation ----------------------------------------------------------------
 
     def create_task(self, task):

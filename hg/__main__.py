@@ -165,7 +165,7 @@ def main(argv=None):
             return assistant_cli.interactive()
         parser.print_help()
         return 2
-    if args.command in {"note", "ask", "check", "summarize", "model", "eval", "repair"}:
+    if args.command in {"note", "memory", "ask", "check", "summarize", "model", "eval", "repair"}:
         return assistant_cli.run(args)
 
     if args.command == "serve":

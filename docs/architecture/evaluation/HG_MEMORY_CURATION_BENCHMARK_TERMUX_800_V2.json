@@ -1,0 +1,85 @@
+{
+  "schema": "HG-CURATION-BENCHMARK-TERMUX/2",
+  "environment": {
+    "platform": "Android / Termux ARM64",
+    "python": "3.14.8",
+    "date": "2026-11-01"
+  },
+  "scope": "Synthetic 800-record curation workloads after R2 adversarial fixes; not a production SLA.",
+  "limits": {
+    "max_records": 10000,
+    "max_pair_comparisons": 20000,
+    "max_findings": 500
+  },
+  "runs": {
+    "same": {
+      "mode": "same",
+      "n": 800,
+      "pairs_per_pass": 319600,
+      "input_bytes": 175797,
+      "analyze_s": 0.028,
+      "serialize_s": 0.002,
+      "output_bytes": 231339,
+      "conflicts": 500,
+      "near": 0,
+      "cross_subject": 0,
+      "comparisons_evaluated": 500,
+      "truncated": true,
+      "resource_limits": {
+        "max_records": 10000,
+        "max_pair_comparisons": 20000,
+        "max_findings": 500
+      },
+      "peak_rss_mb": 18.7
+    },
+    "distinct": {
+      "mode": "distinct",
+      "n": 800,
+      "pairs_per_pass": 0,
+      "input_bytes": 174887,
+      "analyze_s": 0.038,
+      "serialize_s": 0.003,
+      "output_bytes": 404784,
+      "conflicts": 0,
+      "near": 0,
+      "cross_subject": 500,
+      "comparisons_evaluated": 500,
+      "truncated": true,
+      "resource_limits": {
+        "max_records": 10000,
+        "max_pair_comparisons": 20000,
+        "max_findings": 500
+      },
+      "peak_rss_mb": 19.9
+    },
+    "brain": {
+      "mode": "brain",
+      "n": 800,
+      "pairs_per_pass": 799,
+      "input_bytes": 180267,
+      "analyze_s": 0.051,
+      "serialize_s": 0.003,
+      "output_bytes": 410783,
+      "conflicts": 0,
+      "near": 0,
+      "cross_subject": 500,
+      "comparisons_evaluated": 1299,
+      "truncated": true,
+      "resource_limits": {
+        "max_records": 10000,
+        "max_pair_comparisons": 20000,
+        "max_findings": 500
+      },
+      "peak_rss_mb": 19.9
+    }
+  },
+  "stress_10000_records": {
+    "records": 10000,
+    "findings_emitted": 500,
+    "comparisons_evaluated": 20000,
+    "max_findings": 500,
+    "max_pair_comparisons": 20000,
+    "truncated": true,
+    "result": "PASS"
+  }
+}

@@ -36,7 +36,7 @@ _BUSY_RESPONSE = (b"HTTP/1.1 503 Service Unavailable\r\nContent-Type: applicatio
                   b"Connection: close\r\n\r\n" + _BUSY_BODY)
 
 
-# Web UI shipped inside the release (hg/ui/). These four exact request targets are the only
+# Web UI shipped inside the release (hg/ui/). These five exact request targets are the only
 # ones answered without a bearer token: static files with no data and no effect, so a browser
 # can open the page. Host and loopback-client checks still apply; every other route,
 # including any other /ui/... path, still answers 401 before routing (HG_SERVICE_V1 §5).
@@ -45,6 +45,7 @@ UI_FILES = {
     "/ui/": ("index.html", "text/html; charset=utf-8"),
     "/ui/index.html": ("index.html", "text/html; charset=utf-8"),
     "/ui/app.js": ("app.js", "text/javascript; charset=utf-8"),
+    "/ui/memory-save-flow.js": ("memory-save-flow.js", "text/javascript; charset=utf-8"),
     "/ui/styles.css": ("styles.css", "text/css; charset=utf-8"),
 }
 UI_CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; "
@@ -426,6 +427,9 @@ class HGHTTPServer(http.server.ThreadingHTTPServer):
         except UnicodeDecodeError as exc:
             raise ValueError("service token must be ASCII") from exc
         self.token = token
+        # One local owner principal is derived server-side from the configured bearer
+        # credential. Never accept a principal identifier from the request body.
+        self.owner_principal_id = "owner:service-token-sha256:" + hashlib.sha256(token).hexdigest()
         self.max_body_bytes = max_body_bytes
         self.release_report = release_report or (lambda: {"result": "UNVERIFIED"})
         self.trust_report = trust_report or (lambda: {"result": "UNVERIFIED"})
@@ -694,12 +698,54 @@ class HGHTTPServer(http.server.ThreadingHTTPServer):
                                             f"message must have 1..{MAX_CHAT_MESSAGE_CHARS} characters")
                 self._send(200, outer.chat(message, general=general))
 
+            def _chat_memory_save(self, *, preview):
+                if outer.chat is None or not callable(getattr(outer.chat, "preview_memory_save", None)):
+                    raise HTTPBoundaryError(503, "chat_unavailable", "memory save is not configured on this service")
+                try:
+                    release = outer.release_report()
+                except Exception:
+                    raise HTTPBoundaryError(503, "service_not_ready", "release integrity is unavailable")
+                if release.get("result") != "VERIFIED":
+                    raise HTTPBoundaryError(503, "service_not_ready", "release integrity must be VERIFIED")
+                payload = self._body()
+                expected = {"receipt_id", "subject", "text"} if preview else {
+                    "receipt_id", "subject", "text", "confirm_sha256"
+                }
+                if not isinstance(payload, dict) or set(payload) != expected:
+                    raise HTTPBoundaryError(400, "invalid_request", "memory save request has an unexpected shape")
+                receipt_id, subject, content = payload["receipt_id"], payload["subject"], payload["text"]
+                if not all(isinstance(v, str) for v in (receipt_id, subject, content)):
+                    raise HTTPBoundaryError(400, "invalid_request", "receipt_id, subject and text must be strings")
+                subject = unicodedata.normalize("NFC", subject).strip()
+                content = unicodedata.normalize("NFC", content).strip()
+                if not subject or len(subject) > 80 or not content or len(content) > 4000:
+                    raise HTTPBoundaryError(400, "invalid_memory_save",
+                                            "subject must be 1..80 characters and text 1..4000 characters")
+                if preview:
+                    result = outer.chat.preview_memory_save(
+                        receipt_id, subject=subject, text=content,
+                        principal_id=outer.owner_principal_id)
+                else:
+                    confirm = payload["confirm_sha256"]
+                    if not isinstance(confirm, str) or len(confirm) not in (64, 71):
+                        raise HTTPBoundaryError(400, "invalid_memory_save", "confirm_sha256 must be a SHA-256 digest")
+                    result = outer.chat.save_model_derived_memory(
+                        receipt_id, subject=subject, text=content, confirm_sha256=confirm,
+                        principal_id=outer.owner_principal_id)
+                self._send(200, result)
+
             def do_POST(self):
                 try:
                     self._authenticate()
                     path = self._origin_path()
                     if path == "/v1/chat":
                         self._chat()
+                        return
+                    if path == "/v1/chat/save-preview":
+                        self._chat_memory_save(preview=True)
+                        return
+                    if path == "/v1/chat/save":
+                        self._chat_memory_save(preview=False)
                         return
                     if path != "/v1/tasks":
                         raise HTTPBoundaryError(404, "not_found", "route not found")

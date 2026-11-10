@@ -25,6 +25,13 @@ RECORD = re.compile(
     r"(_RECONCILIATION_\d{8}[A-Z]?)?\.md)$"
 )
 
+# These exact evaluation artifacts were recorded on 2026-11-02. The owner decision
+# OD-IR-20261109 superseded their former review gate; preserve them as history, not policy.
+HISTORICAL_EVALUATION_RECORDS = {
+    "docs/architecture/evaluation/r3.1/R3_1_ACCEPTANCE_CROSSWALK_K1-K8.md",
+    "docs/architecture/evaluation/r3.1/R3_1_REMEDIATION_REPORT.md",
+}
+
 _REVIEW = r"(?:review|reviewer|reviewers|approval|approver|party)"
 _KIND = r"(?:independent|external|second|separate|another|different)"
 _QUAL = r"(?:human|security|technical|formal|github)"
@@ -87,7 +94,7 @@ def governing_files():
             relative = path.relative_to(ROOT).as_posix()
             if relative.startswith("docs/evidence/"):
                 continue
-            if RECORD.match(path.name):
+            if RECORD.match(path.name) or relative in HISTORICAL_EVALUATION_RECORDS:
                 continue
             found.add(path)
     return sorted(found)

@@ -1,0 +1,14 @@
+HG Memory Continuity V2 — final R2 static validation
+Date: 2026-11-01 (Asia/Bangkok)
+Candidate: feature/memory-continuity-v2
+Base: 2f00a62deb2637ee4ce4cb7e77a82592cc87b1c5
+
+PASS: git diff --check
+PASS: node --check hg/ui/app.js
+PASS: Python AST syntax parse, 18/18 changed/added Python modules
+PASS: retired API identifier scan
+PASS: HTTP text limit aligned to Notebook MAX_NOTE_CHARS=4000
+PASS: preview stale-input and save-in-flight UI guards present
+
+No private HG_HOME ledger was read or changed.
+No commit, push, merge, deploy, dependency installation, or production operation performed.

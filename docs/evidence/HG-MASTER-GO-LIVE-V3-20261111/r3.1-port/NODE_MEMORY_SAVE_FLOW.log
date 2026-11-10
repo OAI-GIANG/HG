@@ -1,0 +1,17 @@
+✔ delayed preview is discarded after content changes and invalidation (3.936923ms)
+✔ delayed preview is discarded after subject changes (0.455693ms)
+✔ stale subject/content cannot submit an old confirmation digest (0.524846ms)
+✔ inputs are locked during save and unlocked after a failed save (2.969538ms)
+✔ concurrent/double confirmation sends exactly one save request (0.857231ms)
+✔ lost save response is OUTCOME_UNKNOWN and exact retry does not duplicate the record (0.998384ms)
+✔ HTTP 5xx after save submission is treated as an unknown outcome (0.508308ms)
+✔ 4,000 characters are allowed and 4,001 are rejected before preview request (0.298769ms)
+✔ preview server response must match submitted subject and content (0.388076ms)
+ℹ tests 9
+ℹ suites 0
+ℹ pass 9
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 33.971923

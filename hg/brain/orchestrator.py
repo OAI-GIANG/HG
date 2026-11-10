@@ -15,7 +15,7 @@ import hashlib
 import json
 import uuid
 
-from maep.core import MAEPError, _nonempty_string, retry_decision
+from maep.core import MAEPError, TERMINAL_STATES, _nonempty_string, retry_decision
 from hg.brain.plan import step_request, validate_plan
 from hg.brain.context import build_context
 from hg.brain.planner import PlanRejected
@@ -58,6 +58,7 @@ class BrainOrchestrator:
         self._memory = memory          # MemoryStore: outcomes recorded as episodic memory
         self._evidence_artifacts = evidence_artifacts
         self._outcomes = {}            # task_id -> full step outcomes of the last run (in memory only)
+        self._memory_pending = {}       # task_id -> visible retry metadata; task state remains authoritative
 
     # ---------- helpers ----------
 
@@ -292,12 +293,92 @@ class BrainOrchestrator:
 
     def _finish_record(self, task_id):
         snapshot = self._store.snapshot(task_id)
-        if self._memory is not None:
-            try:
-                self._memory.record_task_outcome(snapshot)
-            except Exception:
-                pass    # memory is best-effort; it never changes task state or authority
-        return snapshot
+        if self._memory is None:
+            return snapshot
+        if snapshot["task"]["state"] not in TERMINAL_STATES:
+            result = dict(snapshot)
+            result["memory_recording"] = {"status": "SKIPPED_NON_TERMINAL", "task_version": snapshot["version"]}
+            return result
+        try:
+            self._memory.record_task_outcome(snapshot)
+            self._memory_pending.pop(task_id, None)
+            return snapshot
+        except Exception as exc:
+            from hg.memory.store import MemoryWriteNotCommitted, MemoryWriteOutcomeUnknown
+            status = ("NOT_WRITTEN" if isinstance(exc, MemoryWriteNotCommitted)
+                      else "UNKNOWN_IF_WRITTEN" if isinstance(exc, MemoryWriteOutcomeUnknown)
+                      else "UNKNOWN_IF_WRITTEN")
+            pending = {"status": status, "error_type": type(exc).__name__,
+                       "task_version": snapshot["version"]}
+            self._memory_pending[task_id] = pending
+            result = dict(snapshot)
+            result["memory_recording"] = dict(pending)
+            return result
+
+    def pending_memory_outcomes(self):
+        """Current-process retry queue. After restart, reconcile by task id from TaskStore."""
+        return {task_id: dict(status) for task_id, status in self._memory_pending.items()}
+
+    def reconcile_memory_outcome(self, task_id):
+        """Retry only the append-only episode write for one known task; never rerun task effects."""
+        if self._memory is None:
+            raise MAEPError("memory is not configured on this orchestrator")
+        snapshot = self._store.snapshot(task_id)
+        if snapshot["task"]["state"] not in TERMINAL_STATES:
+            raise MAEPError(f"memory reconciliation requires a terminal task; task is {snapshot['task']['state']}")
+        record = self._memory.record_task_outcome(snapshot)
+        self._memory_pending.pop(task_id, None)
+        return {"status": "RECORDED", "task_id": task_id, "memory_id": record["memory_id"],
+                "source_ref": record["source_ref"], "task_version": snapshot["version"]}
+
+    def reconcile_memory_outcomes(self, *, apply=False):
+        """Preview or restore missing terminal-task episodes; no action/tool is ever replayed.
+
+        apply=False is the default and performs no writes. apply=True writes only missing,
+        unambiguous EPISODIC records through the configured MemoryStore.
+        """
+        if self._memory is None:
+            raise MAEPError("memory is not configured on this orchestrator")
+        records = self._memory.all_records()
+        by_source = {}
+        for record in records:
+            if record["layer"] == "EPISODIC" and record["kind"] == "EVENT":
+                by_source.setdefault(record["source_ref"], []).append(record)
+        results = []
+        for task_id in self._store.task_ids():
+            snapshot = self._store.snapshot(task_id)
+            task = snapshot["task"]
+            if task["state"] not in TERMINAL_STATES:
+                continue
+            source_ref = f"tasks.jsonl:{task_id}@{snapshot['version']}"
+            existing = by_source.get(source_ref, [])
+            expected_value = {"state": task["state"],
+                              "candidate_ref": (snapshot.get("result") or {}).get("candidate_ref")}
+            expected_content = (f"Task {task_id} ended {task['state']}: {task['objective']}"
+                                + (f" (candidate {expected_value['candidate_ref']})"
+                                   if expected_value["candidate_ref"] else ""))
+            if len(existing) > 1:
+                results.append({"task_id": task_id, "status": "CONFLICTING_MEMORY_RECORDS",
+                                "source_ref": source_ref})
+                continue
+            if existing:
+                record = existing[0]
+                consistent = (record["subject"] == f"task:{task_id}" and record["value"] == expected_value
+                              and record["content"] == expected_content
+                              and record["evidence_refs"] == sorted(snapshot.get("evidence", {})))
+                results.append({"task_id": task_id,
+                                "status": "ALREADY_RECORDED" if consistent else "SOURCE_REF_COLLISION",
+                                "memory_id": record["memory_id"], "source_ref": source_ref})
+                continue
+            if not apply:
+                results.append({"task_id": task_id, "status": "MISSING", "source_ref": source_ref})
+                continue
+            record = self._memory.record_task_outcome(snapshot)
+            results.append({"task_id": task_id, "status": "RESTORED",
+                            "memory_id": record["memory_id"], "source_ref": source_ref})
+        return {"mode": "APPLY" if apply else "DRY_RUN", "results": results,
+                "counts": {status: sum(r["status"] == status for r in results)
+                           for status in sorted({r["status"] for r in results})}}
 
     def execute_task(self, task, steps):
         """Drive one task as far as evidence allows. Returns the final snapshot."""

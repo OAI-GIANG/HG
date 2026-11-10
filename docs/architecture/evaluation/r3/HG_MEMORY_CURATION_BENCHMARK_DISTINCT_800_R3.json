@@ -1,0 +1,1 @@
+{"mode": "distinct", "n": 800, "pairs_per_pass": 0, "input_bytes": 174887, "analyze_s": 0.033, "serialize_s": 0.003, "output_bytes": 404784, "conflicts": 0, "near": 0, "cross_subject": 500, "comparisons_evaluated": 500, "truncated": true, "resource_limits": {"max_records": 10000, "max_pair_comparisons": 20000, "max_findings": 500}, "peak_rss_mb": 20.2}

@@ -1,0 +1,23 @@
+COMMAND: Python AST parse for changed/new Python files; node --check; Node behavioral tests; git diff --check
+REVISION: 2f00a62deb2637ee4ce4cb7e77a82592cc87b1c5
+BRANCH: feature/memory-continuity-v2
+TIME_START: 2026-11-01T17:36:50+07:00
+PYTHON_AST=20/20 PASS
+✔ delayed preview is discarded after content changes and invalidation (3.730462ms)
+✔ delayed preview is discarded after subject changes (0.412231ms)
+✔ stale subject/content cannot submit an old confirmation digest (0.490692ms)
+✔ inputs are locked during save and unlocked after a failed save (2.695693ms)
+✔ concurrent/double confirmation sends exactly one save request (3.97877ms)
+✔ 4,000 characters are allowed and 4,001 are rejected before preview request (0.414462ms)
+✔ preview server response must match submitted subject and content (0.417ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 7
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 308.164077
+EXIT_CODES: python_ast=0 app_js=0 memory_save_flow_js=0 node_behavior=0 git_diff_check=0
+RESULT=PASS
+TIME_END: 2026-11-01T17:36:51+07:00

@@ -9,6 +9,7 @@ Real loopback HTTP through HGHTTPServer:
 - The UI source itself: same-origin calls only (no 8080/18767), token only in an Authorization
   header, no localStorage, no innerHTML, no inline script/style (CSP script-src/style-src 'self').
 """
+import hashlib
 import http.client
 import json
 import re
@@ -114,6 +115,9 @@ class StaticUITests(ChatHTTPBase):
         status, headers, body = self.raw_request("GET", "/ui/app.js", token=False)
         self.assertEqual((status, headers["content-type"]), (200, "text/javascript; charset=utf-8"))
         self.assertEqual(body, (UI_DIR / "app.js").read_bytes())
+        status, headers, body = self.raw_request("GET", "/ui/memory-save-flow.js", token=False)
+        self.assertEqual((status, headers["content-type"]), (200, "text/javascript; charset=utf-8"))
+        self.assertEqual(body, (UI_DIR / "memory-save-flow.js").read_bytes())
         status, headers, body = self.raw_request("GET", "/ui/styles.css", token=False)
         self.assertEqual((status, headers["content-type"]), (200, "text/css; charset=utf-8"))
         self.assertEqual(body, (UI_DIR / "styles.css").read_bytes())
@@ -210,6 +214,70 @@ class ChatErrorMappingTests(ChatHTTPBase):
         self.assertEqual(body, {"error": "internal_error"})
 
 
+class FakeMemorySaveChat(FakeChat):
+    def __init__(self):
+        super().__init__()
+        self.preview_calls, self.save_calls = [], []
+
+    def preview_memory_save(self, receipt_id, *, subject, text, principal_id=None):
+        self.preview_calls.append((receipt_id, subject, text, principal_id))
+        return {"will_write": False, "confirmation_sha256": "a" * 64,
+                "authorized_principal_id": principal_id}
+
+    def save_model_derived_memory(self, receipt_id, *, subject, text, confirm_sha256, principal_id=None):
+        self.save_calls.append((receipt_id, subject, text, confirm_sha256, principal_id))
+        return {"status": "ACTIVE", "created": True, "memory_id": "M-1",
+                "authorized_principal_id": principal_id}
+
+
+class MemorySaveRouteTests(ChatHTTPBase):
+    def make_chat(self):
+        return FakeMemorySaveChat()
+
+    def test_memory_save_preview_rejects_text_above_notebook_limit(self):
+        status, body = self.request("POST", "/v1/chat/save-preview", body={
+            "receipt_id": "a" * 32, "subject": "test", "text": "x" * 4001})
+        self.assertEqual((status, body["error"]), (400, "invalid_memory_save"))
+        self.assertIn("4000", body["message"])
+        self.assertEqual(self.fake_chat.preview_calls, [])
+
+    def test_memory_save_preview_accepts_exactly_4000_characters(self):
+        text = "x" * 4000
+        status, body = self.request("POST", "/v1/chat/save-preview", body={
+            "receipt_id": "a" * 32, "subject": "test", "text": text})
+        self.assertEqual(status, 200)
+        principal = "owner:service-token-sha256:" + hashlib.sha256(TOKEN).hexdigest()
+        self.assertEqual(self.fake_chat.preview_calls, [("a" * 32, "test", text, principal)])
+
+    def test_memory_save_route_rejects_client_claimed_provenance_fields(self):
+        payload = {"receipt_id": "a" * 32, "subject": "test", "text": "x",
+                   "content_origin": "MODEL_DERIVED", "authorized_by": "OWNER", "owner_confirmed": True}
+        status, body = self.request("POST", "/v1/chat/save-preview", body=payload)
+        self.assertEqual((status, body["error"]), (400, "invalid_request"))
+        self.assertEqual(self.fake_chat.preview_calls, [])
+
+    def test_memory_save_routes_require_bearer_token(self):
+        status, body = self.request("POST", "/v1/chat/save-preview", token=False, body={
+            "receipt_id": "a" * 32, "subject": "test", "text": "nội dung kiểm tra"})
+        self.assertEqual((status, body["error"]), (401, "unauthorized"))
+        self.assertEqual(self.fake_chat.preview_calls, [])
+
+    def test_memory_save_preview_and_confirm_use_exact_payload(self):
+        payload = {"receipt_id": "a" * 32, "subject": "test", "text": "nội dung kiểm tra"}
+        status, body = self.request("POST", "/v1/chat/save-preview", body=payload)
+        self.assertEqual(status, 200)
+        self.assertFalse(body["will_write"])
+        principal = "owner:service-token-sha256:" + hashlib.sha256(TOKEN).hexdigest()
+        self.assertEqual(self.fake_chat.preview_calls,
+                         [(payload["receipt_id"], payload["subject"], payload["text"], principal)])
+        status, body = self.request("POST", "/v1/chat/save", body=dict(payload, confirm_sha256="a" * 64))
+        self.assertEqual(status, 200)
+        self.assertEqual(body["status"], "ACTIVE")
+        self.assertEqual(len(self.fake_chat.save_calls), 1)
+        self.assertEqual(self.fake_chat.save_calls[0][-1],
+                         "owner:service-token-sha256:" + hashlib.sha256(TOKEN).hexdigest())
+
+
 class ChatNotConfiguredTests(ChatHTTPBase):
     def make_chat(self):
         return None
@@ -227,6 +295,7 @@ class UISourceContractTests(unittest.TestCase):
         cls.html = (UI_DIR / "index.html").read_text(encoding="utf-8")
         cls.js = (UI_DIR / "app.js").read_text(encoding="utf-8")
         cls.css = (UI_DIR / "styles.css").read_text(encoding="utf-8")
+        cls.flow_js = (UI_DIR / "memory-save-flow.js").read_text(encoding="utf-8")
 
     def test_no_stale_or_absolute_endpoints(self):
         for text in (self.html, self.js, self.css):
@@ -236,7 +305,8 @@ class UISourceContractTests(unittest.TestCase):
 
     def test_calls_only_contract_routes_on_its_own_origin(self):
         routes = set(re.findall(r"""['"](/v1/[A-Za-z0-9/_.:-]*)""", self.js))
-        self.assertEqual(routes, {"/v1/chat", "/v1/health/ready", "/v1/tasks/"})
+        self.assertEqual(routes, {"/v1/chat", "/v1/chat/save-preview", "/v1/chat/save",
+                                   "/v1/health/ready", "/v1/tasks/"})
         self.assertIn("'Authorization'", self.js)
         self.assertIn("'Bearer '", self.js)
         self.assertIn("credentials: 'omit'", self.js)
@@ -248,6 +318,20 @@ class UISourceContractTests(unittest.TestCase):
         self.assertNotIn("URLSearchParams", self.js)
         self.assertNotIn("?token", self.js)
 
+    def test_memory_save_ui_uses_behavioral_controller_and_matching_limits(self):
+        self.assertIn("content.maxLength = 4000", self.js)
+        self.assertIn("subject.maxLength = 80", self.js)
+        self.assertIn("flow.invalidate()", self.js)
+        self.assertIn("flow.preview()", self.js)
+        self.assertIn("flow.confirm()", self.js)
+        self.assertIn("MAX_CONTENT_CHARS = 4000", self.flow_js)
+        self.assertIn("MEMORY_SAVE_TIMEOUT_MS = 30000", self.js)
+        self.assertRegex(self.js, r"requestSave:[\s\S]{0,300}MEMORY_SAVE_TIMEOUT_MS")
+        self.assertIn("requestGeneration !== generation", self.flow_js)
+        self.assertIn("setBusy('save', true)", self.flow_js)
+        self.assertIn("setBusy('save', false)", self.flow_js)
+        self.assertIn("SAVE_OUTCOME_UNKNOWN", self.flow_js)
+
     def test_no_html_injection_sinks(self):
         for sink in (".innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "eval(", "new Function"):
             self.assertNotIn(sink, self.js)
@@ -256,8 +340,10 @@ class UISourceContractTests(unittest.TestCase):
     def test_csp_compatible_markup(self):
         self.assertNotRegex(self.html, r"\sstyle\s*=")
         self.assertNotRegex(self.html, r"\son[a-z]+\s*=")
-        self.assertEqual(re.findall(r"<script\b[^>]*>", self.html), ['<script src="app.js">'])
-        self.assertEqual(re.findall(r"<script\b[^>]*>([\s\S]*?)</script>", self.html), [""])
+        self.assertEqual(re.findall(r"<script\b[^>]*>", self.html),
+                         ['<script src="memory-save-flow.js">', '<script src="app.js">'])
+        self.assertIn('"/ui/memory-save-flow.js"', (Path(__file__).resolve().parents[1] / "http_api.py").read_text())
+        self.assertEqual(re.findall(r"<script\b[^>]*>([\s\S]*?)</script>", self.html), ["", ""])
         self.assertEqual(re.findall(r"<link\b[^>]*>", self.html), ['<link rel="stylesheet" href="styles.css" />'])
 
     def test_enter_inserts_a_newline_and_only_the_button_sends(self):

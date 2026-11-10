@@ -192,7 +192,7 @@ class AcceptanceCriteriaTests(StoreTestCase):
         self.assertEqual(public, {
             "apply_transition", "claim_writer", "create_task", "record_authorization_request", "record_blocker",
             "record_closure", "record_evidence", "record_plan", "record_reassessment", "record_result",
-            "restore", "set_mandatory_gates", "snapshot",
+            "restore", "set_mandatory_gates", "snapshot", "task_ids",
         })
 
     def test_forbidden_shortcut_denied_and_not_logged(self):

@@ -1,0 +1,6 @@
+COMMAND: PYTHONPATH=. PYTHONDONTWRITEBYTECODE=1 python3 -B hg/tests/bench_memory_curation.py brain 10000
+REVISION: 2f00a62deb2637ee4ce4cb7e77a82592cc87b1c5
+TIME_START: 2026-11-01T17:37:01+07:00
+{"mode": "brain", "n": 10000, "pairs_per_pass": 9999, "input_bytes": 2274448, "analyze_s": 0.452, "serialize_s": 0.0, "output_bytes": 841, "conflicts": 0, "near": 0, "cross_subject": 0, "comparisons_evaluated": 20000, "truncated": true, "resource_limits": {"max_records": 10000, "max_pair_comparisons": 20000, "max_findings": 500}, "peak_rss_mb": 29.8}
+EXIT=0
+TIME_END: 2026-11-01T17:37:02+07:00

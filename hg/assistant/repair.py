@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 from maep import ledger
 from maep.core import MAEPError
 from hg.assistant.home import locked
+from hg.memory.locking import outcome_file_lock
 from hg.verification.evidence import EventLog
 
 
@@ -121,14 +122,21 @@ def repair(home, *, clock=None, apply=True):
     results = []
     with locked(home, exclusive=True):
         for path in sorted(home.glob("*.jsonl")):
+            # Inspect first: a directory, FIFO, symlink, or otherwise refused ledger
+            # must not acquire a sidecar file as a side effect of being refused.
             report, raw, keep = _inspect(path)
             if report["status"] == "TORN_LAST_LINE" and apply:
-                backup = path.with_name(f"{path.name}.bak-{clock():%Y%m%dT%H%M%SZ}")
-                _write_new(backup, raw, exclusive=True)      # never overwrite an earlier backup
-                tmp = path.with_name(path.name + ".tmp")
-                _write_new(tmp, keep, exclusive=False)
-                os.replace(tmp, path)
-                EventLog(path)          # must load cleanly now, or the exception reaches the owner
-                report.update(status="REPAIRED", backup=backup.name)
+                # MemoryStore direct writers share this lock; re-read after acquisition
+                # so the repair decision is based on bytes protected by the same lock.
+                with outcome_file_lock(path):
+                    report, raw, keep = _inspect(path)
+                    if report["status"] == "TORN_LAST_LINE":
+                        backup = path.with_name(f"{path.name}.bak-{clock():%Y%m%dT%H%M%SZ}")
+                        _write_new(backup, raw, exclusive=True)
+                        tmp = path.with_name(path.name + ".tmp")
+                        _write_new(tmp, keep, exclusive=False)
+                        os.replace(tmp, path)
+                        EventLog(path)  # must load cleanly now, or the exception reaches the owner
+                        report.update(status="REPAIRED", backup=backup.name)
             results.append(report)
     return results

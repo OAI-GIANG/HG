@@ -1,0 +1,832 @@
+test_event_visible_only_after_disk_write (hg.tests.test_acceptance.EventLogTests.test_event_visible_only_after_disk_write) ... ok
+test_non_contiguous_sequence_rejected (hg.tests.test_acceptance.EventLogTests.test_non_contiguous_sequence_rejected) ... ok
+test_closure_refused_without_mandatory_criterion (hg.tests.test_acceptance.GateStatusTests.test_closure_refused_without_mandatory_criterion) ... ok
+test_evidence_for_other_candidate_is_not_counted (hg.tests.test_acceptance.GateStatusTests.test_evidence_for_other_candidate_is_not_counted) ... ok
+test_evidence_for_other_criterion_is_not_counted (hg.tests.test_acceptance.GateStatusTests.test_evidence_for_other_criterion_is_not_counted) ... ok
+test_evidence_without_criterion_link_is_not_counted (hg.tests.test_acceptance.GateStatusTests.test_evidence_without_criterion_link_is_not_counted) ... ok
+test_failing_evidence_fails_even_beside_a_pass (hg.tests.test_acceptance.GateStatusTests.test_failing_evidence_fails_even_beside_a_pass) ... ok
+test_matching_pass_passes_and_closes (hg.tests.test_acceptance.GateStatusTests.test_matching_pass_passes_and_closes) ... ok
+test_no_evidence_is_not_run (hg.tests.test_acceptance.GateStatusTests.test_no_evidence_is_not_run) ... ok
+test_no_result_is_not_run (hg.tests.test_acceptance.GateStatusTests.test_no_result_is_not_run) ... ok
+test_wrong_evidence_type_is_not_counted (hg.tests.test_acceptance.GateStatusTests.test_wrong_evidence_type_is_not_counted) ... ok
+test_fixture_mode_is_labelled (hg.tests.test_anchored_runtime.AnchoredHappyPath.test_fixture_mode_is_labelled) ... ok
+test_task_closes_and_every_decision_carries_the_anchor (hg.tests.test_anchored_runtime.AnchoredHappyPath.test_task_closes_and_every_decision_carries_the_anchor) ... ok
+test_loaded_manifest_reports_grants_and_provenance (hg.tests.test_anchored_runtime.AuthorityCheckReport.test_loaded_manifest_reports_grants_and_provenance) ... ok
+test_unavailable_manifest_reports_blocked_exit_3 (hg.tests.test_anchored_runtime.AuthorityCheckReport.test_unavailable_manifest_reports_blocked_exit_3) ... ok
+test_grant_added_on_main_later_lets_task_resume (hg.tests.test_anchored_runtime.RestartWithTrustRoot.test_grant_added_on_main_later_lets_task_resume) ... ok
+test_reopen_after_restart_needs_the_trust_root (hg.tests.test_anchored_runtime.RestartWithTrustRoot.test_reopen_after_restart_needs_the_trust_root) ... ok
+test_manifest_expiring_mid_task_denies (hg.tests.test_anchored_runtime.RevocationAndBypass.test_manifest_expiring_mid_task_denies) ... ok
+test_revocation_after_running_denies_at_the_tool_boundary (hg.tests.test_anchored_runtime.RevocationAndBypass.test_revocation_after_running_denies_at_the_tool_boundary) ... ok
+test_revocation_before_run_stops_running (hg.tests.test_anchored_runtime.RevocationAndBypass.test_revocation_before_run_stops_running) ... ok
+test_feature_branch_manifest_is_not_a_trust_root (hg.tests.test_anchored_runtime.TrustRootDenials.test_feature_branch_manifest_is_not_a_trust_root) ... ok
+test_manifest_for_another_principal_denies (hg.tests.test_anchored_runtime.TrustRootDenials.test_manifest_for_another_principal_denies) ... ok
+test_manifest_without_the_action_denies (hg.tests.test_anchored_runtime.TrustRootDenials.test_manifest_without_the_action_denies) ... ok
+test_missing_manifest_denies_even_with_a_task_grant (hg.tests.test_anchored_runtime.TrustRootDenials.test_missing_manifest_denies_even_with_a_task_grant) ... ok
+test_unreachable_github_denies (hg.tests.test_anchored_runtime.TrustRootDenials.test_unreachable_github_denies) ... ok
+test_changed_content_invalidates_confirmation (hg.tests.test_ask_archive.AskArchiveTests.test_changed_content_invalidates_confirmation) ... ok
+test_chat_service_maps_inactive_ask_save_to_http_409 (hg.tests.test_ask_archive.AskArchiveTests.test_chat_service_maps_inactive_ask_save_to_http_409) ... ok
+test_confirmed_restatement_preserves_source_link_and_owner_status (hg.tests.test_ask_archive.AskArchiveTests.test_confirmed_restatement_preserves_source_link_and_owner_status) ... ok
+test_missing_and_malformed_receipt_ids_are_refused (hg.tests.test_ask_archive.AskArchiveTests.test_missing_and_malformed_receipt_ids_are_refused) ... ok
+test_new_ask_receipt_and_fresh_confirmation_can_save_after_retraction (hg.tests.test_ask_archive.AskArchiveTests.test_new_ask_receipt_and_fresh_confirmation_can_save_after_retraction) ... ok
+test_new_ask_receipt_cannot_claim_existing_note_with_old_provenance (hg.tests.test_ask_archive.AskArchiveTests.test_new_ask_receipt_cannot_claim_existing_note_with_old_provenance) ... ok
+test_non_answered_receipt_is_refused (hg.tests.test_ask_archive.AskArchiveTests.test_non_answered_receipt_is_refused) ... ok
+test_preview_is_read_only_and_digest_bound (hg.tests.test_ask_archive.AskArchiveTests.test_preview_is_read_only_and_digest_bound) ... ok
+test_retry_after_forget_is_rejected_as_inactive (hg.tests.test_ask_archive.AskArchiveTests.test_retry_after_forget_is_rejected_as_inactive) ... ok
+test_retry_after_supersede_is_rejected_as_inactive (hg.tests.test_ask_archive.AskArchiveTests.test_retry_after_supersede_is_rejected_as_inactive) ... ok
+test_retry_is_idempotent_even_after_process_reconstruction (hg.tests.test_ask_archive.AskArchiveTests.test_retry_is_idempotent_even_after_process_reconstruction) ... ok
+test_source_ref_retry_requires_exact_content_not_case_or_whitespace_equivalence (hg.tests.test_ask_archive.AskArchiveTests.test_source_ref_retry_requires_exact_content_not_case_or_whitespace_equivalence) ... ok
+test_verbatim_model_answer_can_be_saved_only_as_model_derived_after_confirmation (hg.tests.test_ask_archive.AskArchiveTests.test_verbatim_model_answer_can_be_saved_only_as_model_derived_after_confirmation) ... ok
+test_wrong_digest_writes_nothing (hg.tests.test_ask_archive.AskArchiveTests.test_wrong_digest_writes_nothing) ... ok
+test_a_directive_note_never_supports_an_answer_alongside_normal_notes (hg.tests.test_assistant_ask.AskTests.test_a_directive_note_never_supports_an_answer_alongside_normal_notes) ... ok
+test_answer_is_labelled_sentence_by_sentence (hg.tests.test_assistant_ask.AskTests.test_answer_is_labelled_sentence_by_sentence) ... ok
+test_conflicting_notes_are_warned_before_the_answer (hg.tests.test_assistant_ask.AskTests.test_conflicting_notes_are_warned_before_the_answer)
+AC-A7. ... ok
+test_contradicting_answer_is_flagged (hg.tests.test_assistant_ask.AskTests.test_contradicting_answer_is_flagged) ... ok
+test_general_never_sends_a_personal_question_without_notes (hg.tests.test_assistant_ask.AskTests.test_general_never_sends_a_personal_question_without_notes) ... ok
+test_keyword_stuffed_injection_cannot_push_real_notes_out (hg.tests.test_assistant_ask.AskTests.test_keyword_stuffed_injection_cannot_push_real_notes_out) ... ok
+test_no_model_and_no_note_exits_5 (hg.tests.test_assistant_ask.AskTests.test_no_model_and_no_note_exits_5) ... ok
+test_no_model_shows_notes_verbatim_and_exits_3 (hg.tests.test_assistant_ask.AskTests.test_no_model_shows_notes_verbatim_and_exits_3)
+AC-A3. ... ok
+test_no_usable_note_means_hg_abstains_unless_general_is_asked (hg.tests.test_assistant_ask.AskTests.test_no_usable_note_means_hg_abstains_unless_general_is_asked)
+F-D3: without a note on the topic the model only guesses; HG answers itself. ... ok
+test_notes_only_never_calls_the_model (hg.tests.test_assistant_ask.AskTests.test_notes_only_never_calls_the_model) ... ok
+test_notes_reach_the_model_as_fenced_json_and_control_chars_are_stripped (hg.tests.test_assistant_ask.AskTests.test_notes_reach_the_model_as_fenced_json_and_control_chars_are_stripped)
+AC-A4: data is fenced with a per-request marker a note cannot forge. ... ok
+test_notes_that_address_an_ai_are_shown_but_never_sent_to_the_model (hg.tests.test_assistant_ask.AskTests.test_notes_that_address_an_ai_are_shown_but_never_sent_to_the_model)
+F-D1 / S2 (OWASP LLM01): a directive note is quarantined, the personal gate then answers. ... ok
+test_owner_can_lift_the_quarantine_for_one_note (hg.tests.test_assistant_ask.AskTests.test_owner_can_lift_the_quarantine_for_one_note) ... ok
+test_paid_provider_is_never_a_fallback (hg.tests.test_assistant_ask.AskTests.test_paid_provider_is_never_a_fallback) ... ok
+test_personal_question_without_notes_is_answered_by_hg_without_the_model (hg.tests.test_assistant_ask.AskTests.test_personal_question_without_notes_is_answered_by_hg_without_the_model) ... ok
+test_receipt_is_written_without_secrets (hg.tests.test_assistant_ask.AskTests.test_receipt_is_written_without_secrets)
+AC-A5. ... ok
+test_config_rejects_unknown_keys (hg.tests.test_assistant_ask.ConfigTests.test_config_rejects_unknown_keys) ... ok
+test_listener_attestation (hg.tests.test_assistant_ask.ConfigTests.test_listener_attestation) ... ok
+test_model_ready_missing_and_digest_pin (hg.tests.test_assistant_ask.ConfigTests.test_model_ready_missing_and_digest_pin) ... ok
+test_unreachable_ollama_is_unavailable (hg.tests.test_assistant_ask.ConfigTests.test_unreachable_ollama_is_unavailable) ... ok
+test_eval_sets_are_fixed_and_shaped (hg.tests.test_assistant_ask.EvalScoringTests.test_eval_sets_are_fixed_and_shaped) ... ok
+test_scoring_rules (hg.tests.test_assistant_ask.EvalScoringTests.test_scoring_rules) ... ok
+test_loopback_validation (hg.tests.test_assistant_ask.LocalModelTransportTests.test_loopback_validation) ... ok
+test_proxy_variables_are_ignored (hg.tests.test_assistant_ask.LocalModelTransportTests.test_proxy_variables_are_ignored) ... /data/data/com.termux/files/usr/lib/python3.14/unittest/case.py:673: ResourceWarning: unclosed <socket.socket fd=4, family=2, type=1, proto=0, laddr=('127.0.0.1', 42379)>
+  self.doCleanups()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
+test_cli_note_ask_check_in_a_fresh_process (hg.tests.test_assistant_ask.ShimAndCliTests.test_cli_note_ask_check_in_a_fresh_process) ... ok
+test_shim_runs_the_release_even_from_a_checkout (hg.tests.test_assistant_ask.ShimAndCliTests.test_shim_runs_the_release_even_from_a_checkout) ... ok
+test_sentences_are_emitted_once_complete_with_trailing_citation (hg.tests.test_assistant_ask.StreamTests.test_sentences_are_emitted_once_complete_with_trailing_citation) ... ok
+test_think_blocks_are_removed_whole_and_when_streamed (hg.tests.test_assistant_ask.StreamTests.test_think_blocks_are_removed_whole_and_when_streamed)
+AC-M2. ... ok
+test_extractive_sentences_point_at_real_lines (hg.tests.test_assistant_ask.SummarizeTests.test_extractive_sentences_point_at_real_lines)
+AC-S1. ... ok
+test_model_sentences_are_checked_against_cited_lines (hg.tests.test_assistant_ask.SummarizeTests.test_model_sentences_are_checked_against_cited_lines)
+AC-S2. ... ok
+test_symlink_target_is_reported (hg.tests.test_assistant_ask.SummarizeTests.test_symlink_target_is_reported) ... ok
+test_text_addressing_an_ai_is_never_sent_to_the_model (hg.tests.test_assistant_ask.SummarizeTests.test_text_addressing_an_ai_is_never_sent_to_the_model) ... ok
+test_unsafe_inputs_are_refused (hg.tests.test_assistant_ask.SummarizeTests.test_unsafe_inputs_are_refused) ... ok
+test_correct_negations_are_still_supported (hg.tests.test_assistant_grounding.AdversarialTests.test_correct_negations_are_still_supported) ... ok
+test_no_altered_fact_is_labelled_note (hg.tests.test_assistant_grounding.AdversarialTests.test_no_altered_fact_is_labelled_note) ... ok
+test_two_notes_disagreeing_on_a_number_are_reported (hg.tests.test_assistant_grounding.NoteConflictTests.test_two_notes_disagreeing_on_a_number_are_reported) ... ok
+test_unrelated_notes_are_not_conflicts (hg.tests.test_assistant_grounding.NoteConflictTests.test_unrelated_notes_are_not_conflicts) ... ok
+test_citation_after_full_stop_stays_with_its_sentence (hg.tests.test_assistant_grounding.SentenceCheckTests.test_citation_after_full_stop_stays_with_its_sentence) ... ok
+test_citation_of_missing_note_is_badcite (hg.tests.test_assistant_grounding.SentenceCheckTests.test_citation_of_missing_note_is_badcite) ... ok
+test_filler_and_abstention_are_not_claims (hg.tests.test_assistant_grounding.SentenceCheckTests.test_filler_and_abstention_are_not_claims) ... ok
+test_hg_finds_support_even_without_model_citation (hg.tests.test_assistant_grounding.SentenceCheckTests.test_hg_finds_support_even_without_model_citation) ... ok
+test_names_that_are_also_function_words_are_found (hg.tests.test_assistant_grounding.SentenceCheckTests.test_names_that_are_also_function_words_are_found) ... ok
+test_supported_sentence_with_reformatted_date_is_note (hg.tests.test_assistant_grounding.SentenceCheckTests.test_supported_sentence_with_reformatted_date_is_note) ... ok
+test_unsupported_sentence_is_model (hg.tests.test_assistant_grounding.SentenceCheckTests.test_unsupported_sentence_is_model) ... ok
+test_wrong_citation_is_ignored_when_another_note_supports (hg.tests.test_assistant_grounding.SentenceCheckTests.test_wrong_citation_is_ignored_when_another_note_supports) ... ok
+test_accented_word_matches_only_itself_unaccented_matches_all (hg.tests.test_assistant_grounding.TextAnalysisTests.test_accented_word_matches_only_itself_unaccented_matches_all) ... ok
+test_folding_handles_d_with_stroke_and_marks (hg.tests.test_assistant_grounding.TextAnalysisTests.test_folding_handles_d_with_stroke_and_marks) ... ok
+test_function_syllables_are_dropped_but_negations_kept (hg.tests.test_assistant_grounding.TextAnalysisTests.test_function_syllables_are_dropped_but_negations_kept) ... ok
+test_nfd_input_equals_nfc (hg.tests.test_assistant_grounding.TextAnalysisTests.test_nfd_input_equals_nfc) ... ok
+test_numbers_compare_as_atoms (hg.tests.test_assistant_grounding.TextAnalysisTests.test_numbers_compare_as_atoms) ... ok
+test_check_never_matches_a_quarantined_note_and_flags_directive_text (hg.tests.test_assistant_guard.AblationTests.test_check_never_matches_a_quarantined_note_and_flags_directive_text) ... ok
+test_without_quarantine_the_anchor_still_drops_the_injected_note (hg.tests.test_assistant_guard.AblationTests.test_without_quarantine_the_anchor_still_drops_the_injected_note) ... ok
+test_without_the_anchor_quarantine_still_holds (hg.tests.test_assistant_guard.AblationTests.test_without_the_anchor_quarantine_still_holds) ... ok
+test_abstention_phrase_inside_brackets_does_not_hide_a_claim (hg.tests.test_assistant_guard.FD3RegressionTests.test_abstention_phrase_inside_brackets_does_not_hide_a_claim) ... ok
+test_answer_slot_is_optional (hg.tests.test_assistant_guard.FD3RegressionTests.test_answer_slot_is_optional) ... ok
+test_two_syllable_topic_needs_both_syllables (hg.tests.test_assistant_guard.FD3RegressionTests.test_two_syllable_topic_needs_both_syllables) ... ok
+test_unaccented_cho_is_not_a_negation (hg.tests.test_assistant_guard.FD3RegressionTests.test_unaccented_cho_is_not_a_negation) ... ok
+test_unaccented_content_syllables_are_not_dropped_as_function_words (hg.tests.test_assistant_guard.FD3RegressionTests.test_unaccented_content_syllables_are_not_dropped_as_function_words) ... ok
+test_wrong_document_with_a_matching_date_is_not_note (hg.tests.test_assistant_guard.FD3RegressionTests.test_wrong_document_with_a_matching_date_is_not_note) ... ok
+test_held_out_injections_are_all_quarantined (hg.tests.test_assistant_guard.GuardTests.test_held_out_injections_are_all_quarantined) ... ok
+test_normalisation (hg.tests.test_assistant_guard.GuardTests.test_normalisation) ... ok
+test_ordinary_notes_are_not_quarantined (hg.tests.test_assistant_guard.GuardTests.test_ordinary_notes_are_not_quarantined) ... ok
+test_bare_answer_to_a_question_whose_topic_the_note_lacks (hg.tests.test_assistant_guard.NewInformationTests.test_bare_answer_to_a_question_whose_topic_the_note_lacks) ... ok
+test_faithful_answer_is_note (hg.tests.test_assistant_guard.NewInformationTests.test_faithful_answer_is_note) ... ok
+test_invented_detail_is_not_note (hg.tests.test_assistant_guard.NewInformationTests.test_invented_detail_is_not_note) ... ok
+test_bidi_controls_are_refused_and_zero_width_removed (hg.tests.test_assistant_guard.NoteTextHygieneTests.test_bidi_controls_are_refused_and_zero_width_removed) ... ok
+test_f_d1_injected_answer_is_not_note (hg.tests.test_assistant_guard.TopicAnchorTests.test_f_d1_injected_answer_is_not_note) ... ok
+test_one_missing_syllable_is_tolerated (hg.tests.test_assistant_guard.TopicAnchorTests.test_one_missing_syllable_is_tolerated) ... ok
+test_question_typed_without_diacritics (hg.tests.test_assistant_guard.TopicAnchorTests.test_question_typed_without_diacritics) ... ok
+test_without_a_question_the_check_is_unchanged (hg.tests.test_assistant_guard.TopicAnchorTests.test_without_a_question_the_check_is_unchanged) ... ok
+test_home_is_created_private (hg.tests.test_assistant_notes.HomeTests.test_home_is_created_private) ... ok
+test_relative_home_is_refused (hg.tests.test_assistant_notes.HomeTests.test_relative_home_is_refused) ... ok
+test_shared_storage_is_refused (hg.tests.test_assistant_notes.HomeTests.test_shared_storage_is_refused) ... ok
+test_symlinked_home_is_refused (hg.tests.test_assistant_notes.HomeTests.test_symlinked_home_is_refused) ... ok
+test_wide_permissions_are_refused (hg.tests.test_assistant_notes.HomeTests.test_wide_permissions_are_refused) ... ok
+test_second_process_is_refused_with_exit_75 (hg.tests.test_assistant_notes.LockTests.test_second_process_is_refused_with_exit_75) ... ok
+test_shared_locks_coexist_and_exclusive_waits (hg.tests.test_assistant_notes.LockTests.test_shared_locks_coexist_and_exclusive_waits) ... ok
+test_forget_retracts_but_history_remains (hg.tests.test_assistant_notes.NotebookTests.test_forget_retracts_but_history_remains) ... ok
+test_identical_note_is_not_duplicated (hg.tests.test_assistant_notes.NotebookTests.test_identical_note_is_not_duplicated) ... ok
+test_note_kind_requires_user_source (hg.tests.test_assistant_notes.NotebookTests.test_note_kind_requires_user_source) ... ok
+test_notes_survive_a_new_process_and_list_in_order (hg.tests.test_assistant_notes.NotebookTests.test_notes_survive_a_new_process_and_list_in_order) ... ok
+test_one_shared_common_word_is_not_a_match (hg.tests.test_assistant_notes.NotebookTests.test_one_shared_common_word_is_not_a_match) ... ok
+test_origin_is_recorded_and_bad_input_refused (hg.tests.test_assistant_notes.NotebookTests.test_origin_is_recorded_and_bad_input_refused) ... ok
+test_query_without_shared_content_word_finds_nothing (hg.tests.test_assistant_notes.NotebookTests.test_query_without_shared_content_word_finds_nothing) ... ok
+test_replacement_supersedes_and_keeps_history (hg.tests.test_assistant_notes.NotebookTests.test_replacement_supersedes_and_keeps_history) ... ok
+test_same_subject_different_text_is_a_conflict (hg.tests.test_assistant_notes.NotebookTests.test_same_subject_different_text_is_a_conflict) ... ok
+test_search_without_diacritics_and_in_nfd (hg.tests.test_assistant_notes.NotebookTests.test_search_without_diacritics_and_in_nfd) ... ok
+test_damage_in_the_middle_is_not_touched (hg.tests.test_assistant_notes.RepairTests.test_damage_in_the_middle_is_not_touched) ... ok
+test_torn_last_line_is_reported_then_repaired_with_backup (hg.tests.test_assistant_notes.RepairTests.test_torn_last_line_is_reported_then_repaired_with_backup) ... ok
+test_adapter_cannot_be_registered_with_a_second_gateway (hg.tests.test_bypass.DirectAdapterCallTests.test_adapter_cannot_be_registered_with_a_second_gateway) ... ok
+test_forged_permit_refused (hg.tests.test_bypass.DirectAdapterCallTests.test_forged_permit_refused) ... ok
+test_permit_is_single_use_and_bound_to_its_resource (hg.tests.test_bypass.DirectAdapterCallTests.test_permit_is_single_use_and_bound_to_its_resource) ... ok
+test_public_adapter_api_cannot_mint_effect_authority (hg.tests.test_bypass.DirectAdapterCallTests.test_public_adapter_api_cannot_mint_effect_authority)
+The bypass this replaces: adapter.bind(caller_key) + _Permit(caller_key, ...). ... ok
+test_registered_adapter_refuses_a_call_without_a_permit (hg.tests.test_bypass.DirectAdapterCallTests.test_registered_adapter_refuses_a_call_without_a_permit) ... ok
+test_unregistered_adapter_refuses_every_call (hg.tests.test_bypass.DirectAdapterCallTests.test_unregistered_adapter_refuses_every_call) ... ok
+test_unused_permit_for_another_resource_refused (hg.tests.test_bypass.DirectAdapterCallTests.test_unused_permit_for_another_resource_refused) ... ok
+test_authority_and_fixture_opt_in_are_exclusive (hg.tests.test_bypass.UnanchoredRuntimeTests.test_authority_and_fixture_opt_in_are_exclusive) ... ok
+test_fixture_mode_requires_explicit_opt_in_and_is_labelled (hg.tests.test_bypass.UnanchoredRuntimeTests.test_fixture_mode_requires_explicit_opt_in_and_is_labelled) ... ok
+test_runtime_without_trust_root_refused_by_default (hg.tests.test_bypass.UnanchoredRuntimeTests.test_runtime_without_trust_root_refused_by_default) ... ok
+test_chat_end_to_end_over_loopback_http (hg.tests.test_chat_service.ChatOverHTTPTests.test_chat_end_to_end_over_loopback_http) ... ok
+test_changed_model_digest_is_refused (hg.tests.test_chat_service.ChatServiceTests.test_changed_model_digest_is_refused) ... ok
+test_control_characters_do_not_reach_the_answer (hg.tests.test_chat_service.ChatServiceTests.test_control_characters_do_not_reach_the_answer) ... ok
+test_general_question_goes_through_the_local_model_and_is_labelled (hg.tests.test_chat_service.ChatServiceTests.test_general_question_goes_through_the_local_model_and_is_labelled) ... ok
+test_home_locked_by_another_writer_is_busy (hg.tests.test_chat_service.ChatServiceTests.test_home_locked_by_another_writer_is_busy) ... ok
+test_missing_home_is_unavailable_and_not_created (hg.tests.test_chat_service.ChatServiceTests.test_missing_home_is_unavailable_and_not_created) ... ok
+test_model_unavailable_degrades_honestly (hg.tests.test_chat_service.ChatServiceTests.test_model_unavailable_degrades_honestly) ... ok
+test_note_grounded_answer_cites_the_note (hg.tests.test_chat_service.ChatServiceTests.test_note_grounded_answer_cites_the_note) ... ok
+test_one_chat_at_a_time (hg.tests.test_chat_service.ChatServiceTests.test_one_chat_at_a_time) ... ok
+test_paid_provider_is_never_used (hg.tests.test_chat_service.ChatServiceTests.test_paid_provider_is_never_used) ... ok
+test_personal_question_without_notes_never_reaches_the_model (hg.tests.test_chat_service.ChatServiceTests.test_personal_question_without_notes_never_reaches_the_model) ... ok
+test_shared_home_is_refused (hg.tests.test_chat_service.ChatServiceTests.test_shared_home_is_refused) ... ok
+test_create_service_attaches_chat_service (hg.tests.test_chat_service.CreateServiceWiringTests.test_create_service_attaches_chat_service) ... ok
+test_unpinned_model_is_reported_not_pinned (hg.tests.test_chat_service.UnpinnedModelTests.test_unpinned_model_is_reported_not_pinned) ... ok
+test_selfcheck_passes_in_a_fresh_process (hg.tests.test_cli.CliTests.test_selfcheck_passes_in_a_fresh_process) ... ok
+test_selfcheck_refuses_non_empty_workdir (hg.tests.test_cli.CliTests.test_selfcheck_refuses_non_empty_workdir) ... ok
+test_status_reads_ledgers_without_writing (hg.tests.test_cli.CliTests.test_status_reads_ledgers_without_writing) ... ok
+test_build_script_loads_the_release_module_under_isolated_mode (hg.tests.test_deploy_scripts.DeployScriptTests.test_build_script_loads_the_release_module_under_isolated_mode)
+Regression: `python3 -I -m hg.release` cannot find `hg` (-I drops the current directory). ... ok
+test_finish_is_installed_separately_with_a_backup (hg.tests.test_deploy_scripts.DeployScriptTests.test_finish_is_installed_separately_with_a_backup) ... ok
+test_install_never_overwrites_a_foreign_hg_command (hg.tests.test_deploy_scripts.DeployScriptTests.test_install_never_overwrites_a_foreign_hg_command) ... ok
+test_restore_is_mode_aware_and_checks_the_old_release_reads_the_state (hg.tests.test_deploy_scripts.DeployScriptTests.test_restore_is_mode_aware_and_checks_the_old_release_reads_the_state) ... ok
+test_restore_targets_the_release_the_recorded_run_script_started (hg.tests.test_deploy_scripts.DeployScriptTests.test_restore_targets_the_release_the_recorded_run_script_started)
+Finding F-W2 (phone, 2026-10-29 10:44 +07): the forward switch never edits the shared ... ok
+test_run_config_reads_the_config_of_a_rendered_run_script (hg.tests.test_deploy_scripts.DeployScriptTests.test_run_config_reads_the_config_of_a_rendered_run_script) ... ok
+test_shell_scripts_parse (hg.tests.test_deploy_scripts.DeployScriptTests.test_shell_scripts_parse) ... ok
+test_smoke_script_compiles (hg.tests.test_deploy_scripts.DeployScriptTests.test_smoke_script_compiles) ... ok
+test_state_precheck_reads_the_deployed_state_and_rejects_damage (hg.tests.test_deploy_scripts.DeployScriptTests.test_state_precheck_reads_the_deployed_state_and_rejects_damage) ... ok
+test_switch_checks_everything_before_stopping_and_rolls_back_on_failure (hg.tests.test_deploy_scripts.DeployScriptTests.test_switch_checks_everything_before_stopping_and_rolls_back_on_failure) ... ok
+test_release_is_sealed_and_reverified_before_the_pointer_is_published (hg.tests.test_deploy_scripts.InstallSealOrderTests.test_release_is_sealed_and_reverified_before_the_pointer_is_published) ... ok
+test_notes_are_written_once_and_never_to_the_owner_home (hg.tests.test_eval_resumable.EvalResumableTests.test_notes_are_written_once_and_never_to_the_owner_home) ... ok
+test_scores_like_hg_eval_and_resumes_after_a_kill (hg.tests.test_eval_resumable.EvalResumableTests.test_scores_like_hg_eval_and_resumes_after_a_kill) ... ok
+test_a_reboot_starts_fresh (hg.tests.test_finish_script.FinishScriptTests.test_a_reboot_starts_fresh) ... ok
+test_crash_and_android_kill_count_like_exit_78 (hg.tests.test_finish_script.FinishScriptTests.test_crash_and_android_kill_count_like_exit_78) ... ok
+test_deliberate_stop_is_not_counted (hg.tests.test_finish_script.FinishScriptTests.test_deliberate_stop_is_not_counted) ... ok
+test_exit_zero_and_long_runs_reset_the_count (hg.tests.test_finish_script.FinishScriptTests.test_exit_zero_and_long_runs_reset_the_count) ... ok
+test_returns_at_once_and_holds_down_after_five_short_failures (hg.tests.test_finish_script.FinishScriptTests.test_returns_at_once_and_holds_down_after_five_short_failures) ... ok
+test_no_quota_spent_while_waiting (hg.tests.test_finish_script.RunTemplateTests.test_no_quota_spent_while_waiting)
+Run the prestart with a fake curl that reports 0 remaining: it must wait, not start. ... /data/data/com.termux/files/home/HG-memory-continuity/hg/tests/test_finish_script.py:124: ResourceWarning: unclosed file <_io.TextIOWrapper name='/proc/sys/kernel/random/boot_id' mode='r' encoding='utf-8'>
+  boot = open("/proc/sys/kernel/random/boot_id").read().strip() if os.path.exists(
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
+test_template_renders_and_parses (hg.tests.test_finish_script.RunTemplateTests.test_template_renders_and_parses) ... ok
+test_wait_happens_before_start_and_only_after_a_counted_failure (hg.tests.test_finish_script.RunTemplateTests.test_wait_happens_before_start_and_only_after_a_counted_failure) ... ok
+test_authorized_write_succeeds_and_is_recorded (hg.tests.test_gateway.AllowedEffectTests.test_authorized_write_succeeds_and_is_recorded) ... ok
+test_preflight_has_no_effect_and_no_record (hg.tests.test_gateway.AllowedEffectTests.test_preflight_has_no_effect_and_no_record) ... ok
+test_registry_declares_contract (hg.tests.test_gateway.AllowedEffectTests.test_registry_declares_contract) ... ok
+test_authority_withdrawn_between_decision_and_effect_stops_the_write (hg.tests.test_gateway.AuthorityRecheckTests.test_authority_withdrawn_between_decision_and_effect_stops_the_write)
+MAEP-003: the permit re-asks the evaluator immediately before the effect. ... ok
+test_duplicate_tool_names_rejected (hg.tests.test_gateway.ConstructionTests.test_duplicate_tool_names_rejected) ... ok
+test_unknown_mode_rejected (hg.tests.test_gateway.ConstructionTests.test_unknown_mode_rejected) ... ok
+test_adapter_enforces_scope_independently (hg.tests.test_gateway.DeniedEffectTests.test_adapter_enforces_scope_independently) ... ok
+test_evidence_capture_failure_before_effect_blocks (hg.tests.test_gateway.DeniedEffectTests.test_evidence_capture_failure_before_effect_blocks) ... /data/data/com.termux/files/usr/lib/python3.14/unittest/mock.py:2259: ResourceWarning: unclosed <socket.socket fd=4, family=2, type=1, proto=0, laddr=('127.0.0.1', 35251)>
+  def __init__(self, name, parent):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/data/data/com.termux/files/usr/lib/python3.14/unittest/mock.py:2259: ResourceWarning: unclosed <socket.socket fd=5, family=2, type=1, proto=0, laddr=('127.0.0.1', 40065)>
+  def __init__(self, name, parent):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
+test_grant_expiring_between_start_and_effect_denies (hg.tests.test_gateway.DeniedEffectTests.test_grant_expiring_between_start_and_effect_denies) ... ok
+test_path_traversal_is_invalid_input (hg.tests.test_gateway.DeniedEffectTests.test_path_traversal_is_invalid_input) ... ok
+test_planned_resource_must_match_real_effect (hg.tests.test_gateway.DeniedEffectTests.test_planned_resource_must_match_real_effect) ... ok
+test_read_only_mode_denies_write (hg.tests.test_gateway.DeniedEffectTests.test_read_only_mode_denies_write) ... ok
+test_step_not_in_plan_blocked (hg.tests.test_gateway.DeniedEffectTests.test_step_not_in_plan_blocked) ... ok
+test_task_not_running_blocked (hg.tests.test_gateway.DeniedEffectTests.test_task_not_running_blocked) ... ok
+test_unknown_task_blocked (hg.tests.test_gateway.DeniedEffectTests.test_unknown_task_blocked) ... ok
+test_unknown_tool_reported_unavailable (hg.tests.test_gateway.DeniedEffectTests.test_unknown_tool_reported_unavailable) ... ok
+test_known_failure_is_failed_and_not_pending (hg.tests.test_gateway.OutcomeTaxonomyTests.test_known_failure_is_failed_and_not_pending) ... ok
+test_raised_timeout_is_unknown (hg.tests.test_gateway.OutcomeTaxonomyTests.test_raised_timeout_is_unknown) ... ok
+test_real_timeout_is_unknown (hg.tests.test_gateway.OutcomeTaxonomyTests.test_real_timeout_is_unknown) ... ok
+test_unverified_success_is_distinct (hg.tests.test_gateway.OutcomeTaxonomyTests.test_unverified_success_is_distinct) ... ok
+test_pending_action_survives_restart (hg.tests.test_gateway.ReconcileBeforeRetryTests.test_pending_action_survives_restart) ... ok
+test_reconcile_detects_effect_not_applied (hg.tests.test_gateway.ReconcileBeforeRetryTests.test_reconcile_detects_effect_not_applied) ... ok
+test_reconcile_inspects_live_state_and_clears (hg.tests.test_gateway.ReconcileBeforeRetryTests.test_reconcile_inspects_live_state_and_clears) ... ok
+test_reconcile_unknown_action_rejected (hg.tests.test_gateway.ReconcileBeforeRetryTests.test_reconcile_unknown_action_rejected) ... ok
+test_unknown_outcome_blocks_further_effects (hg.tests.test_gateway.ReconcileBeforeRetryTests.test_unknown_outcome_blocks_further_effects) ... ok
+test_two_concurrent_effects_never_overlap_and_keep_the_ledger_loadable (hg.tests.test_gateway.SerializedEffectTests.test_two_concurrent_effects_never_overlap_and_keep_the_ledger_loadable) ... ok
+test_false_positive_ceiling_on_the_development_notes (hg.tests.test_guard_dev_set.GuardDevSetTests.test_false_positive_ceiling_on_the_development_notes) ... ok
+test_recall_floor_on_the_development_injections (hg.tests.test_guard_dev_set.GuardDevSetTests.test_recall_floor_on_the_development_injections) ... ok
+test_false_positive_ceiling_on_held_out_ordinary_notes (hg.tests.test_guard_dev_set.GuardHeldOutOrdinaryTests.test_false_positive_ceiling_on_held_out_ordinary_notes) ... ok
+test_disabled_tool_is_denied_before_runtime (hg.tests.test_http_api.HTTPAPITests.test_disabled_tool_is_denied_before_runtime) ... ok
+test_duplicate_authorization_header_is_rejected (hg.tests.test_http_api.HTTPAPITests.test_duplicate_authorization_header_is_rejected) ... ok
+test_duplicate_host_header_is_rejected (hg.tests.test_http_api.HTTPAPITests.test_duplicate_host_header_is_rejected) ... ok
+test_duplicate_json_keys_are_rejected_before_dispatch (hg.tests.test_http_api.HTTPAPITests.test_duplicate_json_keys_are_rejected_before_dispatch) ... ok
+test_host_header_is_bound_to_loopback_listener (hg.tests.test_http_api.HTTPAPITests.test_host_header_is_bound_to_loopback_listener) ... ok
+test_in_doubt_idempotency_is_not_replayed (hg.tests.test_http_api.HTTPAPITests.test_in_doubt_idempotency_is_not_replayed) ... ok
+test_integrity_route_still_reports_release_when_trust_is_unavailable (hg.tests.test_http_api.HTTPAPITests.test_integrity_route_still_reports_release_when_trust_is_unavailable) ... ok
+test_listener_can_rebind_same_loopback_port_after_restart (hg.tests.test_http_api.HTTPAPITests.test_listener_can_rebind_same_loopback_port_after_restart) ... ok
+test_live_and_readiness_require_token_and_report_verification (hg.tests.test_http_api.HTTPAPITests.test_live_and_readiness_require_token_and_report_verification) ... ok
+test_non_json_content_type_is_rejected (hg.tests.test_http_api.HTTPAPITests.test_non_json_content_type_is_rejected) ... ok
+test_non_normalized_path_is_denied_before_runtime (hg.tests.test_http_api.HTTPAPITests.test_non_normalized_path_is_denied_before_runtime) ... ok
+test_path_traversal_is_denied_before_runtime (hg.tests.test_http_api.HTTPAPITests.test_path_traversal_is_denied_before_runtime) ... ok
+test_post_is_denied_when_canonical_authority_is_unavailable (hg.tests.test_http_api.HTTPAPITests.test_post_is_denied_when_canonical_authority_is_unavailable) ... ok
+test_post_is_denied_when_release_integrity_is_not_verified (hg.tests.test_http_api.HTTPAPITests.test_post_is_denied_when_release_integrity_is_not_verified) ... ok
+test_request_body_size_is_bounded (hg.tests.test_http_api.HTTPAPITests.test_request_body_size_is_bounded) ... ok
+test_same_idempotency_key_with_changed_payload_conflicts (hg.tests.test_http_api.HTTPAPITests.test_same_idempotency_key_with_changed_payload_conflicts) ... ok
+test_task_closes_and_idempotent_replay_does_not_repeat_effect (hg.tests.test_http_api.HTTPAPITests.test_task_closes_and_idempotent_replay_does_not_repeat_effect) ... ok
+test_unknown_routes_and_methods_fail_closed (hg.tests.test_http_api.HTTPAPITests.test_unknown_routes_and_methods_fail_closed) ... ok
+test_unsupported_methods_authenticate_before_answering (hg.tests.test_http_api.HTTPAPITests.test_unsupported_methods_authenticate_before_answering)
+HG_SERVICE_V1 §5: every route requires the token, including a route that only refuses. ... ok
+test_commit_fails_if_database_inode_is_replaced (hg.tests.test_http_idempotency_sqlite_security.IdempotencySQLiteSecurityTests.test_commit_fails_if_database_inode_is_replaced) ... ok
+test_reopen_after_replacement_keeps_each_receipt_in_its_own_database (hg.tests.test_http_idempotency_sqlite_security.IdempotencySQLiteSecurityTests.test_reopen_after_replacement_keeps_each_receipt_in_its_own_database)
+The displaced store's WAL frames must never be replayed into the database now at the path. ... ok
+test_store_rejects_symlink_database_path (hg.tests.test_http_idempotency_sqlite_security.IdempotencySQLiteSecurityTests.test_store_rejects_symlink_database_path) ... ok
+test_store_uses_bound_connection_and_wal (hg.tests.test_http_idempotency_sqlite_security.IdempotencySQLiteSecurityTests.test_store_uses_bound_connection_and_wal) ... ok
+test_connections_beyond_the_cap_get_503_then_slots_free (hg.tests.test_http_request_deadline.ConnectionCapTests.test_connections_beyond_the_cap_get_503_then_slots_free) ... ok
+test_configuration_is_bounded (hg.tests.test_http_request_deadline.RequestDeadlineTests.test_configuration_is_bounded) ... ok
+test_prompt_request_still_works (hg.tests.test_http_request_deadline.RequestDeadlineTests.test_prompt_request_still_works) ... ok
+test_shutdown_is_not_held_open_by_a_dripping_client (hg.tests.test_http_request_deadline.RequestDeadlineTests.test_shutdown_is_not_held_open_by_a_dripping_client) ... ok
+test_silent_body_gets_408_not_500 (hg.tests.test_http_request_deadline.RequestDeadlineTests.test_silent_body_gets_408_not_500) ... ok
+test_slow_drip_body_is_cut_at_the_total_deadline (hg.tests.test_http_request_deadline.RequestDeadlineTests.test_slow_drip_body_is_cut_at_the_total_deadline) ... ok
+test_slow_drip_headers_without_token_are_cut (hg.tests.test_http_request_deadline.RequestDeadlineTests.test_slow_drip_headers_without_token_are_cut) ... ok
+test_chat_service_errors_keep_their_status_and_code (hg.tests.test_http_ui_chat.ChatErrorMappingTests.test_chat_service_errors_keep_their_status_and_code) ... ok
+test_unexpected_chat_failure_is_an_internal_error_without_detail (hg.tests.test_http_ui_chat.ChatErrorMappingTests.test_unexpected_chat_failure_is_an_internal_error_without_detail) ... ok
+test_chat_without_a_chat_service_is_unavailable (hg.tests.test_http_ui_chat.ChatNotConfiguredTests.test_chat_without_a_chat_service_is_unavailable) ... ok
+test_chat_answers_with_the_chat_service_result (hg.tests.test_http_ui_chat.ChatRouteTests.test_chat_answers_with_the_chat_service_result) ... ok
+test_chat_body_must_be_exact (hg.tests.test_http_ui_chat.ChatRouteTests.test_chat_body_must_be_exact) ... ok
+test_chat_content_type_and_size_limits (hg.tests.test_http_ui_chat.ChatRouteTests.test_chat_content_type_and_size_limits) ... ok
+test_chat_needs_a_verified_release_but_not_canonical_authority (hg.tests.test_http_ui_chat.ChatRouteTests.test_chat_needs_a_verified_release_but_not_canonical_authority) ... ok
+test_chat_requires_the_token (hg.tests.test_http_ui_chat.ChatRouteTests.test_chat_requires_the_token) ... ok
+test_chat_route_is_post_only (hg.tests.test_http_ui_chat.ChatRouteTests.test_chat_route_is_post_only) ... ok
+test_tasks_route_is_unchanged (hg.tests.test_http_ui_chat.ChatRouteTests.test_tasks_route_is_unchanged) ... ok
+test_memory_save_preview_and_confirm_use_exact_payload (hg.tests.test_http_ui_chat.MemorySaveRouteTests.test_memory_save_preview_and_confirm_use_exact_payload) ... ok
+test_memory_save_preview_rejects_text_above_notebook_limit (hg.tests.test_http_ui_chat.MemorySaveRouteTests.test_memory_save_preview_rejects_text_above_notebook_limit) ... ok
+test_memory_save_routes_require_bearer_token (hg.tests.test_http_ui_chat.MemorySaveRouteTests.test_memory_save_routes_require_bearer_token) ... ok
+test_existing_routes_still_require_the_token (hg.tests.test_http_ui_chat.StaticUITests.test_existing_routes_still_require_the_token) ... ok
+test_only_the_exact_ui_files_skip_the_token (hg.tests.test_http_ui_chat.StaticUITests.test_only_the_exact_ui_files_skip_the_token) ... ok
+test_ui_index_is_served_without_token_with_strict_headers (hg.tests.test_http_ui_chat.StaticUITests.test_ui_index_is_served_without_token_with_strict_headers) ... ok
+test_ui_is_get_only (hg.tests.test_http_ui_chat.StaticUITests.test_ui_is_get_only) ... ok
+test_ui_script_and_style_have_their_own_types (hg.tests.test_http_ui_chat.StaticUITests.test_ui_script_and_style_have_their_own_types) ... ok
+test_ui_still_requires_a_loopback_host (hg.tests.test_http_ui_chat.StaticUITests.test_ui_still_requires_a_loopback_host) ... ok
+test_unknown_ui_path_with_token_is_not_found (hg.tests.test_http_ui_chat.StaticUITests.test_unknown_ui_path_with_token_is_not_found) ... ok
+test_calls_only_contract_routes_on_its_own_origin (hg.tests.test_http_ui_chat.UISourceContractTests.test_calls_only_contract_routes_on_its_own_origin) ... ok
+test_csp_compatible_markup (hg.tests.test_http_ui_chat.UISourceContractTests.test_csp_compatible_markup) ... ok
+test_enter_inserts_a_newline_and_only_the_button_sends (hg.tests.test_http_ui_chat.UISourceContractTests.test_enter_inserts_a_newline_and_only_the_button_sends) ... ok
+test_memory_save_preview_has_matching_limit_and_rejects_stale_inputs (hg.tests.test_http_ui_chat.UISourceContractTests.test_memory_save_preview_has_matching_limit_and_rejects_stale_inputs) ... ok
+test_no_html_injection_sinks (hg.tests.test_http_ui_chat.UISourceContractTests.test_no_html_injection_sinks) ... ok
+test_no_stale_or_absolute_endpoints (hg.tests.test_http_ui_chat.UISourceContractTests.test_no_stale_or_absolute_endpoints) ... ok
+test_screens_and_root_navigation (hg.tests.test_http_ui_chat.UISourceContractTests.test_screens_and_root_navigation) ... ok
+test_token_never_in_local_storage_or_url (hg.tests.test_http_ui_chat.UISourceContractTests.test_token_never_in_local_storage_or_url) ... ok
+test_failed_case_fails_the_verdict (hg.tests.test_learning_ops.BenchmarkTests.test_failed_case_fails_the_verdict) ... ok
+test_suite_passes_with_zero_invariant_violations (hg.tests.test_learning_ops.BenchmarkTests.test_suite_passes_with_zero_invariant_violations) ... ok
+test_verdict_flags_invariants_and_regressions (hg.tests.test_learning_ops.BenchmarkTests.test_verdict_flags_invariants_and_regressions) ... ok
+test_bench_learn_health_commands (hg.tests.test_learning_ops.CliTests.test_bench_learn_health_commands) ... ok
+test_corrupt_ledger_fails (hg.tests.test_learning_ops.HealthTests.test_corrupt_ledger_fails) ... ok
+test_offline_router_without_local_model_degrades (hg.tests.test_learning_ops.HealthTests.test_offline_router_without_local_model_degrades) ... ok
+test_ok_runtime (hg.tests.test_learning_ops.HealthTests.test_ok_runtime) ... ok
+test_pending_action_degrades (hg.tests.test_learning_ops.HealthTests.test_pending_action_degrades) ... ok
+test_trust_root_failure_degrades (hg.tests.test_learning_ops.HealthTests.test_trust_root_failure_degrades) ... ok
+test_lessons_stored_as_hypotheses_once (hg.tests.test_learning_ops.LearningTests.test_lessons_stored_as_hypotheses_once) ... ok
+test_loop_does_not_touch_code_or_policy (hg.tests.test_learning_ops.LearningTests.test_loop_does_not_touch_code_or_policy) ... ok
+test_normalise_removes_volatile_parts (hg.tests.test_learning_ops.LearningTests.test_normalise_removes_volatile_parts) ... ok
+test_recurring_failures_become_lessons_with_guard_cases (hg.tests.test_learning_ops.LearningTests.test_recurring_failures_become_lessons_with_guard_cases) ... ok
+test_single_failure_is_not_a_lesson (hg.tests.test_learning_ops.LearningTests.test_single_failure_is_not_a_lesson) ... ok
+test_case_file_validation (hg.tests.test_learning_ops.RegressionCaseTests.test_case_file_validation) ... ok
+test_mismatch_is_reported (hg.tests.test_learning_ops.RegressionCaseTests.test_mismatch_is_reported) ... ok
+test_unexpected_effect_is_reported (hg.tests.test_learning_ops.RegressionCaseTests.test_unexpected_effect_is_reported) ... ok
+test_contradicting_fact_refused (hg.tests.test_memory.ConflictAndHistoryTests.test_contradicting_fact_refused) ... ok
+test_explicit_supersede_keeps_history (hg.tests.test_memory.ConflictAndHistoryTests.test_explicit_supersede_keeps_history) ... ok
+test_hypothesis_never_becomes_fact_without_evidence (hg.tests.test_memory.ConflictAndHistoryTests.test_hypothesis_never_becomes_fact_without_evidence) ... ok
+test_retract_preserves_record (hg.tests.test_memory.ConflictAndHistoryTests.test_retract_preserves_record) ... ok
+test_same_fact_again_is_not_a_conflict (hg.tests.test_memory.ConflictAndHistoryTests.test_same_fact_again_is_not_a_conflict) ... ok
+test_supersede_must_target_same_subject_and_active_record (hg.tests.test_memory.ConflictAndHistoryTests.test_supersede_must_target_same_subject_and_active_record) ... ok
+test_constraints_survive_any_budget (hg.tests.test_memory.ContextTests.test_constraints_survive_any_budget) ... ok
+test_decisions_are_pinned_and_memory_is_fenced (hg.tests.test_memory.ContextTests.test_decisions_are_pinned_and_memory_is_fenced) ... ok
+test_event_summary_lists_failures (hg.tests.test_memory.ContextTests.test_event_summary_lists_failures) ... ok
+test_low_priority_items_dropped_whole_within_budget (hg.tests.test_memory.ContextTests.test_low_priority_items_dropped_whole_within_budget) ... ok
+test_event_only_in_episodic (hg.tests.test_memory.KindAndProvenanceTests.test_event_only_in_episodic) ... ok
+test_fact_requires_evidence (hg.tests.test_memory.KindAndProvenanceTests.test_fact_requires_evidence) ... ok
+test_hypothesis_requires_limitations (hg.tests.test_memory.KindAndProvenanceTests.test_hypothesis_requires_limitations) ... ok
+test_unknown_layer_kind_source_and_missing_provenance_rejected (hg.tests.test_memory.KindAndProvenanceTests.test_unknown_layer_kind_source_and_missing_provenance_rejected) ... ok
+test_append_error_after_fsync_reloads_durable_projection_before_retry (hg.tests.test_memory.OutcomeAndAuthorityTests.test_append_error_after_fsync_reloads_durable_projection_before_retry) ... ok
+test_append_failure_confirmed_not_written_is_distinguished_from_unknown (hg.tests.test_memory.OutcomeAndAuthorityTests.test_append_failure_confirmed_not_written_is_distinguished_from_unknown) ... ok
+test_concurrent_separate_memory_stores_are_process_safe (hg.tests.test_memory.OutcomeAndAuthorityTests.test_concurrent_separate_memory_stores_are_process_safe) ... ok
+test_failed_memory_outcome_is_visible_and_reconcilable_without_replaying_task (hg.tests.test_memory.OutcomeAndAuthorityTests.test_failed_memory_outcome_is_visible_and_reconcilable_without_replaying_task) ... ok
+test_memory_cannot_grant_authority (hg.tests.test_memory.OutcomeAndAuthorityTests.test_memory_cannot_grant_authority) ... ok
+test_memory_store_rejects_non_terminal_task_outcome_directly (hg.tests.test_memory.OutcomeAndAuthorityTests.test_memory_store_rejects_non_terminal_task_outcome_directly) ... ok
+test_non_terminal_task_never_gets_memory_episode (hg.tests.test_memory.OutcomeAndAuthorityTests.test_non_terminal_task_never_gets_memory_episode) ... ok
+test_task_outcome_recorded_as_episode (hg.tests.test_memory.OutcomeAndAuthorityTests.test_task_outcome_recorded_as_episode) ... ok
+test_task_outcome_retry_is_idempotent (hg.tests.test_memory.OutcomeAndAuthorityTests.test_task_outcome_retry_is_idempotent) ... ok
+test_restore_reproduces_records_and_statuses (hg.tests.test_memory.PersistenceTests.test_restore_reproduces_records_and_statuses) ... ok
+test_status_event_for_unknown_record_fails_closed (hg.tests.test_memory.PersistenceTests.test_status_event_for_unknown_record_fails_closed) ... ok
+test_tampered_ledger_conflict_is_reported_on_restore (hg.tests.test_memory.PersistenceTests.test_tampered_ledger_conflict_is_reported_on_restore) ... ok
+test_working_memory_is_not_persisted (hg.tests.test_memory.PersistenceTests.test_working_memory_is_not_persisted) ... ok
+test_bm25_ranks_and_filters (hg.tests.test_memory.RetrievalTests.test_bm25_ranks_and_filters) ... ok
+test_search_excludes_inactive_by_default (hg.tests.test_memory.RetrievalTests.test_search_excludes_inactive_by_default) ... ok
+test_tokenizer_keeps_vietnamese_words (hg.tests.test_memory.RetrievalTests.test_tokenizer_keeps_vietnamese_words) ... ok
+test_cli_rejects_modified_text_after_preview (hg.tests.test_memory_cli_curation.MemoryCurationCliTests.test_cli_rejects_modified_text_after_preview) ... ok
+test_curate_cli_returns_read_only_report (hg.tests.test_memory_cli_curation.MemoryCurationCliTests.test_curate_cli_returns_read_only_report) ... ok
+test_generic_memory_curate_reads_only_the_explicit_ledger (hg.tests.test_memory_cli_curation.MemoryCurationCliTests.test_generic_memory_curate_reads_only_the_explicit_ledger) ... ok
+test_generic_memory_curate_refuses_symlink_ledger (hg.tests.test_memory_cli_curation.MemoryCurationCliTests.test_generic_memory_curate_refuses_symlink_ledger) ... ok
+test_save_ask_cli_requires_digest_confirmation_and_is_idempotent (hg.tests.test_memory_cli_curation.MemoryCurationCliTests.test_save_ask_cli_requires_digest_confirmation_and_is_idempotent) ... ok
+test_cross_subject_different_values_need_compatible_content_context (hg.tests.test_memory_curation.CurationTests.test_cross_subject_different_values_need_compatible_content_context) ... ok
+test_curation_pair_comparison_is_bounded_and_reports_truncation (hg.tests.test_memory_curation.CurationTests.test_curation_pair_comparison_is_bounded_and_reports_truncation) ... ok
+test_different_non_overlapping_periods_are_not_conflict (hg.tests.test_memory_curation.CurationTests.test_different_non_overlapping_periods_are_not_conflict) ... ok
+test_duplicate_ids_are_rejected (hg.tests.test_memory_curation.CurationTests.test_duplicate_ids_are_rejected) ... ok
+test_exact_duplicate_candidates_do_not_chain_disjoint_valid_intervals (hg.tests.test_memory_curation.CurationTests.test_exact_duplicate_candidates_do_not_chain_disjoint_valid_intervals) ... ok
+test_exact_duplicate_same_scope_is_candidate_not_merge (hg.tests.test_memory_curation.CurationTests.test_exact_duplicate_same_scope_is_candidate_not_merge) ... ok
+test_explicit_expiry_is_flagged (hg.tests.test_memory_curation.CurationTests.test_explicit_expiry_is_flagged) ... ok
+test_future_valid_from_is_not_yet_valid (hg.tests.test_memory_curation.CurationTests.test_future_valid_from_is_not_yet_valid) ... ok
+test_inactive_records_are_preserved_but_not_compared (hg.tests.test_memory_curation.CurationTests.test_inactive_records_are_preserved_but_not_compared) ... ok
+test_input_records_are_not_mutated (hg.tests.test_memory_curation.CurationTests.test_input_records_are_not_mutated) ... ok
+test_invalid_interval_fails_closed (hg.tests.test_memory_curation.CurationTests.test_invalid_interval_fails_closed) ... ok
+test_max_findings_caps_staleness_candidates_and_reports_truncation (hg.tests.test_memory_curation.CurationTests.test_max_findings_caps_staleness_candidates_and_reports_truncation) ... ok
+test_max_findings_is_global_across_staleness_and_duplicate_classes (hg.tests.test_memory_curation.CurationTests.test_max_findings_is_global_across_staleness_and_duplicate_classes) ... ok
+test_near_duplicate_is_not_flagged_across_disjoint_valid_periods (hg.tests.test_memory_curation.CurationTests.test_near_duplicate_is_not_flagged_across_disjoint_valid_periods) ... ok
+test_near_duplicate_is_only_a_review_candidate (hg.tests.test_memory_curation.CurationTests.test_near_duplicate_is_only_a_review_candidate) ... ok
+test_old_record_without_expiry_is_not_called_stale (hg.tests.test_memory_curation.CurationTests.test_old_record_without_expiry_is_not_called_stale) ... ok
+test_opposite_negation_is_only_a_candidate (hg.tests.test_memory_curation.CurationTests.test_opposite_negation_is_only_a_candidate) ... ok
+test_overlapping_different_structured_values_flag_conflict (hg.tests.test_memory_curation.CurationTests.test_overlapping_different_structured_values_flag_conflict) ... ok
+test_positive_past_tense_is_not_mistaken_for_negation (hg.tests.test_memory_curation.CurationTests.test_positive_past_tense_is_not_mistaken_for_negation) ... ok
+test_same_text_different_kind_is_not_merged (hg.tests.test_memory_curation.CurationTests.test_same_text_different_kind_is_not_merged) ... ok
+test_same_text_different_structured_value_is_not_exact_duplicate (hg.tests.test_memory_curation.CurationTests.test_same_text_different_structured_value_is_not_exact_duplicate) ... ok
+test_same_text_different_subject_is_reviewed_but_never_merged (hg.tests.test_memory_curation.CurationTests.test_same_text_different_subject_is_reviewed_but_never_merged) ... ok
+test_same_text_in_disjoint_valid_periods_is_not_merged (hg.tests.test_memory_curation.CurationTests.test_same_text_in_disjoint_valid_periods_is_not_merged) ... ok
+test_single_digit_time_change_is_not_exact_or_near_duplicate (hg.tests.test_memory_curation.CurationTests.test_single_digit_time_change_is_not_exact_or_near_duplicate) ... ok
+test_unknown_date_age_is_not_inferred_from_free_text (hg.tests.test_memory_curation.CurationTests.test_unknown_date_age_is_not_inferred_from_free_text) ... ok
+test_deny_decision_grant_denied (hg.tests.test_orchestrator.AuthorityTests.test_deny_decision_grant_denied) ... ok
+test_grant_added_in_a_later_session_lets_task_resume (hg.tests.test_orchestrator.AuthorityTests.test_grant_added_in_a_later_session_lets_task_resume) ... ok
+test_grant_for_another_principal_denied (hg.tests.test_orchestrator.AuthorityTests.test_grant_for_another_principal_denied) ... ok
+test_missing_grant_keeps_task_planned (hg.tests.test_orchestrator.AuthorityTests.test_missing_grant_keeps_task_planned) ... ok
+test_one_unauthorized_step_stops_the_whole_plan_before_any_effect (hg.tests.test_orchestrator.AuthorityTests.test_one_unauthorized_step_stops_the_whole_plan_before_any_effect) ... ok
+test_task_reaches_closed_verified_only_with_linked_evidence (hg.tests.test_orchestrator.HappyPathTests.test_task_reaches_closed_verified_only_with_linked_evidence) ... ok
+test_two_step_plan_closes (hg.tests.test_orchestrator.HappyPathTests.test_two_step_plan_closes) ... ok
+test_task_ledger_events_carry_policy_version (hg.tests.test_orchestrator.LedgerTests.test_task_ledger_events_carry_policy_version) ... ok
+test_evidence_recorded_on_another_task_is_ignored (hg.tests.test_orchestrator.NoFalseClosureTests.test_evidence_recorded_on_another_task_is_ignored) ... ok
+test_failed_verification_ends_unverified (hg.tests.test_orchestrator.NoFalseClosureTests.test_failed_verification_ends_unverified) ... ok
+test_missing_verifier_is_not_run_not_pass (hg.tests.test_orchestrator.NoFalseClosureTests.test_missing_verifier_is_not_run_not_pass) ... ok
+test_task_with_no_mandatory_criterion_cannot_close (hg.tests.test_orchestrator.NoFalseClosureTests.test_task_with_no_mandatory_criterion_cannot_close) ... ok
+test_verifier_exception_is_fail_and_preserved (hg.tests.test_orchestrator.NoFalseClosureTests.test_verifier_exception_is_fail_and_preserved) ... ok
+test_reconcile_of_another_tasks_action_refused (hg.tests.test_orchestrator.RecoveryTests.test_reconcile_of_another_tasks_action_refused) ... ok
+test_reopen_refused_when_authority_has_expired (hg.tests.test_orchestrator.RecoveryTests.test_reopen_refused_when_authority_has_expired) ... ok
+test_reopen_without_risk_reassessment_refused (hg.tests.test_orchestrator.RecoveryTests.test_reopen_without_risk_reassessment_refused) ... ok
+test_restart_preserves_block_and_pending_action (hg.tests.test_orchestrator.RecoveryTests.test_restart_preserves_block_and_pending_action) ... ok
+test_unknown_outcome_blocks_then_reconcile_reopen_resume_closes (hg.tests.test_orchestrator.RecoveryTests.test_unknown_outcome_blocks_then_reconcile_reopen_resume_closes) ... ok
+test_known_failure_retried_three_times_then_blocked (hg.tests.test_orchestrator.RetryLimitTests.test_known_failure_retried_three_times_then_blocked) ... ok
+test_direct_store_mutation_refused_once_claimed (hg.tests.test_orchestrator.SoleCoordinatorTests.test_direct_store_mutation_refused_once_claimed) ... ok
+test_second_orchestrator_cannot_claim_writer (hg.tests.test_orchestrator.SoleCoordinatorTests.test_second_orchestrator_cannot_claim_writer) ... ok
+test_issue_mode_refuses_caller_grants (hg.tests.test_planner.GoalPipelineTests.test_issue_mode_refuses_caller_grants) ... ok
+test_manifest_without_permission_issues_nothing_and_writes_nothing (hg.tests.test_planner.GoalPipelineTests.test_manifest_without_permission_issues_nothing_and_writes_nothing) ... ok
+test_memory_context_reaches_the_model_planner (hg.tests.test_planner.GoalPipelineTests.test_memory_context_reaches_the_model_planner) ... ok
+test_model_goal_closes_with_manifest_issued_grants (hg.tests.test_planner.GoalPipelineTests.test_model_goal_closes_with_manifest_issued_grants) ... ok
+test_rejected_plan_leaves_task_assessed_without_effect (hg.tests.test_planner.GoalPipelineTests.test_rejected_plan_leaves_task_assessed_without_effect) ... ok
+test_structured_goal_closes_in_fixture_mode (hg.tests.test_planner.GoalPipelineTests.test_structured_goal_closes_in_fixture_mode) ... ok
+test_unavailable_model_leaves_task_assessed (hg.tests.test_planner.GoalPipelineTests.test_unavailable_model_leaves_task_assessed) ... ok
+test_context_is_fenced_as_data (hg.tests.test_planner.ModelPlannerTests.test_context_is_fenced_as_data) ... ok
+test_gives_up_after_three_attempts (hg.tests.test_planner.ModelPlannerTests.test_gives_up_after_three_attempts) ... ok
+test_max_attempts_bounded_by_maep_014 (hg.tests.test_planner.ModelPlannerTests.test_max_attempts_bounded_by_maep_014) ... ok
+test_model_cannot_choose_resource_or_authorization (hg.tests.test_planner.ModelPlannerTests.test_model_cannot_choose_resource_or_authorization) ... ok
+test_rejected_plan_is_revised_with_the_problems (hg.tests.test_planner.ModelPlannerTests.test_rejected_plan_is_revised_with_the_problems) ... ok
+test_resource_smuggled_into_params_is_rejected (hg.tests.test_planner.ModelPlannerTests.test_resource_smuggled_into_params_is_rejected) ... ok
+test_check_plan_catches_tampered_resource (hg.tests.test_planner.StructuredPlannerTests.test_check_plan_catches_tampered_resource) ... ok
+test_excluded_path_rejected (hg.tests.test_planner.StructuredPlannerTests.test_excluded_path_rejected) ... ok
+test_invalid_params_rejected (hg.tests.test_planner.StructuredPlannerTests.test_invalid_params_rejected) ... ok
+test_out_of_scope_path_rejected (hg.tests.test_planner.StructuredPlannerTests.test_out_of_scope_path_rejected) ... ok
+test_steps_are_derived_from_the_adapter (hg.tests.test_planner.StructuredPlannerTests.test_steps_are_derived_from_the_adapter) ... ok
+test_unknown_tool_lists_available_tools (hg.tests.test_planner.StructuredPlannerTests.test_unknown_tool_lists_available_tools) ... ok
+test_a_fresh_state_directory_starts_under_the_current_policy (hg.tests.test_policy_version_compat.PolicyVersionCompatibilityTests.test_a_fresh_state_directory_starts_under_the_current_policy) ... ok
+test_only_the_task_ledger_is_policy_version_bound (hg.tests.test_policy_version_compat.PolicyVersionCompatibilityTests.test_only_the_task_ledger_is_policy_version_bound) ... ok
+test_state_written_under_another_policy_blocks_startup (hg.tests.test_policy_version_compat.PolicyVersionCompatibilityTests.test_state_written_under_another_policy_blocks_startup) ... ok
+test_state_written_under_the_current_policy_restores (hg.tests.test_policy_version_compat.PolicyVersionCompatibilityTests.test_state_written_under_the_current_policy_restores) ... ok
+test_a_task_never_mixes_policy_versions_and_history_must_be_self_consistent (hg.tests.test_policy_version_history.PolicyVersionHistoryTests.test_a_task_never_mixes_policy_versions_and_history_must_be_self_consistent) ... ok
+test_after_a_bump_the_old_ledger_is_refused_by_default (hg.tests.test_policy_version_history.PolicyVersionHistoryTests.test_after_a_bump_the_old_ledger_is_refused_by_default) ... ok
+test_declared_history_replays_as_read_only_and_keeps_the_ledger_intact (hg.tests.test_policy_version_history.PolicyVersionHistoryTests.test_declared_history_replays_as_read_only_and_keeps_the_ledger_intact) ... ok
+test_fixture_is_written_under_the_current_policy (hg.tests.test_policy_version_history.PolicyVersionHistoryTests.test_fixture_is_written_under_the_current_policy) ... ok
+test_historical_task_in_progress_accepts_no_fact_or_transition (hg.tests.test_policy_version_history.PolicyVersionHistoryTests.test_historical_task_in_progress_accepts_no_fact_or_transition) ... ok
+test_invalid_history_declarations_are_refused (hg.tests.test_policy_version_history.PolicyVersionHistoryTests.test_invalid_history_declarations_are_refused) ... ok
+test_new_work_runs_under_the_new_policy_and_survives_restart (hg.tests.test_policy_version_history.PolicyVersionHistoryTests.test_new_work_runs_under_the_new_policy_and_survives_restart) ... ok
+test_torn_or_corrupt_ledger_still_fails_closed_with_history (hg.tests.test_policy_version_history.PolicyVersionHistoryTests.test_torn_or_corrupt_ledger_still_fails_closed_with_history) ... ok
+test_gateway_refuses_effects_for_historical_tasks (hg.tests.test_policy_version_history.StaleTaskEffectTests.test_gateway_refuses_effects_for_historical_tasks) ... ok
+test_missing_key_is_not_configured_and_sends_nothing (hg.tests.test_providers.AnthropicTests.test_missing_key_is_not_configured_and_sends_nothing) ... ok
+test_rate_limit_retryable_only_with_retry_after (hg.tests.test_providers.AnthropicTests.test_rate_limit_retryable_only_with_retry_after) ... ok
+test_refusal_stop_reason_and_garbage_body (hg.tests.test_providers.AnthropicTests.test_refusal_stop_reason_and_garbage_body) ... ok
+test_request_shape_matches_messages_api_2026_10_21 (hg.tests.test_providers.AnthropicTests.test_request_shape_matches_messages_api_2026_10_21) ... ok
+test_status_classification (hg.tests.test_providers.AnthropicTests.test_status_classification) ... ok
+test_local_chat_request_and_parse (hg.tests.test_providers.OllamaTests.test_local_chat_request_and_parse) ... ok
+test_missing_model_unavailable (hg.tests.test_providers.OllamaTests.test_missing_model_unavailable) ... ok
+test_unreachable_server_unavailable (hg.tests.test_providers.OllamaTests.test_unreachable_server_unavailable) ... ok
+test_digest_is_stable (hg.tests.test_providers.RequestTests.test_digest_is_stable) ... ok
+test_invalid_requests_rejected (hg.tests.test_providers.RequestTests.test_invalid_requests_rejected) ... ok
+test_all_fail_raises_unavailable_with_attempts (hg.tests.test_providers.RouterTests.test_all_fail_raises_unavailable_with_attempts) ... ok
+test_bad_configuration_rejected (hg.tests.test_providers.RouterTests.test_bad_configuration_rejected) ... ok
+test_calls_are_ledgered_without_prompt_or_key (hg.tests.test_providers.RouterTests.test_calls_are_ledgered_without_prompt_or_key) ... ok
+test_missing_configuration_is_not_retried (hg.tests.test_providers.RouterTests.test_missing_configuration_is_not_retried) ... ok
+test_non_retryable_falls_back_without_retry (hg.tests.test_providers.RouterTests.test_non_retryable_falls_back_without_retry) ... ok
+test_offline_mode_never_calls_remote_providers (hg.tests.test_providers.RouterTests.test_offline_mode_never_calls_remote_providers) ... ok
+test_offline_mode_without_local_provider_is_unavailable (hg.tests.test_providers.RouterTests.test_offline_mode_without_local_provider_is_unavailable) ... ok
+test_provider_crash_is_contained (hg.tests.test_providers.RouterTests.test_provider_crash_is_contained) ... ok
+test_retries_retryable_then_succeeds (hg.tests.test_providers.RouterTests.test_retries_retryable_then_succeeds) ... ok
+test_routes_by_kind (hg.tests.test_providers.RouterTests.test_routes_by_kind) ... ok
+test_different_content_fails (hg.tests.test_readback_verifier.ReadbackVerifierTests.test_different_content_fails) ... ok
+test_matching_content_passes (hg.tests.test_readback_verifier.ReadbackVerifierTests.test_matching_content_passes) ... ok
+test_missing_target_symlink_and_unnormalized_paths_fail (hg.tests.test_readback_verifier.ReadbackVerifierTests.test_missing_target_symlink_and_unnormalized_paths_fail) ... ok
+test_no_write_step_fails (hg.tests.test_readback_verifier.ReadbackVerifierTests.test_no_write_step_fails) ... ok
+test_one_mismatch_among_several_writes_fails (hg.tests.test_readback_verifier.ReadbackVerifierTests.test_one_mismatch_among_several_writes_fails) ... ok
+test_archive_tampering_is_detected (hg.tests.test_release.ReleaseIntegrityTests.test_archive_tampering_is_detected) ... ok
+test_archive_verifies_against_git_and_installed_root (hg.tests.test_release.ReleaseIntegrityTests.test_archive_verifies_against_git_and_installed_root) ... ok
+test_duplicate_manifest_keys_are_rejected (hg.tests.test_release.ReleaseIntegrityTests.test_duplicate_manifest_keys_are_rejected) ... ok
+test_extract_cli_and_verify_root (hg.tests.test_release.ReleaseIntegrityTests.test_extract_cli_and_verify_root) ... ok
+test_extract_rejects_symlink_destination (hg.tests.test_release.ReleaseIntegrityTests.test_extract_rejects_symlink_destination) ... ok
+test_installed_source_tampering_and_extra_file_are_detected (hg.tests.test_release.ReleaseIntegrityTests.test_installed_source_tampering_and_extra_file_are_detected) ... ok
+test_invalid_commit_reference_is_rejected (hg.tests.test_release.ReleaseIntegrityTests.test_invalid_commit_reference_is_rejected) ... ok
+test_manifest_digest_is_checked (hg.tests.test_release.ReleaseIntegrityTests.test_manifest_digest_is_checked) ... ok
+test_release_is_deterministic_for_same_commit (hg.tests.test_release.ReleaseIntegrityTests.test_release_is_deterministic_for_same_commit) ... ok
+test_verify_root_rejects_symlink (hg.tests.test_release.ReleaseIntegrityTests.test_verify_root_rejects_symlink) ... ok
+test_seal_rejects_symlink_inside_release_without_changing_modes (hg.tests.test_release.SealedReleaseTests.test_seal_rejects_symlink_inside_release_without_changing_modes) ... ok
+test_seal_rejects_symlink_root (hg.tests.test_release.SealedReleaseTests.test_seal_rejects_symlink_root) ... ok
+test_sealed_import_without_dont_write_bytecode_leaves_tree_unchanged (hg.tests.test_release.SealedReleaseTests.test_sealed_import_without_dont_write_bytecode_leaves_tree_unchanged) ... ok
+test_sealed_release_verifies_and_refuses_owner_writes (hg.tests.test_release.SealedReleaseTests.test_sealed_release_verifies_and_refuses_owner_writes) ... ok
+test_unsealed_import_without_dont_write_bytecode_breaks_verify (hg.tests.test_release.SealedReleaseTests.test_unsealed_import_without_dont_write_bytecode_breaks_verify) ... ok
+test_verify_still_rejects_injected_bytecode_after_seal (hg.tests.test_release.SealedReleaseTests.test_verify_still_rejects_injected_bytecode_after_seal) ... ok
+test_config_duplicate_keys_and_unknown_keys_are_rejected (hg.tests.test_service.ServiceContractTests.test_config_duplicate_keys_and_unknown_keys_are_rejected) ... ok
+test_config_file_must_be_private_and_owned (hg.tests.test_service.ServiceContractTests.test_config_file_must_be_private_and_owned) ... ok
+test_read_only_preflight_loads_live_main_anchor_without_binding_port (hg.tests.test_service.ServiceContractTests.test_read_only_preflight_loads_live_main_anchor_without_binding_port) ... ok
+test_release_root_symlink_is_rejected (hg.tests.test_service.ServiceContractTests.test_release_root_symlink_is_rejected) ... ok
+test_single_writer_lock_rejects_second_owner (hg.tests.test_service.ServiceContractTests.test_single_writer_lock_rejects_second_owner) ... ok
+test_state_directory_must_not_be_shared (hg.tests.test_service.ServiceContractTests.test_state_directory_must_not_be_shared) ... ok
+test_strict_config_and_release_preflight_pass (hg.tests.test_service.ServiceContractTests.test_strict_config_and_release_preflight_pass) ... ok
+test_token_file_must_be_exactly_mode_600 (hg.tests.test_service.ServiceContractTests.test_token_file_must_be_exactly_mode_600) ... ok
+test_unavailable_trust_root_blocks_preflight (hg.tests.test_service.ServiceContractTests.test_unavailable_trust_root_blocks_preflight) ... ok
+test_wrong_release_id_fails_closed (hg.tests.test_service.ServiceContractTests.test_wrong_release_id_fails_closed) ... ok
+test_action_ledger_has_no_pending_actions (hg.tests.test_state_compat.DeployedStateCompatTests.test_action_ledger_has_no_pending_actions) ... ok
+test_idempotency_database_keeps_receipts (hg.tests.test_state_compat.DeployedStateCompatTests.test_idempotency_database_keeps_receipts) ... ok
+test_memory_ledger_replays (hg.tests.test_state_compat.DeployedStateCompatTests.test_memory_ledger_replays) ... ok
+test_task_ledger_restores_closed_task (hg.tests.test_state_compat.DeployedStateCompatTests.test_task_ledger_restores_closed_task) ... ok
+test_failing_tests_do_not_close (hg.tests.test_tools_research.CodeToolTests.test_failing_tests_do_not_close) ... ok
+test_interrupted_test_run_stays_unknown_and_blocks (hg.tests.test_tools_research.CodeToolTests.test_interrupted_test_run_stays_unknown_and_blocks) ... ok
+test_passing_tests_verify (hg.tests.test_tools_research.CodeToolTests.test_passing_tests_verify) ... ok
+test_search_symbols_and_diff_through_the_gateway (hg.tests.test_tools_research.CodeToolTests.test_search_symbols_and_diff_through_the_gateway) ... ok
+test_test_run_declares_its_risk (hg.tests.test_tools_research.CodeToolTests.test_test_run_declares_its_risk) ... ok
+test_test_run_requires_execute_permission (hg.tests.test_tools_research.CodeToolTests.test_test_run_requires_execute_permission) ... ok
+test_bad_scores_reject_the_option (hg.tests.test_tools_research.OptionTests.test_bad_scores_reject_the_option) ... ok
+test_configuration_errors (hg.tests.test_tools_research.OptionTests.test_configuration_errors) ... ok
+test_design_space_is_bounded (hg.tests.test_tools_research.OptionTests.test_design_space_is_bounded) ... ok
+test_model_proposals_parsed_or_empty (hg.tests.test_tools_research.OptionTests.test_model_proposals_parsed_or_empty) ... ok
+test_novelty_relative_to_baseline (hg.tests.test_tools_research.OptionTests.test_novelty_relative_to_baseline) ... ok
+test_rubric_ranks_and_constraints_reject (hg.tests.test_tools_research.OptionTests.test_rubric_ranks_and_constraints_reject) ... ok
+test_self_assessment_ignored_and_duplicates_merged (hg.tests.test_tools_research.OptionTests.test_self_assessment_ignored_and_duplicates_merged) ... ok
+test_claims_cite_sources_and_disagreements_are_found (hg.tests.test_tools_research.ResearchTests.test_claims_cite_sources_and_disagreements_are_found) ... ok
+test_documents_come_from_gateway_outcomes (hg.tests.test_tools_research.ResearchTests.test_documents_come_from_gateway_outcomes) ... ok
+test_findings_stored_as_hypotheses_not_facts (hg.tests.test_tools_research.ResearchTests.test_findings_stored_as_hypotheses_not_facts) ... ok
+test_gaps_and_no_match (hg.tests.test_tools_research.ResearchTests.test_gaps_and_no_match) ... ok
+test_research_requires_gateway_documents (hg.tests.test_tools_research.ResearchTests.test_research_requires_gateway_documents) ... ok
+test_summary_kept_only_with_valid_citations (hg.tests.test_tools_research.ResearchTests.test_summary_kept_only_with_valid_citations) ... ok
+test_anchored_runtime_denies_urls_the_manifest_does_not_list (hg.tests.test_tools_research.UrlReadTests.test_anchored_runtime_denies_urls_the_manifest_does_not_list) ... ok
+test_credentials_in_url_rejected_even_inside_scope (hg.tests.test_tools_research.UrlReadTests.test_credentials_in_url_rejected_even_inside_scope) ... ok
+test_http_error_is_a_known_failure (hg.tests.test_tools_research.UrlReadTests.test_http_error_is_a_known_failure) ... ok
+test_invalid_urls_rejected_at_planning (hg.tests.test_tools_research.UrlReadTests.test_invalid_urls_rejected_at_planning) ... /data/data/com.termux/files/usr/lib/python3.14/pathlib/__init__.py:298: ResourceWarning: unclosed <socket.socket [closed] fd=5, family=2, type=1, proto=6>
+  return drv, root, [x for x in rel.split(sep) if x and x != '.']
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/data/data/com.termux/files/usr/lib/python3.14/tempfile.py:484: ResourceWarning: Implicitly cleaning up <HTTPError 404: 'Not Found'>
+  _warnings.warn(self.warn_message, ResourceWarning)
+/data/data/com.termux/files/usr/lib/python3.14/pathlib/__init__.py:298: ResourceWarning: unclosed <socket.socket [closed] fd=6, family=2, type=1, proto=6>
+  return drv, root, [x for x in rel.split(sep) if x and x != '.']
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/data/data/com.termux/files/usr/lib/python3.14/pathlib/__init__.py:298: ResourceWarning: unclosed <socket.socket [closed] fd=7, family=2, type=1, proto=6>
+  return drv, root, [x for x in rel.split(sep) if x and x != '.']
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
+test_read_through_gateway_keeps_text_out_of_ledger (hg.tests.test_tools_research.UrlReadTests.test_read_through_gateway_keeps_text_out_of_ledger) ... ok
+test_action_not_in_manifest_denied (maep.tests.test_canonical_source.AnchoredEvaluatorTests.test_action_not_in_manifest_denied) ... ok
+test_both_checks_pass_allows_and_records_anchor (maep.tests.test_canonical_source.AnchoredEvaluatorTests.test_both_checks_pass_allows_and_records_anchor) ... ok
+test_caller_cannot_carry_authority_in_the_request (maep.tests.test_canonical_source.AnchoredEvaluatorTests.test_caller_cannot_carry_authority_in_the_request) ... ok
+test_expired_manifest_grant_denied (maep.tests.test_canonical_source.AnchoredEvaluatorTests.test_expired_manifest_grant_denied) ... ok
+test_manifest_cannot_grant_without_a_task_grant (maep.tests.test_canonical_source.AnchoredEvaluatorTests.test_manifest_cannot_grant_without_a_task_grant) ... ok
+test_manifest_unavailable_denied (maep.tests.test_canonical_source.AnchoredEvaluatorTests.test_manifest_unavailable_denied) ... ok
+test_rejects_objects_without_the_interfaces (maep.tests.test_canonical_source.AnchoredEvaluatorTests.test_rejects_objects_without_the_interfaces) ... ok
+test_resource_outside_manifest_scope_denied (maep.tests.test_canonical_source.AnchoredEvaluatorTests.test_resource_outside_manifest_scope_denied) ... ok
+test_revocation_takes_effect_on_reload (maep.tests.test_canonical_source.AnchoredEvaluatorTests.test_revocation_takes_effect_on_reload) ... ok
+test_task_grant_without_manifest_grant_denied (maep.tests.test_canonical_source.AnchoredEvaluatorTests.test_task_grant_without_manifest_grant_denied) ... ok
+test_bad_configuration_rejected (maep.tests.test_canonical_source.CanonicalManifestTests.test_bad_configuration_rejected) ... ok
+test_cached_within_max_age (maep.tests.test_canonical_source.CanonicalManifestTests.test_cached_within_max_age) ... ok
+test_failed_reload_does_not_fall_back_to_stale_document (maep.tests.test_canonical_source.CanonicalManifestTests.test_failed_reload_does_not_fall_back_to_stale_document) ... ok
+test_loader_crash_is_a_trust_anchor_error (maep.tests.test_canonical_source.CanonicalManifestTests.test_loader_crash_is_a_trust_anchor_error) ... ok
+test_reloaded_after_max_age (maep.tests.test_canonical_source.CanonicalManifestTests.test_reloaded_after_max_age) ... ok
+test_directory_or_wrong_path_denies (maep.tests.test_canonical_source.LoaderTests.test_directory_or_wrong_path_denies) ... ok
+test_feature_branch_manifest_is_never_read (maep.tests.test_canonical_source.LoaderTests.test_feature_branch_manifest_is_never_read) ... ok
+test_invalid_manifest_denies (maep.tests.test_canonical_source.LoaderTests.test_invalid_manifest_denies) ... ok
+test_malformed_commit_sha_denies (maep.tests.test_canonical_source.LoaderTests.test_malformed_commit_sha_denies) ... ok
+test_missing_manifest_denies (maep.tests.test_canonical_source.LoaderTests.test_missing_manifest_denies) ... ok
+test_non_json_api_response_denies (maep.tests.test_canonical_source.LoaderTests.test_non_json_api_response_denies) ... ok
+test_reads_main_pinned_to_the_resolved_commit (maep.tests.test_canonical_source.LoaderTests.test_reads_main_pinned_to_the_resolved_commit) ... ok
+test_transport_failure_denies (maep.tests.test_canonical_source.LoaderTests.test_transport_failure_denies) ... ok
+test_unresolvable_main_denies (maep.tests.test_canonical_source.LoaderTests.test_unresolvable_main_denies) ... ok
+test_fact_requires_evidence (maep.tests.test_claims.ClaimClassificationTests.test_fact_requires_evidence) ... ok
+test_inference_requires_limitations (maep.tests.test_claims.ClaimClassificationTests.test_inference_requires_limitations) ... ok
+test_proposal_is_explicitly_classified (maep.tests.test_claims.ClaimClassificationTests.test_proposal_is_explicitly_classified) ... ok
+test_every_cited_test_anchor_exists_in_the_suite (maep.tests.test_conformance_catalogue.ConformanceCatalogueTests.test_every_cited_test_anchor_exists_in_the_suite) ... ok
+test_every_row_states_an_anchor_and_an_expected_result (maep.tests.test_conformance_catalogue.ConformanceCatalogueTests.test_every_row_states_an_anchor_and_an_expected_result) ... ok
+test_every_rule_001_to_028_is_mapped_to_a_test (maep.tests.test_conformance_catalogue.ConformanceCatalogueTests.test_every_rule_001_to_028_is_mapped_to_a_test) ... ok
+test_no_row_maps_a_rule_outside_the_registry (maep.tests.test_conformance_catalogue.ConformanceCatalogueTests.test_no_row_maps_a_rule_outside_the_registry) ... ok
+test_the_catalogue_is_present_and_not_empty (maep.tests.test_conformance_catalogue.ConformanceCatalogueTests.test_the_catalogue_is_present_and_not_empty) ... ok
+test_spec_and_code_allow_the_same_edges (maep.tests.test_conformance_catalogue.StateTableParityTests.test_spec_and_code_allow_the_same_edges) ... ok
+test_spec_and_code_declare_the_same_states (maep.tests.test_conformance_catalogue.StateTableParityTests.test_spec_and_code_declare_the_same_states) ... ok
+test_exact_authorization_allowed (maep.tests.test_core.AuthorizationTests.test_exact_authorization_allowed) ... ok
+test_expired_grant_denied (maep.tests.test_core.AuthorizationTests.test_expired_grant_denied) ... ok
+test_future_grant_denied (maep.tests.test_core.AuthorizationTests.test_future_grant_denied) ... ok
+test_scope_escalation_denied (maep.tests.test_core.AuthorizationTests.test_scope_escalation_denied) ... ok
+test_unsatisfied_condition_denied (maep.tests.test_core.AuthorizationTests.test_unsatisfied_condition_denied) ... ok
+test_untrusted_allow_not_enough (maep.tests.test_core.AuthorizationTests.test_untrusted_allow_not_enough) ... ok
+test_wrong_resource_denied (maep.tests.test_core.AuthorizationTests.test_wrong_resource_denied) ... ok
+test_candidate_mismatch_rejected (maep.tests.test_core.EvidenceTests.test_candidate_mismatch_rejected) ... ok
+test_missing_source_rejected (maep.tests.test_core.EvidenceTests.test_missing_source_rejected) ... ok
+test_valid_evidence (maep.tests.test_core.EvidenceTests.test_valid_evidence) ... ok
+test_closure_candidate_mismatch_rejected (maep.tests.test_core.GateAndClosureTests.test_closure_candidate_mismatch_rejected) ... ok
+test_closure_missing_gate_rejected (maep.tests.test_core.GateAndClosureTests.test_closure_missing_gate_rejected) ... ok
+test_closure_rejects_wrong_candidate_evidence (maep.tests.test_core.GateAndClosureTests.test_closure_rejects_wrong_candidate_evidence) ... ok
+test_closure_requires_evidence_per_criterion (maep.tests.test_core.GateAndClosureTests.test_closure_requires_evidence_per_criterion) ... ok
+test_not_applicable_requires_reason (maep.tests.test_core.GateAndClosureTests.test_not_applicable_requires_reason) ... ok
+test_required_gate_passes_with_resolved_evidence (maep.tests.test_core.GateAndClosureTests.test_required_gate_passes_with_resolved_evidence) ... ok
+test_required_not_run_gate_fails (maep.tests.test_core.GateAndClosureTests.test_required_not_run_gate_fails) ... ok
+test_valid_closure (maep.tests.test_core.GateAndClosureTests.test_valid_closure) ... ok
+test_empty_scope_rejected (maep.tests.test_core.TaskContractTests.test_empty_scope_rejected) ... ok
+test_missing_task_field_rejected (maep.tests.test_core.TaskContractTests.test_missing_task_field_rejected) ... ok
+test_unknown_state_rejected (maep.tests.test_core.TaskContractTests.test_unknown_state_rejected) ... ok
+test_valid_task (maep.tests.test_core.TaskContractTests.test_valid_task) ... ok
+test_acceptance_requires_gates (maep.tests.test_core.TransitionTests.test_acceptance_requires_gates) ... ok
+test_authorization_required (maep.tests.test_core.TransitionTests.test_authorization_required) ... ok
+test_blocker_requires_resolution (maep.tests.test_core.TransitionTests.test_blocker_requires_resolution) ... ok
+test_closure_requires_all_guards (maep.tests.test_core.TransitionTests.test_closure_requires_all_guards) ... ok
+test_forbidden_shortcut_rejected (maep.tests.test_core.TransitionTests.test_forbidden_shortcut_rejected) ... ok
+test_new_linked_task_can_start (maep.tests.test_core.TransitionTests.test_new_linked_task_can_start) ... ok
+test_terminal_state_cannot_reopen (maep.tests.test_core.TransitionTests.test_terminal_state_cannot_reopen) ... ok
+test_valid_transition (maep.tests.test_core.TransitionTests.test_valid_transition) ... ok
+test_full_reassessment_allowed (maep.tests.test_defect_regressions.BlockerReassessmentGuardTests.test_full_reassessment_allowed) ... ok
+test_missing_authority_reassessment_rejected (maep.tests.test_defect_regressions.BlockerReassessmentGuardTests.test_missing_authority_reassessment_rejected) ... ok
+test_missing_resolution_evidence_rejected (maep.tests.test_defect_regressions.BlockerReassessmentGuardTests.test_missing_resolution_evidence_rejected) ... ok
+test_missing_risk_reassessment_rejected (maep.tests.test_defect_regressions.BlockerReassessmentGuardTests.test_missing_risk_reassessment_rejected) ... ok
+test_resolved_flag_alone_rejected (maep.tests.test_defect_regressions.BlockerReassessmentGuardTests.test_resolved_flag_alone_rejected) ... ok
+test_closure_evidence_refs_wrong_type_rejected (maep.tests.test_defect_regressions.ClosureInputValidationTests.test_closure_evidence_refs_wrong_type_rejected) ... ok
+test_criteria_results_wrong_type_raises_domain_error (maep.tests.test_defect_regressions.ClosureInputValidationTests.test_criteria_results_wrong_type_raises_domain_error) ... ok
+test_criterion_without_id_rejected (maep.tests.test_defect_regressions.ClosureInputValidationTests.test_criterion_without_id_rejected) ... ok
+test_empty_closed_at_rejected (maep.tests.test_defect_regressions.ClosureInputValidationTests.test_empty_closed_at_rejected) ... ok
+test_empty_string_limitations_rejected (maep.tests.test_defect_regressions.ClosureInputValidationTests.test_empty_string_limitations_rejected) ... ok
+test_naive_closed_at_rejected (maep.tests.test_defect_regressions.ClosureInputValidationTests.test_naive_closed_at_rejected) ... ok
+test_non_dict_criterion_raises_domain_error (maep.tests.test_defect_regressions.ClosureInputValidationTests.test_non_dict_criterion_raises_domain_error) ... ok
+test_non_dict_evidence_record_raises_domain_error (maep.tests.test_defect_regressions.ClosureInputValidationTests.test_non_dict_evidence_record_raises_domain_error) ... ok
+test_non_string_limitation_item_rejected (maep.tests.test_defect_regressions.ClosureInputValidationTests.test_non_string_limitation_item_rejected) ... ok
+test_reference_closure_still_valid (maep.tests.test_defect_regressions.ClosureInputValidationTests.test_reference_closure_still_valid) ... ok
+test_unparseable_closed_at_rejected (maep.tests.test_defect_regressions.ClosureInputValidationTests.test_unparseable_closed_at_rejected) ... ok
+test_bool_attempt_count_rejected (maep.tests.test_defect_regressions.RetryDecisionTypeTests.test_bool_attempt_count_rejected) ... ok
+test_integer_boundaries (maep.tests.test_defect_regressions.RetryDecisionTypeTests.test_integer_boundaries) ... ok
+test_negative_attempt_count_rejected (maep.tests.test_defect_regressions.RetryDecisionTypeTests.test_negative_attempt_count_rejected) ... ok
+test_non_bool_stop_flags_rejected (maep.tests.test_defect_regressions.RetryDecisionTypeTests.test_non_bool_stop_flags_rejected) ... ok
+test_non_int_attempt_count_rejected (maep.tests.test_defect_regressions.RetryDecisionTypeTests.test_non_int_attempt_count_rejected) ... ok
+test_caller_flag_no_longer_reopens_terminal_task (maep.tests.test_defect_regressions.TerminalContinuationTests.test_caller_flag_no_longer_reopens_terminal_task) ... ok
+test_every_terminal_state_rejects_draft (maep.tests.test_defect_regressions.TerminalContinuationTests.test_every_terminal_state_rejects_draft) ... ok
+test_linked_draft_task_accepted (maep.tests.test_defect_regressions.TerminalContinuationTests.test_linked_draft_task_accepted) ... ok
+test_malformed_records_rejected (maep.tests.test_defect_regressions.TerminalContinuationTests.test_malformed_records_rejected) ... ok
+test_non_terminal_predecessor_rejected (maep.tests.test_defect_regressions.TerminalContinuationTests.test_non_terminal_predecessor_rejected) ... ok
+test_successor_must_start_in_draft (maep.tests.test_defect_regressions.TerminalContinuationTests.test_successor_must_start_in_draft) ... ok
+test_successor_referencing_other_task_rejected (maep.tests.test_defect_regressions.TerminalContinuationTests.test_successor_referencing_other_task_rejected) ... ok
+test_successor_reusing_predecessor_id_rejected (maep.tests.test_defect_regressions.TerminalContinuationTests.test_successor_reusing_predecessor_id_rejected) ... ok
+test_successor_without_task_reference_rejected (maep.tests.test_defect_regressions.TerminalContinuationTests.test_successor_without_task_reference_rejected) ... ok
+test_running_to_verifying_blank_candidate_rejected (maep.tests.test_defect_regressions.VerifyingEntryGuardTests.test_running_to_verifying_blank_candidate_rejected) ... ok
+test_running_to_verifying_without_candidate_rejected (maep.tests.test_defect_regressions.VerifyingEntryGuardTests.test_running_to_verifying_without_candidate_rejected) ... ok
+test_running_to_verifying_without_result_rejected (maep.tests.test_defect_regressions.VerifyingEntryGuardTests.test_running_to_verifying_without_result_rejected) ... ok
+test_unverified_to_verifying_requires_same_guard (maep.tests.test_defect_regressions.VerifyingEntryGuardTests.test_unverified_to_verifying_requires_same_guard) ... ok
+test_verifying_with_result_and_candidate_allowed (maep.tests.test_defect_regressions.VerifyingEntryGuardTests.test_verifying_with_result_and_candidate_allowed) ... ok
+test_destructive_change_requires_recovery_or_authorized_irreversibility (maep.tests.test_evolution_recovery.ChangeAndRecoveryTests.test_destructive_change_requires_recovery_or_authorized_irreversibility) ... ok
+test_idempotent_retry_requires_reconciled_state (maep.tests.test_evolution_recovery.ChangeAndRecoveryTests.test_idempotent_retry_requires_reconciled_state) ... ok
+test_read_only_action_needs_no_change_plan (maep.tests.test_evolution_recovery.ChangeAndRecoveryTests.test_read_only_action_needs_no_change_plan) ... ok
+test_side_effect_requires_plan (maep.tests.test_evolution_recovery.ChangeAndRecoveryTests.test_side_effect_requires_plan) ... ok
+test_unknown_non_idempotent_outcome_blocks_retry (maep.tests.test_evolution_recovery.ChangeAndRecoveryTests.test_unknown_non_idempotent_outcome_blocks_retry) ... ok
+test_amendment_cannot_reuse_original_id (maep.tests.test_evolution_recovery.EvidenceHistoryTests.test_amendment_cannot_reuse_original_id) ... ok
+test_amendment_links_original_without_reusing_id (maep.tests.test_evolution_recovery.EvidenceHistoryTests.test_amendment_links_original_without_reusing_id) ... ok
+test_external_instruction_never_grants_authority (maep.tests.test_evolution_recovery.TrustBoundaryAndResearchTests.test_external_instruction_never_grants_authority) ... ok
+test_research_claim_must_reference_known_source (maep.tests.test_evolution_recovery.TrustBoundaryAndResearchTests.test_research_claim_must_reference_known_source) ... ok
+test_research_claim_with_unknown_source_rejected (maep.tests.test_evolution_recovery.TrustBoundaryAndResearchTests.test_research_claim_with_unknown_source_rejected) ... ok
+test_action_not_in_manifest_issues_nothing (maep.tests.test_issuer.IssuerTests.test_action_not_in_manifest_issues_nothing) ... ok
+test_authorization_id_cannot_move_to_another_task (maep.tests.test_issuer.IssuerTests.test_authorization_id_cannot_move_to_another_task) ... ok
+test_bad_configuration_rejected (maep.tests.test_issuer.IssuerTests.test_bad_configuration_rejected) ... ok
+test_expiry_capped_by_manifest_grant (maep.tests.test_issuer.IssuerTests.test_expiry_capped_by_manifest_grant) ... ok
+test_issued_grant_does_not_cover_another_principal_or_task (maep.tests.test_issuer.IssuerTests.test_issued_grant_does_not_cover_another_principal_or_task) ... ok
+test_one_unpermitted_step_issues_nothing (maep.tests.test_issuer.IssuerTests.test_one_unpermitted_step_issues_nothing) ... ok
+test_only_the_claimed_issuer_adds_grants (maep.tests.test_issuer.IssuerTests.test_only_the_claimed_issuer_adds_grants) ... ok
+test_permitted_plan_gets_bounded_grants (maep.tests.test_issuer.IssuerTests.test_permitted_plan_gets_bounded_grants) ... ok
+test_unavailable_trust_root_issues_nothing (maep.tests.test_issuer.IssuerTests.test_unavailable_trust_root_issues_nothing) ... ok
+test_append_and_read_events (maep.tests.test_ledger.LedgerTests.test_append_and_read_events) ... ok
+test_corrupt_ledger_fails_closed (maep.tests.test_ledger.LedgerTests.test_corrupt_ledger_fails_closed) ... ok
+test_duplicate_event_id_rejected (maep.tests.test_ledger.LedgerTests.test_duplicate_event_id_rejected) ... ok
+test_event_id_required (maep.tests.test_ledger.LedgerTests.test_event_id_required) ... ok
+test_code_policy_versions_agree (maep.tests.test_owner_manifest_policy.CommittedOwnerManifestPolicyTests.test_code_policy_versions_agree) ... ok
+test_committed_manifest_loads_under_supported_policy (maep.tests.test_owner_manifest_policy.CommittedOwnerManifestPolicyTests.test_committed_manifest_loads_under_supported_policy) ... ok
+test_changed_candidate_requires_impact_assessment (maep.tests.test_policy_controls.BlockerAndArchitectureTests.test_changed_candidate_requires_impact_assessment) ... ok
+test_duplicate_module_rejected_by_default (maep.tests.test_policy_controls.BlockerAndArchitectureTests.test_duplicate_module_rejected_by_default) ... ok
+test_incomplete_blocker_rejected (maep.tests.test_policy_controls.BlockerAndArchitectureTests.test_incomplete_blocker_rejected) ... ok
+test_same_candidate_does_not_invalidate (maep.tests.test_policy_controls.BlockerAndArchitectureTests.test_same_candidate_does_not_invalidate) ... ok
+test_security_boundary_can_justify_module (maep.tests.test_policy_controls.BlockerAndArchitectureTests.test_security_boundary_can_justify_module) ... ok
+test_valid_blocker (maep.tests.test_policy_controls.BlockerAndArchitectureTests.test_valid_blocker) ... ok
+test_read_only_allows_read (maep.tests.test_policy_controls.ExecutionModeTests.test_read_only_allows_read) ... ok
+test_read_only_denies_unknown_action (maep.tests.test_policy_controls.ExecutionModeTests.test_read_only_denies_unknown_action) ... ok
+test_read_only_denies_write (maep.tests.test_policy_controls.ExecutionModeTests.test_read_only_denies_write) ... ok
+test_independent_label_requires_evidence (maep.tests.test_policy_controls.PolicyAndReviewTests.test_independent_label_requires_evidence) ... ok
+test_internal_critique_is_not_independent (maep.tests.test_policy_controls.PolicyAndReviewTests.test_internal_critique_is_not_independent) ... ok
+test_policy_change_requires_new_version_and_authority (maep.tests.test_policy_controls.PolicyAndReviewTests.test_policy_change_requires_new_version_and_authority) ... ok
+test_policy_self_approval_rejected (maep.tests.test_policy_controls.PolicyAndReviewTests.test_policy_self_approval_rejected) ... ok
+test_same_policy_version_rejected (maep.tests.test_policy_controls.PolicyAndReviewTests.test_same_policy_version_rejected) ... ok
+test_failed_result_cannot_be_reported_pass (maep.tests.test_policy_controls.ReportingAndRetryTests.test_failed_result_cannot_be_reported_pass) ... ok
+test_invalid_attempt_count_rejected (maep.tests.test_policy_controls.ReportingAndRetryTests.test_invalid_attempt_count_rejected) ... ok
+test_not_run_cannot_be_reported_pass (maep.tests.test_policy_controls.ReportingAndRetryTests.test_not_run_cannot_be_reported_pass) ... ok
+test_safety_stop_is_immediate (maep.tests.test_policy_controls.ReportingAndRetryTests.test_safety_stop_is_immediate) ... ok
+test_three_attempts_stop (maep.tests.test_policy_controls.ReportingAndRetryTests.test_three_attempts_stop) ... ok
+test_matching_request_with_verified_conditions_allowed (maep.tests.test_policy_evaluator.AllowTests.test_matching_request_with_verified_conditions_allowed) ... ok
+test_non_expiring_grant_allowed_only_when_configured (maep.tests.test_policy_evaluator.AllowTests.test_non_expiring_grant_allowed_only_when_configured) ... ok
+test_caller_asserted_conditions_denied (maep.tests.test_policy_evaluator.CallerAssertionTests.test_caller_asserted_conditions_denied) ... ok
+test_caller_supplied_decision_denied (maep.tests.test_policy_evaluator.CallerAssertionTests.test_caller_supplied_decision_denied) ... ok
+test_caller_supplied_grant_denied (maep.tests.test_policy_evaluator.CallerAssertionTests.test_caller_supplied_grant_denied) ... ok
+test_caller_supplied_trust_flag_denied (maep.tests.test_policy_evaluator.CallerAssertionTests.test_caller_supplied_trust_flag_denied) ... ok
+test_extra_fields_denied_even_when_conditions_hold (maep.tests.test_policy_evaluator.CallerAssertionTests.test_extra_fields_denied_even_when_conditions_hold) ... ok
+test_non_allow_grant_denied_without_consulting_provider (maep.tests.test_policy_evaluator.ConditionProviderTests.test_non_allow_grant_denied_without_consulting_provider) ... ok
+test_provider_cannot_mutate_request (maep.tests.test_policy_evaluator.ConditionProviderTests.test_provider_cannot_mutate_request) ... ok
+test_provider_exception_denied (maep.tests.test_policy_evaluator.ConditionProviderTests.test_provider_exception_denied) ... ok
+test_truthy_non_true_provider_result_denied (maep.tests.test_policy_evaluator.ConditionProviderTests.test_truthy_non_true_provider_result_denied) ... ok
+test_unverified_condition_denied (maep.tests.test_policy_evaluator.ConditionProviderTests.test_unverified_condition_denied) ... ok
+test_expired_grant_denied (maep.tests.test_policy_evaluator.GrantValidityTests.test_expired_grant_denied) ... ok
+test_naive_evaluation_time_rejected (maep.tests.test_policy_evaluator.GrantValidityTests.test_naive_evaluation_time_rejected) ... ok
+test_not_yet_valid_grant_denied (maep.tests.test_policy_evaluator.GrantValidityTests.test_not_yet_valid_grant_denied) ... ok
+test_null_expiry_rejected_by_default (maep.tests.test_policy_evaluator.GrantValidityTests.test_null_expiry_rejected_by_default) ... ok
+test_store_is_isolated_from_later_mutation (maep.tests.test_policy_evaluator.GrantValidityTests.test_store_is_isolated_from_later_mutation) ... ok
+test_duplicate_authorization_id_rejected (maep.tests.test_policy_evaluator.InvalidPolicyTests.test_duplicate_authorization_id_rejected) ... ok
+test_invalid_grants_rejected_at_construction (maep.tests.test_policy_evaluator.InvalidPolicyTests.test_invalid_grants_rejected_at_construction) ... ok
+test_non_callable_provider_rejected (maep.tests.test_policy_evaluator.InvalidPolicyTests.test_non_callable_provider_rejected) ... ok
+test_binding_mismatches_denied (maep.tests.test_policy_evaluator.RequestValidationTests.test_binding_mismatches_denied) ... ok
+test_missing_request_field_denied (maep.tests.test_policy_evaluator.RequestValidationTests.test_missing_request_field_denied) ... ok
+test_non_object_request_denied (maep.tests.test_policy_evaluator.RequestValidationTests.test_non_object_request_denied) ... ok
+test_unhashable_authorization_id_denied (maep.tests.test_policy_evaluator.RequestValidationTests.test_unhashable_authorization_id_denied) ... ok
+test_unknown_authorization_id_denied (maep.tests.test_policy_evaluator.RequestValidationTests.test_unknown_authorization_id_denied) ... ok
+test_all_six_contracts_exist_and_parse (maep.tests.test_schema_contracts.SchemaFileTests.test_all_six_contracts_exist_and_parse) ... ok
+test_required_fields_are_declared (maep.tests.test_schema_contracts.SchemaFileTests.test_required_fields_are_declared) ... ok
+test_every_fixture_reaches_its_expected_verdict_and_reason (maep.tests.test_schema_fixtures.SchemaFixtureTests.test_every_fixture_reaches_its_expected_verdict_and_reason) ... ok
+test_every_negative_case_names_the_violation_it_must_produce (maep.tests.test_schema_fixtures.SchemaFixtureTests.test_every_negative_case_names_the_violation_it_must_produce) ... ok
+test_fixtures_cover_every_contract_in_both_directions (maep.tests.test_schema_fixtures.SchemaFixtureTests.test_fixtures_cover_every_contract_in_both_directions) ... ok
+test_canonical_serialization_is_deterministic_and_change_sensitive (maep.tests.test_schema_fixtures.SchemaProvenanceTests.test_canonical_serialization_is_deterministic_and_change_sensitive) ... ok
+test_contract_and_fixture_bytes_match_the_recorded_digests (maep.tests.test_schema_fixtures.SchemaProvenanceTests.test_contract_and_fixture_bytes_match_the_recorded_digests) ... ok
+test_field_order_does_not_change_the_verdict (maep.tests.test_schema_fixtures.SchemaProvenanceTests.test_field_order_does_not_change_the_verdict) ... ok
+test_a_dangling_reference_is_an_error_not_a_pass (maep.tests.test_schema_fixtures.SchemaSubsetValidatorTests.test_a_dangling_reference_is_an_error_not_a_pass) ... ok
+test_an_unenforceable_keyword_is_refused_rather_than_ignored (maep.tests.test_schema_fixtures.SchemaSubsetValidatorTests.test_an_unenforceable_keyword_is_refused_rather_than_ignored) ... ok
+test_every_contract_still_declares_the_dialect_and_a_versioned_id (maep.tests.test_schema_fixtures.SchemaSubsetValidatorTests.test_every_contract_still_declares_the_dialect_and_a_versioned_id) ... ok
+test_every_contract_uses_only_keywords_this_validator_enforces (maep.tests.test_schema_fixtures.SchemaSubsetValidatorTests.test_every_contract_uses_only_keywords_this_validator_enforces) ... ok
+test_the_validator_does_not_treat_booleans_as_numbers (maep.tests.test_schema_fixtures.SchemaSubsetValidatorTests.test_the_validator_does_not_treat_booleans_as_numbers) ... ok
+test_commit_never_acknowledges_swap_racing_the_commit (maep.tests.test_sqlite_nofollow.SQLiteNoFollowTests.test_commit_never_acknowledges_swap_racing_the_commit) ... ok
+test_commit_refuses_after_database_replaced (maep.tests.test_sqlite_nofollow.SQLiteNoFollowTests.test_commit_refuses_after_database_replaced) ... ok
+test_fails_closed_without_openat_support (maep.tests.test_sqlite_nofollow.SQLiteNoFollowTests.test_fails_closed_without_openat_support) ... ok
+test_normal_open_round_trip_and_special_characters (maep.tests.test_sqlite_nofollow.SQLiteNoFollowTests.test_normal_open_round_trip_and_special_characters) ... ok
+test_open_does_not_release_other_connections_posix_locks (maep.tests.test_sqlite_nofollow.SQLiteNoFollowTests.test_open_does_not_release_other_connections_posix_locks)
+Opening/closing a private fd on the DB drops this process's fcntl locks. ... ok
+test_private_mode_creates_0600_and_rejects_group_readable (maep.tests.test_sqlite_nofollow.SQLiteNoFollowTests.test_private_mode_creates_0600_and_rejects_group_readable) ... ok
+test_procfs_deleted_alias_cannot_redirect_open (maep.tests.test_sqlite_nofollow.SQLiteNoFollowTests.test_procfs_deleted_alias_cannot_redirect_open)
+SQLite resolves /proc/self/fd/N by readlink; '<path> (deleted)' must not win. ... skipped 'platform cannot create hard links'
+test_rejects_directory_owned_by_another_user (maep.tests.test_sqlite_nofollow.SQLiteNoFollowTests.test_rejects_directory_owned_by_another_user) ... skipped 'needs root to chown'
+test_rejects_hardlinked_database (maep.tests.test_sqlite_nofollow.SQLiteNoFollowTests.test_rejects_hardlinked_database) ... skipped 'platform cannot create hard links'
+test_rejects_symlink_in_parent_directory (maep.tests.test_sqlite_nofollow.SQLiteNoFollowTests.test_rejects_symlink_in_parent_directory) ... ok
+test_rejects_symlinked_or_hardlinked_sidecars_without_touching_target (maep.tests.test_sqlite_nofollow.SQLiteNoFollowTests.test_rejects_symlinked_or_hardlinked_sidecars_without_touching_target) ... ok
+test_rejects_unnormalized_path (maep.tests.test_sqlite_nofollow.SQLiteNoFollowTests.test_rejects_unnormalized_path) ... ok
+test_rejects_world_writable_database_directory (maep.tests.test_sqlite_nofollow.SQLiteNoFollowTests.test_rejects_world_writable_database_directory) ... ok
+test_adopt_refuses_a_database_open_in_this_process (maep.tests.test_sqlite_nofollow.SQLiteRecoveryBindingTests.test_adopt_refuses_a_database_open_in_this_process) ... ok
+test_concurrent_processes_on_the_same_database (maep.tests.test_sqlite_nofollow.SQLiteRecoveryBindingTests.test_concurrent_processes_on_the_same_database) ... ok
+test_context_manager_commit_is_bound (maep.tests.test_sqlite_nofollow.SQLiteRecoveryBindingTests.test_context_manager_commit_is_bound)
+sqlite3's C __exit__ bypassed the bound commit(): a swapped path committed silently. ... ok
+test_crash_during_identity_assignment_fails_closed_and_adopt_recovers (maep.tests.test_sqlite_nofollow.SQLiteRecoveryBindingTests.test_crash_during_identity_assignment_fails_closed_and_adopt_recovers) ... ok
+test_crash_recovery_of_the_same_database_still_works (maep.tests.test_sqlite_nofollow.SQLiteRecoveryBindingTests.test_crash_recovery_of_the_same_database_still_works) ... ok
+test_frames_committed_before_a_swap_are_completed_into_their_database_on_close (maep.tests.test_sqlite_nofollow.SQLiteRecoveryBindingTests.test_frames_committed_before_a_swap_are_completed_into_their_database_on_close) ... ok
+test_hot_journal_of_a_displaced_database_is_not_rolled_back_into_the_replacement (maep.tests.test_sqlite_nofollow.SQLiteRecoveryBindingTests.test_hot_journal_of_a_displaced_database_is_not_rolled_back_into_the_replacement) ... ok
+test_in_place_overwrite_with_another_database_is_refused (maep.tests.test_sqlite_nofollow.SQLiteRecoveryBindingTests.test_in_place_overwrite_with_another_database_is_refused)
+Same inode, different content: an inode-based binding would accept this. ... ok
+test_legacy_hot_wal_without_identity_requires_explicit_adopt (maep.tests.test_sqlite_nofollow.SQLiteRecoveryBindingTests.test_legacy_hot_wal_without_identity_requires_explicit_adopt) ... ok
+test_live_connection_in_this_process_blocks_open_of_a_replacement (maep.tests.test_sqlite_nofollow.SQLiteRecoveryBindingTests.test_live_connection_in_this_process_blocks_open_of_a_replacement) ... ok
+test_live_writer_in_another_process_blocks_open_of_a_replacement (maep.tests.test_sqlite_nofollow.SQLiteRecoveryBindingTests.test_live_writer_in_another_process_blocks_open_of_a_replacement) ... ok
+test_orphaned_records_without_a_database_are_refused_before_creating_one (maep.tests.test_sqlite_nofollow.SQLiteRecoveryBindingTests.test_orphaned_records_without_a_database_are_refused_before_creating_one) ... ok
+test_records_planted_between_admission_and_open_are_caught_by_sqlites_view (maep.tests.test_sqlite_nofollow.SQLiteRecoveryBindingTests.test_records_planted_between_admission_and_open_are_caught_by_sqlites_view)
+Defence in depth: SQLite's own view of page 1 must name the admitted identity. ... ok
+test_refused_commit_then_crash_leaves_nothing_for_the_replacement (maep.tests.test_sqlite_nofollow.SQLiteRecoveryBindingTests.test_refused_commit_then_crash_leaves_nothing_for_the_replacement)
+The raced COMMIT is completed into its database at once, not only at close(). ... ok
+test_swap_racing_commit_lands_in_its_own_database_only (maep.tests.test_sqlite_nofollow.SQLiteRecoveryBindingTests.test_swap_racing_commit_lands_in_its_own_database_only)
+Baseline finding: the raced COMMIT was replayed into the replacement on reopen. ... ok
+test_unrelated_foreign_and_tampered_wal (maep.tests.test_sqlite_nofollow.SQLiteRecoveryBindingTests.test_unrelated_foreign_and_tampered_wal) ... ok
+test_wal_committed_before_crash_is_refused_for_a_replacement_and_recoverable_for_its_owner (maep.tests.test_sqlite_nofollow.SQLiteRecoveryBindingTests.test_wal_committed_before_crash_is_refused_for_a_replacement_and_recoverable_for_its_owner) ... ok
+test_wal_decoder_matches_sqlite_recovery (maep.tests.test_sqlite_nofollow.SQLiteRecoveryBindingTests.test_wal_decoder_matches_sqlite_recovery)
+Admission must see exactly the transactions SQLite recovery applies. ... ok
+test_bool_expected_version_rejected (maep.tests.test_task_store.AcceptanceCriteriaTests.test_bool_expected_version_rejected) ... ok
+test_callers_cannot_supply_guards (maep.tests.test_task_store.AcceptanceCriteriaTests.test_callers_cannot_supply_guards) ... ok
+test_created_task_is_copied_from_caller (maep.tests.test_task_store.AcceptanceCriteriaTests.test_created_task_is_copied_from_caller) ... ok
+test_forbidden_shortcut_denied_and_not_logged (maep.tests.test_task_store.AcceptanceCriteriaTests.test_forbidden_shortcut_denied_and_not_logged) ... ok
+test_ledger_append_failure_leaves_state_unchanged (maep.tests.test_task_store.AcceptanceCriteriaTests.test_ledger_append_failure_leaves_state_unchanged) ... ok
+test_public_api_has_no_state_setter (maep.tests.test_task_store.AcceptanceCriteriaTests.test_public_api_has_no_state_setter) ... ok
+test_running_to_verifying_denied_without_recorded_result (maep.tests.test_task_store.AcceptanceCriteriaTests.test_running_to_verifying_denied_without_recorded_result) ... ok
+test_snapshot_is_a_copy (maep.tests.test_task_store.AcceptanceCriteriaTests.test_snapshot_is_a_copy) ... ok
+test_stale_expected_version_rejected (maep.tests.test_task_store.AcceptanceCriteriaTests.test_stale_expected_version_rejected) ... ok
+test_transition_returns_new_version (maep.tests.test_task_store.AcceptanceCriteriaTests.test_transition_returns_new_version) ... ok
+test_authorized_denied_when_policy_denies (maep.tests.test_task_store.AuthorityTests.test_authorized_denied_when_policy_denies) ... ok
+test_authorized_requires_recorded_request (maep.tests.test_task_store.AuthorityTests.test_authorized_requires_recorded_request) ... ok
+test_no_authority_provider_blocks_authorization (maep.tests.test_task_store.AuthorityTests.test_no_authority_provider_blocks_authorization) ... ok
+test_request_for_another_task_rejected (maep.tests.test_task_store.AuthorityTests.test_request_for_another_task_rejected) ... ok
+test_running_rechecks_authority_at_transition_time (maep.tests.test_task_store.AuthorityTests.test_running_rechecks_authority_at_transition_time) ... ok
+test_blocking_requires_a_recorded_blocker (maep.tests.test_task_store.BlockerReassessmentTests.test_blocking_requires_a_recorded_blocker) ... ok
+test_reassessment_from_an_earlier_block_does_not_reopen_a_new_one (maep.tests.test_task_store.BlockerReassessmentTests.test_reassessment_from_an_earlier_block_does_not_reopen_a_new_one) ... ok
+test_reassessment_must_cite_stored_evidence (maep.tests.test_task_store.BlockerReassessmentTests.test_reassessment_must_cite_stored_evidence) ... ok
+test_reassessment_only_while_blocked (maep.tests.test_task_store.BlockerReassessmentTests.test_reassessment_only_while_blocked) ... ok
+test_reassessment_required_before_reopening (maep.tests.test_task_store.BlockerReassessmentTests.test_reassessment_required_before_reopening) ... ok
+test_reassessment_requires_risk_assessment (maep.tests.test_task_store.BlockerReassessmentTests.test_reassessment_requires_risk_assessment) ... ok
+test_reopening_also_requires_fresh_authority (maep.tests.test_task_store.BlockerReassessmentTests.test_reopening_also_requires_fresh_authority) ... ok
+test_acceptance_denied_for_evidence_of_another_candidate (maep.tests.test_task_store.ResultEvidenceAndClosureTests.test_acceptance_denied_for_evidence_of_another_candidate) ... ok
+test_acceptance_denied_without_gates_or_with_unknown_evidence (maep.tests.test_task_store.ResultEvidenceAndClosureTests.test_acceptance_denied_without_gates_or_with_unknown_evidence) ... ok
+test_candidate_change_invalidates_old_evidence (maep.tests.test_task_store.ResultEvidenceAndClosureTests.test_candidate_change_invalidates_old_evidence) ... ok
+test_closure_denied_for_closure_of_another_candidate (maep.tests.test_task_store.ResultEvidenceAndClosureTests.test_closure_denied_for_closure_of_another_candidate) ... ok
+test_closure_denied_with_open_blocker (maep.tests.test_task_store.ResultEvidenceAndClosureTests.test_closure_denied_with_open_blocker) ... ok
+test_closure_denied_without_closure_record (maep.tests.test_task_store.ResultEvidenceAndClosureTests.test_closure_denied_without_closure_record) ... ok
+test_duplicate_evidence_id_rejected (maep.tests.test_task_store.ResultEvidenceAndClosureTests.test_duplicate_evidence_id_rejected) ... ok
+test_optional_gate_not_accepted_as_mandatory (maep.tests.test_task_store.ResultEvidenceAndClosureTests.test_optional_gate_not_accepted_as_mandatory) ... ok
+test_result_only_while_running_or_unverified (maep.tests.test_task_store.ResultEvidenceAndClosureTests.test_result_only_while_running_or_unverified) ... ok
+test_duplicate_task_id_rejected (maep.tests.test_task_store.TaskCreationTests.test_duplicate_task_id_rejected) ... ok
+test_every_accepted_change_is_in_the_ledger_first (maep.tests.test_task_store.TaskCreationTests.test_every_accepted_change_is_in_the_ledger_first) ... ok
+test_existing_ledger_requires_recovery (maep.tests.test_task_store.TaskCreationTests.test_existing_ledger_requires_recovery) ... ok
+test_invalid_contract_rejected (maep.tests.test_task_store.TaskCreationTests.test_invalid_contract_rejected) ... ok
+test_policy_version_must_match (maep.tests.test_task_store.TaskCreationTests.test_policy_version_must_match) ... ok
+test_task_must_start_in_draft (maep.tests.test_task_store.TaskCreationTests.test_task_must_start_in_draft) ... ok
+test_linked_continuation_task_created (maep.tests.test_task_store.TerminalAndLinkedTaskTests.test_linked_continuation_task_created) ... ok
+test_terminal_task_cannot_transition (maep.tests.test_task_store.TerminalAndLinkedTaskTests.test_terminal_task_cannot_transition) ... ok
+test_terminal_task_rejects_new_facts (maep.tests.test_task_store.TerminalAndLinkedTaskTests.test_terminal_task_rejects_new_facts) ... ok
+test_unknown_task_reference_rejected (maep.tests.test_task_store.TerminalAndLinkedTaskTests.test_unknown_task_reference_rejected) ... ok
+test_plan_is_not_a_state_setter (maep.tests.test_task_store_restore.PlanTests.test_plan_is_not_a_state_setter) ... ok
+test_plan_only_while_assessed (maep.tests.test_task_store_restore.PlanTests.test_plan_only_while_assessed) ... ok
+test_plan_shape_checked (maep.tests.test_task_store_restore.PlanTests.test_plan_shape_checked) ... ok
+test_authority_is_re_evaluated_after_restore (maep.tests.test_task_store_restore.RestoreTests.test_authority_is_re_evaluated_after_restore) ... ok
+test_expiry_during_downtime_denies_running (maep.tests.test_task_store_restore.RestoreTests.test_expiry_during_downtime_denies_running) ... ok
+test_mismatched_event_id_rejected (maep.tests.test_task_store_restore.RestoreTests.test_mismatched_event_id_rejected) ... ok
+test_other_policy_version_rejected (maep.tests.test_task_store_restore.RestoreTests.test_other_policy_version_rejected) ... ok
+test_plain_constructor_still_refuses_non_empty_ledger (maep.tests.test_task_store_restore.RestoreTests.test_plain_constructor_still_refuses_non_empty_ledger) ... ok
+test_restore_reproduces_every_record_field (maep.tests.test_task_store_restore.RestoreTests.test_restore_reproduces_every_record_field) ... ok
+test_restored_store_continues_the_same_history (maep.tests.test_task_store_restore.RestoreTests.test_restored_store_continues_the_same_history) ... ok
+test_transition_from_wrong_state_rejected (maep.tests.test_task_store_restore.RestoreTests.test_transition_from_wrong_state_rejected) ... ok
+test_unknown_event_type_rejected (maep.tests.test_task_store_restore.RestoreTests.test_unknown_event_type_rejected) ... ok
+test_version_gap_rejected (maep.tests.test_task_store_restore.RestoreTests.test_version_gap_rejected) ... ok
+test_after_claim_every_mutation_needs_the_writer (maep.tests.test_task_store_restore.WriterClaimTests.test_after_claim_every_mutation_needs_the_writer) ... ok
+test_second_claim_refused (maep.tests.test_task_store_restore.WriterClaimTests.test_second_claim_refused) ... ok
+test_unclaimed_store_keeps_existing_behaviour (maep.tests.test_task_store_restore.WriterClaimTests.test_unclaimed_store_keeps_existing_behaviour) ... ok
+test_writer_exposes_only_mutation_methods (maep.tests.test_task_store_restore.WriterClaimTests.test_writer_exposes_only_mutation_methods) ... ok
+test_ambiguous_grants_denied (maep.tests.test_trust_anchor.TrustAnchorTests.test_ambiguous_grants_denied) ... ok
+test_expired_grant_denied (maep.tests.test_trust_anchor.TrustAnchorTests.test_expired_grant_denied) ... ok
+test_feature_branch_never_trust_root (maep.tests.test_trust_anchor.TrustAnchorTests.test_feature_branch_never_trust_root) ... ok
+test_fingerprint_stable (maep.tests.test_trust_anchor.TrustAnchorTests.test_fingerprint_stable) ... ok
+test_missing_manifest_denied (maep.tests.test_trust_anchor.TrustAnchorTests.test_missing_manifest_denied) ... ok
+test_naive_time_is_not_accepted_as_validity_input (maep.tests.test_trust_anchor.TrustAnchorTests.test_naive_time_is_not_accepted_as_validity_input) ... ok
+test_policy_version_mismatch_denied (maep.tests.test_trust_anchor.TrustAnchorTests.test_policy_version_mismatch_denied) ... ok
+test_scope_mismatch_denied (maep.tests.test_trust_anchor.TrustAnchorTests.test_scope_mismatch_denied) ... ok
+test_transport_failure_denied (maep.tests.test_trust_anchor.TrustAnchorTests.test_transport_failure_denied) ... ok
+test_unexpected_manifest_path_denied (maep.tests.test_trust_anchor.TrustAnchorTests.test_unexpected_manifest_path_denied) ... ok
+test_unexpected_repository_denied (maep.tests.test_trust_anchor.TrustAnchorTests.test_unexpected_repository_denied) ... ok
+test_unknown_principal_denied (maep.tests.test_trust_anchor.TrustAnchorTests.test_unknown_principal_denied) ... ok
+test_valid_grant_allows (maep.tests.test_trust_anchor.TrustAnchorTests.test_valid_grant_allows) ... ok
+test_wrong_action_denied (maep.tests.test_trust_anchor.TrustAnchorTests.test_wrong_action_denied) ... ok
+test_wrong_trust_root_denied (maep.tests.test_trust_anchor.TrustAnchorTests.test_wrong_trust_root_denied) ... ok
+test_child_resource_allowed (maep.tests.test_trust_anchor_defects.AuthorizeDefects.test_child_resource_allowed) ... ok
+test_f11_loaded_manifest_is_detached_from_fetched_object (maep.tests.test_trust_anchor_defects.AuthorizeDefects.test_f11_loaded_manifest_is_detached_from_fetched_object) ... ok
+test_f11_returned_grant_cannot_widen_the_loaded_manifest (maep.tests.test_trust_anchor_defects.AuthorizeDefects.test_f11_returned_grant_cannot_widen_the_loaded_manifest) ... ok
+test_f7_future_renewal_does_not_block_a_live_grant (maep.tests.test_trust_anchor_defects.AuthorizeDefects.test_f7_future_renewal_does_not_block_a_live_grant) ... ok
+test_f7_only_future_grant_is_still_denied (maep.tests.test_trust_anchor_defects.AuthorizeDefects.test_f7_only_future_grant_is_still_denied) ... ok
+test_f7_two_live_grants_still_ambiguous (maep.tests.test_trust_anchor_defects.AuthorizeDefects.test_f7_two_live_grants_still_ambiguous) ... ok
+test_f9_naive_now_is_a_denial (maep.tests.test_trust_anchor_defects.AuthorizeDefects.test_f9_naive_now_is_a_denial) ... ok
+test_prefix_confusion_denied (maep.tests.test_trust_anchor_defects.AuthorizeDefects.test_prefix_confusion_denied) ... ok
+test_f10_duplicate_json_keys_rejected (maep.tests.test_trust_anchor_defects.ManifestValidationDefects.test_f10_duplicate_json_keys_rejected) ... ok
+test_f10_duplicate_top_level_key_rejected (maep.tests.test_trust_anchor_defects.ManifestValidationDefects.test_f10_duplicate_top_level_key_rejected) ... ok
+test_f1_non_string_scope_entry_is_a_denial_not_a_crash (maep.tests.test_trust_anchor_defects.ManifestValidationDefects.test_f1_non_string_scope_entry_is_a_denial_not_a_crash) ... ok
+test_f2_empty_scope_entry_rejected (maep.tests.test_trust_anchor_defects.ManifestValidationDefects.test_f2_empty_scope_entry_rejected) ... ok
+test_f2_root_like_scope_entry_rejected (maep.tests.test_trust_anchor_defects.ManifestValidationDefects.test_f2_root_like_scope_entry_rejected) ... ok
+test_f3_naive_manifest_timestamps_rejected_at_load (maep.tests.test_trust_anchor_defects.ManifestValidationDefects.test_f3_naive_manifest_timestamps_rejected_at_load) ... ok
+test_f4_inverted_validity_window_rejected (maep.tests.test_trust_anchor_defects.ManifestValidationDefects.test_f4_inverted_validity_window_rejected) ... ok
+test_f5_action_vocabulary_is_maep_actions (maep.tests.test_trust_anchor_defects.ManifestValidationDefects.test_f5_action_vocabulary_is_maep_actions) ... ok
+test_f5_unsupported_action_rejected (maep.tests.test_trust_anchor_defects.ManifestValidationDefects.test_f5_unsupported_action_rejected) ... ok
+test_f6_non_string_principal_rejected (maep.tests.test_trust_anchor_defects.ManifestValidationDefects.test_f6_non_string_principal_rejected) ... ok
+test_non_dict_grant_fields_never_crash (maep.tests.test_trust_anchor_defects.ManifestValidationDefects.test_non_dict_grant_fields_never_crash) ... ok
+
+----------------------------------------------------------------------
+Ran 776 tests in 81.815s
+
+OK (skipped=3)
+
+[guard dev] false-positive rate = 0.019 (1/52); flagged: [('FP008', ['ai-addressee', 'answer-instruction'])]
+
+[guard dev] recall = 1.000 (66/66); missed: []

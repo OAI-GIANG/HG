@@ -152,3 +152,66 @@ A prior invocation mistakenly named `hg.tests.test_attest`, which is not present
 - Do not mark unavailable/skipped/mock/emulator-only evidence as a physical Android PASS.
 - Do not load a runtime into the trust anchor until the full provenance chain is qualified.
 - Stop deployment if any mandatory gate is not PASS; preserve NO-GO and continue independent work.
+
+
+---
+
+# V3-CP02 — Memory Continuity R3.1 isolated port and verification
+
+**Recorded:** 2026-11-11 (Asia/Bangkok)
+**Worktree:** `~/HG-MEMORY-CONTINUITY-R3.1-PORT`
+**Branch:** `stt/hg-memory-continuity-r3.1-port-20261111`
+**Base / HEAD before port changes:** `272300a7663176b19d01ce792d26fe2cbc5f71d0`
+**Disposition:** COMPONENT TESTS PASS WITH PLATFORM SKIPS; UNCOMMITTED AT CHECKPOINT; GLOBAL NO-GO
+
+## Scope delta
+
+This checkpoint does not repeat WP0 discovery, original 26-worktree preservation, the 70-overlap inventory, production baseline verification, or prior Android L5 probing. It advances one isolated Memory Continuity R3.1 integration candidate only.
+
+The port integrates MemoryStore provenance and durable save semantics, ASK receipt identity, memory curation, CLI and chat/API save paths, UI unknown-outcome retry behavior, repair hardening, re-entrant sidecar locking and related tests. The source integration was applied in a new worktree; original source worktrees, the GO-LIVE candidate and production were not overwritten.
+
+A policy-scan regression was fixed narrowly: two exact R3.1 evaluation documents dated 2026-11-02 are preserved as historical evaluation artifacts because owner decision OD-IR-20261109 superseded their former independent-review gate. Current governing documents remain scanned. The focused policy regression is 8/8 PASS.
+
+## CP02 verification result
+
+| Check | Result | Disposition |
+|---|---:|---|
+| HG subtree on Python 3.14.8 | 735 tests, 0 failures, 3 skipped; exit 0; 267.506 s | PASS within component scope; skips remain open |
+| MAEP suite on Python 3.14.8 | 370 tests, 0 failures, 3 skipped; exit 0; 4.259 s | PASS within component scope; skips remain open |
+| MAEP no-mandatory-review policy regression | 8/8; exit 0 | PASS |
+| Node Memory Save Flow | 9/9; exit 0 | PASS |
+| Python AST parse | 23 changed Python files; 0 syntax errors | PASS |
+| JavaScript syntax | `hg/ui/app.js` and `hg/ui/memory-save-flow.js` | PASS |
+| Staged and unstaged diff check | Both clean | PASS |
+
+Non-fatal ResourceWarning messages for test database/socket/HTTPError cleanup remain visible in the Python full-suite log. They are recorded as cleanup debt, not test failures.
+
+Evidence and checksums:
+`docs/evidence/HG-MASTER-GO-LIVE-V3-20261111/r3.1-port/R3_1_PORT_INTEGRATION_TERMUX_20261111.md`
+`docs/evidence/HG-MASTER-GO-LIVE-V3-20261111/r3.1-port/SHA256SUMS`
+
+## Updated gate matrix
+
+- G1 PARTIAL — 70 overlapping changed paths remain inventoried; 27 divergent path/source decisions remain unresolved. This port does not close repository-wide source ownership.
+- G2 BLOCKED — actual Android PID-namespace and complete process-sharing/listener observation remain incomplete.
+- G3 PARTIAL — component suites pass as stated above, but six platform skips across the two Python suites remain skips and Android security qualification is not supplied by these tests.
+- G4 BLOCKED — no complete all-provider/all-entrypoint model-call gate with nonce, request/response correlation and post-call integrity.
+- G5 BLOCKED — no independently qualified historical signed APT provenance chain; runtime trust anchor remains empty.
+- G6 BLOCKED — no isolated staging restore, rollback and data-integrity qualification.
+- G7 BLOCKED — no signed Broker APK installed and no actual distinct-UID positive/negative Binder qualification.
+- G8 BLOCKED — no complete V3-gated inference → context/memory → model → authorized tool/agent → evidence → frontend transaction.
+
+**V3 remains NO-GO.** Component tests passing do not imply G1-G8 PASS.
+
+## Worktree and publication state
+
+At CP02 verification, the port branch is based on V3 execution checkpoint commit `272300a7663176b19d01ce792d26fe2cbc5f71d0`; it has no configured upstream. It contains the imported integration changes and the narrow policy test correction. The candidate has not been merged into `main` or deployed. Commit/push status is to be recorded in the next checkpoint after final staged-source review.
+
+## Production safety
+
+Production Runtime and Ollama were not restarted, changed or sent an inference request. No production data, release pointer, secrets, or trust anchors were modified. Existing production integrity evidence remains scoped to the pre-existing release contract, not V3 certification.
+
+
+## CP02 runtime note
+
+The read-only process check during CP02 found new runit children: `hg-runtime` PID 21771 and `ollama` PID 21775, both with approximately 193 seconds uptime. The runtime log recorded `HG_RUNTIME_READY` at 2026-11-10 20:09:12Z for the same production release ID. Authenticated health/live, health/ready and integrity endpoints returned HTTP 200; integrity reported 303 checked files; Ollama /api/version returned 0.40.14. These PIDs differ from CP01. No runtime lifecycle command was issued by this task; the initiator/root cause of the fresh supervisor start is undetermined. No inference was invoked. WP0 remains PARTIAL until the process-lifecycle event is attributed and stability is demonstrated.

@@ -1,0 +1,13 @@
+test_ignores_explicitly_non_mandatory_review_language (maep.tests.test_no_mandatory_independent_review.MandateScannerTests.test_ignores_explicitly_non_mandatory_review_language) ... ok
+test_recognises_the_wordings_that_held_work (maep.tests.test_no_mandatory_independent_review.MandateScannerTests.test_recognises_the_wordings_that_held_work) ... ok
+test_acceptance_checklist_ac14_is_not_applicable (maep.tests.test_no_mandatory_independent_review.NoMandatoryIndependentReviewTests.test_acceptance_checklist_ac14_is_not_applicable) ... ok
+test_claude_md_states_the_decision_and_supersession (maep.tests.test_no_mandatory_independent_review.NoMandatoryIndependentReviewTests.test_claude_md_states_the_decision_and_supersession) ... ok
+test_decision_record_sets_the_rule (maep.tests.test_no_mandatory_independent_review.NoMandatoryIndependentReviewTests.test_decision_record_sets_the_rule) ... ok
+test_no_governing_document_requires_an_independent_review (maep.tests.test_no_mandatory_independent_review.NoMandatoryIndependentReviewTests.test_no_governing_document_requires_an_independent_review) ... ok
+test_maep017_owner_authority_over_policy_is_unchanged (maep.tests.test_no_mandatory_independent_review.RetainedControlsTests.test_maep017_owner_authority_over_policy_is_unchanged) ... ok
+test_maep021_still_refuses_a_false_independent_label (maep.tests.test_no_mandatory_independent_review.RetainedControlsTests.test_maep021_still_refuses_a_false_independent_label) ... ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 0.144s
+
+OK

@@ -11,6 +11,9 @@
 
   const TOKEN_KEY = 'hg.runtime.token';
   const CHAT_TIMEOUT_MS = 300000;
+  // A save may commit before its response is lost. Bound the wait so the UI can
+  // surface OUTCOME_UNKNOWN and offer an exact idempotent retry instead of hanging.
+  const MEMORY_SAVE_TIMEOUT_MS = 30000;
   const TASK_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
   const navStack = ['home'];
   let token = '';
@@ -73,6 +76,9 @@
     notes_ledger_damaged: 'Sổ ghi chú không đọc được. Trong Termux chạy: hg repair',
     service_not_ready: 'Dịch vụ chưa sẵn sàng: bản phát hành chưa được xác minh.',
     invalid_message: 'Tin nhắn trống hoặc dài quá 2000 ký tự.',
+    invalid_memory_save: 'Không thể lưu: hãy kiểm tra biên nhận, nội dung viết lại và mã xác nhận.',
+    memory_conflict: 'Chủ đề này đã có ghi chú khác; không tự ghi đè.',
+    memory_save_inactive: 'Không thể lưu lại: biên nhận này đã gắn với ghi chú bị thu hồi hoặc thay thế. Hãy tạo một lượt hỏi mới rồi xác nhận lưu lại.',
     invalid_request: 'Yêu cầu không đúng định dạng.',
     body_too_large: 'Tin nhắn quá lớn.',
     not_found: 'Không tìm thấy.',
@@ -261,6 +267,108 @@
     return '';
   }
 
+  function attachExplicitMemorySave(view, data) {
+    const brain = data.brain || {};
+    const receiptId = brain.receipt_event_id;
+    if (data.outcome !== 'ANSWERED' || !receiptId) return;
+
+    const flowFactory = window.HGMemorySaveFlow;
+    if (!flowFactory || typeof flowFactory.create !== 'function') {
+      showToast('Không tải được bộ điều khiển lưu ghi nhớ an toàn.', true);
+      return;
+    }
+    const toggle = el('button', 'btn mt-1', 'Lưu trích đoạn nguyên văn từ câu trả lời model');
+    toggle.type = 'button';
+    const panel = el('div', 'memory-save-panel');
+    panel.hidden = true;
+    const explainText = el('p', 'muted small',
+      'Chỉ có thể lưu nguyên văn một đoạn xuất hiện trong câu trả lời của ASK này. Nội dung tự viết hoặc diễn giải lại không được gắn nhãn MODEL_DERIVED. Chủ Nhân xem trước và xác nhận; việc xác nhận không đồng nghĩa với kiểm chứng sự thật.');
+    const subjectLabel = el('label', 'field-label', 'Chủ đề / khóa ghi nhớ');
+    const subject = el('input', 'field');
+    subject.type = 'text';
+    subject.maxLength = 80;
+    subject.placeholder = 'ví dụ: bao-duong-xe';
+    const contentLabel = el('label', 'field-label', 'Trích đoạn nguyên văn từ câu trả lời (tối đa 4000 ký tự)');
+    const content = el('textarea', 'field');
+    content.maxLength = 4000;
+    content.rows = 3;
+    content.placeholder = 'Dán nguyên văn một đoạn trong câu trả lời model phía trên; không diễn giải hoặc tự bổ sung.';
+    const previewButton = el('button', 'btn btn-primary mt-1', 'Kiểm tra và xem trước');
+    previewButton.type = 'button';
+    const status = el('p', 'muted small mt-1');
+    const previewBox = el('div', 'memory-save-preview');
+    previewBox.hidden = true;
+    let confirmButton = null;
+
+    const flow = flowFactory.create({
+      getSnapshot: () => ({ subject: subject.value, text: content.value }),
+      requestPreview: (snapshot) => api('POST', '/v1/chat/save-preview', {
+        receipt_id: receiptId, subject: snapshot.subject, text: snapshot.text
+      }),
+      requestSave: (snapshot) => api('POST', '/v1/chat/save', {
+        receipt_id: receiptId, subject: snapshot.subject, text: snapshot.text,
+        confirm_sha256: snapshot.confirm_sha256
+      }, MEMORY_SAVE_TIMEOUT_MS),
+      explain,
+      setBusy: (phase, busy) => {
+        if (phase === 'preview') previewButton.disabled = busy;
+        if (phase === 'save' || phase === 'saved') {
+          const disabled = busy || phase === 'saved';
+          subject.disabled = disabled;
+          content.disabled = disabled;
+          previewButton.disabled = disabled;
+          if (confirmButton) confirmButton.disabled = disabled;
+        }
+      },
+      onStatus: (message) => { status.textContent = message; },
+      onPreview: (preview) => {
+        previewBox.textContent = '';
+        previewBox.hidden = !preview;
+        confirmButton = null;
+        if (!preview) return;
+        previewBox.appendChild(el('strong', null, 'BẢN XEM TRƯỚC — CHƯA LƯU'));
+        previewBox.appendChild(el('p', 'small mt-1', 'Nguồn: MODEL_DERIVED · biên nhận ASK ' + receiptId));
+        previewBox.appendChild(el('p', 'small', 'Chủ đề: ' + preview.subject));
+        previewBox.appendChild(el('p', 'memory-preview-content', preview.content));
+        previewBox.appendChild(el('p', 'small muted', 'Nguồn model: ' +
+          String(preview.provider || 'không rõ') + ':' + String(preview.model || 'không rõ') +
+          ' · SHA-256: ' + preview.confirmation_sha256));
+        previewBox.appendChild(el('p', 'small muted',
+          'Máy chủ đã đối chiếu trích đoạn với câu trả lời ASK gốc. Chủ Nhân xác nhận quyền lưu; không xác nhận tính đúng/sự thật.'));
+        confirmButton = el('button', 'btn btn-primary mt-1', 'Xác nhận lưu ghi nhớ này');
+        confirmButton.type = 'button';
+        confirmButton.addEventListener('click', () => { flow.confirm(); });
+        previewBox.appendChild(confirmButton);
+        previewBox.hidden = false;
+      },
+      onSaved: (saved) => {
+        previewBox.appendChild(el('p', 'memory-save-success mt-1',
+          (saved.created ? 'Đã lưu ghi nhớ ' : 'Ghi nhớ ACTIVE đã có từ lần lưu trước: ') +
+          saved.memory_id + ' · MODEL_DERIVED · chưa được kiểm chứng độc lập.'));
+      }
+    });
+
+    subject.addEventListener('input', () => flow.invalidate());
+    content.addEventListener('input', () => flow.invalidate());
+    previewButton.addEventListener('click', () => { flow.preview(); });
+
+    panel.appendChild(explainText);
+    panel.appendChild(subjectLabel);
+    panel.appendChild(subject);
+    panel.appendChild(contentLabel);
+    panel.appendChild(content);
+    panel.appendChild(previewButton);
+    panel.appendChild(status);
+    panel.appendChild(previewBox);
+    toggle.addEventListener('click', () => {
+      panel.hidden = !panel.hidden;
+      toggle.setAttribute('aria-expanded', String(!panel.hidden));
+    });
+    toggle.setAttribute('aria-expanded', 'false');
+    view.wrapper.appendChild(toggle);
+    view.wrapper.appendChild(panel);
+  }
+
   function renderAnswer(data) {
     const view = appendMessage('HG');
     view.wrapper.setAttribute('data-outcome', String(data.outcome));
@@ -304,6 +412,7 @@
     const brain = data.brain || {};
     if (brain.receipt_event_id) parts.push('biên nhận ' + String(brain.receipt_event_id).slice(0, 8));
     view.wrapper.appendChild(el('div', 'msg-meta', parts.join(' · ')));
+    attachExplicitMemorySave(view, data);
     renderModelInfo(data);
   }
 

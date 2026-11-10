@@ -1,12 +1,16 @@
 """C-14 memory and C-15 context: provenance, versions, conflicts, restore, retrieval, budgets."""
 import json
+import os
+import subprocess
+import sys
+import threading
 import unittest
 from pathlib import Path
 
 from maep.core import MAEPError
 from hg.brain.context import build_context
 from hg.memory.index import Index, tokenize
-from hg.memory.store import MemoryConflict, MemoryStore
+from hg.memory.store import MemoryConflict, MemoryStore, MemoryWriteNotCommitted, MemoryWriteOutcomeUnknown
 from hg.tests.support import TempDirMixin, grant, make_task, write_step
 
 
@@ -147,6 +151,276 @@ class OutcomeAndAuthorityTests(Base):
         episode = self.mem.active(layer="EPISODIC")[0]
         self.assertEqual((episode["subject"], episode["value"]["state"]), ("task:T-1", "CLOSED_VERIFIED"))
         self.assertTrue(episode["evidence_refs"])
+
+    def test_task_outcome_retry_is_idempotent(self):
+        rt = self.build([grant()], memory=self.mem)
+        final = rt.orch.execute_task(make_task(), [write_step()])
+        first = self.mem.active(layer="EPISODIC")[0]
+        second = self.mem.record_task_outcome(final)
+        self.assertEqual(first["memory_id"], second["memory_id"])
+        self.assertEqual(len(self.mem.active(layer="EPISODIC")), 1)
+
+    def test_failed_memory_outcome_is_visible_and_reconcilable_without_replaying_task(self):
+        class BrokenMemory:
+            def record_task_outcome(self, _snapshot):
+                raise OSError("fixture ledger unavailable")
+
+        rt = self.build([grant()], memory=BrokenMemory())
+        final = rt.orch.execute_task(make_task(), [write_step()])
+        self.assertEqual(final["task"]["state"], "CLOSED_VERIFIED")
+        self.assertEqual(final["memory_recording"]["status"], "UNKNOWN_IF_WRITTEN")
+        task_id = final["task"]["task_id"]
+        self.assertEqual(rt.orch.pending_memory_outcomes()[task_id]["status"], "UNKNOWN_IF_WRITTEN")
+        import maep.ledger as maep_ledger
+        actions_path = self.workdir / "actions.jsonl"
+        completed_before = sum(e["kind"] == "ACTION_COMPLETED" for e in maep_ledger.read_events(actions_path))
+
+        # Simulate a process restart: TaskStore restores the terminal task; MemoryStore
+        # is now available. Reconciliation writes only the missing episode, not task effects.
+        rt2 = self.build([grant()], memory=self.mem)
+        preview = rt2.orch.reconcile_memory_outcomes()
+        self.assertEqual(preview["mode"], "DRY_RUN")
+        self.assertEqual(preview["counts"], {"MISSING": 1})
+        self.assertEqual(self.mem.active(layer="EPISODIC"), [])
+
+        applied = rt2.orch.reconcile_memory_outcomes(apply=True)
+        repeated = rt2.orch.reconcile_memory_outcomes(apply=True)
+        self.assertEqual(applied["counts"], {"RESTORED": 1})
+        self.assertEqual(repeated["counts"], {"ALREADY_RECORDED": 1})
+        restored_id = applied["results"][0]["memory_id"]
+        first = rt2.orch.reconcile_memory_outcome(task_id)
+        self.assertEqual(first["status"], "RECORDED")
+        self.assertEqual(first["memory_id"], restored_id)
+        self.assertEqual(len(self.mem.active(layer="EPISODIC")), 1)
+        self.assertEqual(rt2.store.snapshot(task_id)["task"]["state"], "CLOSED_VERIFIED")
+        completed_after = sum(e["kind"] == "ACTION_COMPLETED" for e in maep_ledger.read_events(actions_path))
+        self.assertEqual(completed_after, completed_before)
+        self.assertEqual([e["seq"] for e in maep_ledger.read_events(actions_path)],
+                         list(range(1, len(maep_ledger.read_events(actions_path)) + 1)))
+
+    def test_non_terminal_task_never_gets_memory_episode(self):
+        rt = self.build([], memory=self.mem)
+        result = rt.orch.execute_task(make_task(), [write_step()])
+        self.assertEqual(result["task"]["state"], "PLANNED")
+        self.assertEqual(result["memory_recording"]["status"], "SKIPPED_NON_TERMINAL")
+        self.assertEqual(self.mem.active(layer="EPISODIC"), [])
+        with self.assertRaisesRegex(MAEPError, "requires a terminal task"):
+            rt.orch.reconcile_memory_outcome("T-1")
+        self.assertEqual(self.mem.active(layer="EPISODIC"), [])
+
+    def test_memory_store_rejects_non_terminal_task_outcome_directly(self):
+        rt = self.build([], memory=self.mem)
+        result = rt.orch.execute_task(make_task(), [write_step()])
+        with self.assertRaisesRegex(MAEPError, "requires a terminal state"):
+            self.mem.record_task_outcome(result)
+        self.assertEqual(self.mem.active(layer="EPISODIC"), [])
+
+    def test_append_error_after_fsync_reloads_durable_projection_before_retry(self):
+        import maep.ledger as ledger
+        rt = self.build([grant()], memory=self.mem)
+        real_append = ledger._append_unlocked
+        armed = {"yes": True}
+        def is_memory_fd(fd):
+            try:
+                expected = self.path.stat()
+            except FileNotFoundError:
+                return False
+            opened = os.fstat(fd)
+            return (opened.st_dev, opened.st_ino) == (expected.st_dev, expected.st_ino)
+        def after_durable_write(fd, event):
+            result = real_append(fd, event)
+            if is_memory_fd(fd) and armed["yes"] and event.get("kind") == "MEMORY_WRITE":
+                armed["yes"] = False
+                raise OSError("simulated exception after fsync")
+            return result
+        ledger._append_unlocked = after_durable_write
+        try:
+            final = rt.orch.execute_task(make_task(), [write_step()])
+        finally:
+            ledger._append_unlocked = real_append
+        self.assertEqual(final["task"]["state"], "CLOSED_VERIFIED")
+        self.assertNotIn("memory_recording", final)
+        events = ledger.read_events(self.path)
+        self.assertEqual([e["seq"] for e in events], list(range(1, len(events) + 1)))
+        episodes = [r for r in self.mem.all_records() if r["layer"] == "EPISODIC"]
+        self.assertEqual(len(episodes), 1)
+        self.assertEqual(len(MemoryStore(self.path).active(layer="EPISODIC")), 1)
+        again = rt.orch.reconcile_memory_outcome("T-1")
+        self.assertEqual(again["memory_id"], episodes[0]["memory_id"])
+
+    def test_append_failure_confirmed_not_written_is_distinguished_from_unknown(self):
+        import maep.ledger as ledger
+        rt = self.build([grant()], memory=self.mem)
+        real_append = ledger._append_unlocked
+        armed = {"yes": True}
+        def is_memory_fd(fd):
+            try:
+                expected = self.path.stat()
+            except FileNotFoundError:
+                return False
+            opened = os.fstat(fd)
+            return (opened.st_dev, opened.st_ino) == (expected.st_dev, expected.st_ino)
+        def fail_before_append(fd, event):
+            if is_memory_fd(fd) and armed["yes"] and event.get("kind") == "MEMORY_WRITE":
+                armed["yes"] = False
+                raise OSError("simulated failure before durable write")
+            return real_append(fd, event)
+        ledger._append_unlocked = fail_before_append
+        try:
+            result = rt.orch.execute_task(make_task(), [write_step()])
+        finally:
+            ledger._append_unlocked = real_append
+        self.assertEqual(result["task"]["state"], "CLOSED_VERIFIED")
+        self.assertEqual(result["memory_recording"]["status"], "NOT_WRITTEN")
+        self.assertEqual(self.mem.active(layer="EPISODIC"), [])
+        retry = rt.orch.reconcile_memory_outcome("T-1")
+        self.assertEqual(retry["status"], "RECORDED")
+        self.assertEqual(len(MemoryStore(self.path).active(layer="EPISODIC")), 1)
+
+    def test_concurrent_separate_memory_stores_are_process_safe(self):
+        class MissingMemory:
+            def record_task_outcome(self, _snapshot):
+                raise OSError("controlled fixture: leave terminal task episode absent")
+
+        rt = self.build([grant()], memory=MissingMemory())
+        final = rt.orch.execute_task(make_task(), [write_step()])
+        self.assertEqual(final["task"]["state"], "CLOSED_VERIFIED")
+        self.assertEqual(final["memory_recording"]["status"], "UNKNOWN_IF_WRITTEN")
+        self.assertEqual(MemoryStore(self.path).active(layer="EPISODIC"), [])
+        snapshot_json = json.dumps(final, ensure_ascii=False)
+        repo = Path(__file__).resolve().parents[2]
+        env = dict(os.environ, PYTHONPATH=str(repo))
+        worker_count = 4
+        script = "\n".join(['import contextlib, json, pathlib, sys, time', 'from hg.memory.store import MemoryStore', 'ledger, snapshot_json, ready_dir, go_file, worker, mode = sys.argv[1:]', 'snapshot = json.loads(snapshot_json)', 'ready_dir = pathlib.Path(ready_dir)', 'store = MemoryStore(ledger)', 'if mode == "unlocked":', '    import hg.memory.store as memory_module', '    memory_module._outcome_file_lock = lambda _path: contextlib.nullcontext()', '    original_reload = MemoryStore._reload_from_disk', '    def synchronized_reload(self):', '        original_reload(self)', '        (ready_dir / ("reloaded-" + worker)).touch()', '        deadline = time.monotonic() + 15', '        while not all((ready_dir / ("reloaded-" + str(i))).exists() for i in range(4)):', '            if time.monotonic() >= deadline:', '                raise RuntimeError("negative-control reload barrier timed out")', '            time.sleep(0.002)', '    MemoryStore._reload_from_disk = synchronized_reload', '(ready_dir / ("ready-" + worker)).touch()', 'deadline = time.monotonic() + 15', 'while not pathlib.Path(go_file).exists():', '    if time.monotonic() >= deadline:', '        raise RuntimeError("start barrier timed out")', '    time.sleep(0.002)', 'record = store.record_task_outcome(snapshot)', 'print(record["memory_id"])'])
+
+        def run_workers(ledger_path, mode):
+            barrier = Path(self.tmp) / ("barrier-" + mode)
+            barrier.mkdir()
+            go = barrier / "GO"
+            procs = [subprocess.Popen(
+                [sys.executable, "-B", "-c", script, str(ledger_path), snapshot_json,
+                 str(barrier), str(go), str(i), mode],
+                cwd=str(repo), env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                for i in range(worker_count)]
+            deadline = __import__("time").monotonic() + 15
+            while not all((barrier / ("ready-" + str(i))).exists() for i in range(worker_count)):
+                if __import__("time").monotonic() >= deadline:
+                    for proc in procs:
+                        proc.kill()
+                    self.fail(f"{mode} workers did not reach start barrier")
+                __import__("time").sleep(0.002)
+            go.touch()
+            results = [proc.communicate(timeout=30) for proc in procs]
+            return procs, results
+
+        procs, results = run_workers(self.path, "locked")
+        self.assertEqual([proc.returncode for proc in procs], [0] * worker_count, results)
+        ids = [out.strip() for out, _err in results]
+        self.assertEqual(len(set(ids)), 1)
+        events = __import__("maep.ledger", fromlist=["read_events"]).read_events(self.path)
+        self.assertEqual(len([event for event in events if event["kind"] == "MEMORY_WRITE"]), 1)
+        self.assertEqual([event["seq"] for event in events], list(range(1, len(events) + 1)))
+        self.assertEqual(len(MemoryStore(self.path).active(layer="EPISODIC")), 1)
+
+        # All unlocked writers reload the empty ledger before any append. Removing
+        # the OS lock must expose duplicate task-outcome records deterministically.
+        unlocked_path = Path(self.tmp) / "memory-unlocked.jsonl"
+        procs, results = run_workers(unlocked_path, "unlocked")
+        self.assertEqual([proc.returncode for proc in procs], [0] * worker_count, results)
+        unlocked_events = __import__("maep.ledger", fromlist=["read_events"]).read_events(unlocked_path)
+        self.assertEqual(len(unlocked_events), worker_count)
+        # The main-branch EventLog now allocates contiguous sequence numbers under
+        # the kernel ledger lock, even in this negative control. Without the memory
+        # outcome lock, however, all writers can still pass the idempotency check
+        # before any append and create duplicate task-outcome records.
+        self.assertEqual([event["seq"] for event in unlocked_events],
+                         list(range(1, worker_count + 1)))
+        unlocked_store = MemoryStore(unlocked_path)
+        with self.assertRaisesRegex(MAEPError, "source_ref is not unique"):
+            unlocked_store.record_task_outcome(json.loads(snapshot_json))
+
+    def test_generic_remember_and_retract_share_cross_process_ledger_lock(self):
+        repo = Path(__file__).resolve().parents[2]
+        env = dict(os.environ, PYTHONPATH=str(repo))
+        worker_count = 4
+        write_script = "\n".join([
+            "import pathlib,sys,time",
+            "from hg.memory.store import MemoryStore",
+            "ledger, barrier, go, worker = sys.argv[1:]",
+            "store=MemoryStore(ledger)",
+            "pathlib.Path(barrier, 'ready-'+worker).touch()",
+            "deadline=time.monotonic()+15",
+            "while not pathlib.Path(go).exists():",
+            "    if time.monotonic() >= deadline: raise RuntimeError('start barrier timeout')",
+            "    time.sleep(.002)",
+            "record=store.remember(layer='SEMANTIC',kind='NOTE',subject='worker-'+worker,",
+            "    content='concurrent durable writer '+worker,source='USER',source_ref='worker:'+worker)",
+            "print(record['memory_id'])",
+        ])
+        barrier = Path(self.tmp) / "generic-write-barrier"
+        barrier.mkdir()
+        go = barrier / "GO"
+        procs = [subprocess.Popen([sys.executable, "-B", "-c", write_script,
+                                   str(self.path), str(barrier), str(go), str(i)],
+                                  cwd=str(repo), env=env, stdout=subprocess.PIPE,
+                                  stderr=subprocess.PIPE, text=True) for i in range(worker_count)]
+        deadline = __import__("time").monotonic() + 15
+        while not all((barrier / ("ready-" + str(i))).exists() for i in range(worker_count)):
+            if __import__("time").monotonic() >= deadline:
+                for proc in procs: proc.kill()
+                self.fail("generic memory writers did not reach start barrier")
+            __import__("time").sleep(.002)
+        go.touch()
+        results = [proc.communicate(timeout=30) for proc in procs]
+        self.assertEqual([proc.returncode for proc in procs], [0] * worker_count, results)
+        records = MemoryStore(self.path).all_records()
+        self.assertEqual(len(records), worker_count)
+        events = __import__("maep.ledger", fromlist=["read_events"]).read_events(self.path)
+        self.assertEqual([event["seq"] for event in events], list(range(1, len(events) + 1)))
+
+        # Race four independent retractors against the same active record. Exactly one
+        # status event may be appended; the remaining writers must observe it as inactive.
+        memory_id = records[0]["memory_id"]
+        retract_script = "\n".join([
+            "import pathlib,sys,time",
+            "from maep.core import MAEPError",
+            "from hg.memory.store import MemoryStore",
+            "ledger, memory_id, barrier, go, worker = sys.argv[1:]",
+            "store=MemoryStore(ledger)",
+            "pathlib.Path(barrier, 'ready-'+worker).touch()",
+            "deadline=time.monotonic()+15",
+            "while not pathlib.Path(go).exists():",
+            "    if time.monotonic() >= deadline: raise RuntimeError('start barrier timeout')",
+            "    time.sleep(.002)",
+            "try:",
+            "    store.retract(memory_id, reason='concurrent owner request')",
+            "    print('RETRACTED')",
+            "except MAEPError:",
+            "    print('ALREADY_INACTIVE')",
+        ])
+        rbarrier = Path(self.tmp) / "generic-retract-barrier"
+        rbarrier.mkdir()
+        rgo = rbarrier / "GO"
+        rprocs = [subprocess.Popen([sys.executable, "-B", "-c", retract_script,
+                                    str(self.path), memory_id, str(rbarrier), str(rgo), str(i)],
+                                   cwd=str(repo), env=env, stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE, text=True) for i in range(worker_count)]
+        deadline = __import__("time").monotonic() + 15
+        while not all((rbarrier / ("ready-" + str(i))).exists() for i in range(worker_count)):
+            if __import__("time").monotonic() >= deadline:
+                for proc in rprocs: proc.kill()
+                self.fail("generic memory retractors did not reach start barrier")
+            __import__("time").sleep(.002)
+        rgo.touch()
+        rresults = [proc.communicate(timeout=30) for proc in rprocs]
+        self.assertEqual([proc.returncode for proc in rprocs], [0] * worker_count, rresults)
+        outcomes = [out.strip() for out, _err in rresults]
+        self.assertEqual(outcomes.count("RETRACTED"), 1)
+        self.assertEqual(outcomes.count("ALREADY_INACTIVE"), worker_count - 1)
+        final_events = __import__("maep.ledger", fromlist=["read_events"]).read_events(self.path)
+        self.assertEqual(sum(event["kind"] == "MEMORY_STATUS" for event in final_events), 1)
+        self.assertEqual([event["seq"] for event in final_events],
+                         list(range(1, len(final_events) + 1)))
 
     def test_memory_cannot_grant_authority(self):
         self.mem.remember(layer="PROJECT", kind="DECISION", subject="authority",

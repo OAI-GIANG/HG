@@ -78,7 +78,8 @@
         <h2>Ghi chú của Chủ Nhân</h2>
         <p>Chat đọc ghi chú để trả lời và gắn nhãn từng câu. Thêm hoặc sửa ghi chú trong Termux:
           <code>hg note add "nội dung"</code>, <code>hg note list</code>.</p>
-        <p class="mt-1">Sửa ghi chú qua trang web: <span class="badge badge-blocked">CHƯA MỞ QUA HTTP</span></p>
+        <p class="mt-1">Sau mỗi câu trả lời, Chủ Nhân có thể chọn <strong>“Lưu nội dung từ model theo xác nhận của tôi”</strong>, xem trước và xác nhận quyền lưu. Nội dung vẫn mang nhãn MODEL_DERIVED; việc xác nhận không chứng minh nội dung đúng hoặc đã được kiểm chứng. HG không tự lưu toàn bộ hội thoại.</p>
+        <p class="mt-1">Rà soát chỉ đọc: <code>hg note curate</code>; ledger Brain cụ thể: <code>hg memory curate --ledger ĐƯỜNG_DẪN_TUYỆT_ĐỐI</code>. Không có thao tác tự động xóa, gộp hay phân xử.</p>
       </div>
     </section>
 
@@ -167,6 +168,7 @@
     <button class="nav-item" data-root-nav="tools" data-nav-target="tools">Công cụ</button>
   </nav>
 
+  <script src="memory-save-flow.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

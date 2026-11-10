@@ -13,7 +13,7 @@ import sys
 from maep.core import MAEPError
 from hg.assistant import config as cfg
 from hg.assistant.home import Busy, HomeError, default_home, ensure_home
-from hg.assistant.notes import NoteConflict, NoteError, Notebook
+from hg.assistant.notes import NoteConflict, NoteError, NoteInactive, Notebook
 from hg.brain.providers import ProviderError
 
 EXIT_OK, EXIT_INPUT, EXIT_NO_MODEL, EXIT_CONFLICT, EXIT_NO_DATA, EXIT_BUSY, EXIT_CONFIG = 0, 2, 3, 4, 5, 75, 78
@@ -41,8 +41,28 @@ def add_parsers(sub):
     forget = nsub.add_parser("forget", help="retract a note (kept in history, not erased)")
     forget.add_argument("id")
     forget.add_argument("--reason", default="owner asked to forget")
-    for p in (add, search, lst, show, forget, trust):
+    curate = nsub.add_parser("curate", help="read-only review candidates for duplicates, dates and conflicts")
+    curate.add_argument("--threshold", type=float, default=0.88)
+    curate.add_argument("--max-comparisons", type=int, default=20000,
+                        help="hard cap on pair comparisons; report says when truncated")
+    curate.add_argument("--max-findings", type=int, default=500, help="hard cap on emitted findings")
+    save_ask = nsub.add_parser("save-ask", help="preview and explicitly authorize MODEL_DERIVED content from an ASK receipt")
+    save_ask.add_argument("receipt_id", help="the ASK receipt event id shown by hg ask --json or /v1/chat")
+    save_ask.add_argument("--subject", required=True, help="stable subject key for the owner-approved model-derived note")
+    save_ask.add_argument("--text", required=True, help="content to save after explicit owner review; stored as MODEL_DERIVED")
+    save_ask.add_argument("--confirm", metavar="SHA256", help="exact digest printed by the preview step")
+    for p in (add, search, lst, show, forget, trust, curate, save_ask):
         p.add_argument("--json", action="store_true")
+
+    memory = sub.add_parser("memory", help="inspect the layered Brain memory ledger")
+    memory_sub = memory.add_subparsers(dest="memory_command", required=True)
+    memory_curate = memory_sub.add_parser("curate", help="read-only curation candidates in one explicit MemoryStore ledger")
+    memory_curate.add_argument("--ledger", required=True, help="absolute path to one existing MemoryStore JSONL ledger")
+    memory_curate.add_argument("--threshold", type=float, default=0.88)
+    memory_curate.add_argument("--max-comparisons", type=int, default=20000,
+                               help="hard cap on pair comparisons; report says when truncated")
+    memory_curate.add_argument("--max-findings", type=int, default=500, help="hard cap on emitted findings")
+    memory_curate.add_argument("--json", action="store_true")
 
     ask = sub.add_parser("ask", help="answer from your notes with the local model; HG labels every sentence")
     ask.add_argument("question", nargs="*")
@@ -123,6 +143,9 @@ def run(args, *, stdin=None, out=None):
     except (HomeError, cfg.ConfigError) as exc:
         out(f"HG từ chối chạy: {exc}")
         return EXIT_CONFIG
+    except NoteInactive as exc:
+        out("Lưu bị từ chối: biên nhận ASK đã gắn với ghi chú bị thu hồi hoặc thay thế; cần một lượt ASK mới và xác nhận mới.")
+        return EXIT_CONFLICT
     except NoteConflict as exc:
         out(str(exc))
         return EXIT_CONFLICT
@@ -142,6 +165,45 @@ def _dispatch(args, stdin, out):
         results = repair(_home())
         _print_json(results, out)
         return EXIT_CONFIG if any(r["status"] == "DAMAGED" for r in results) else EXIT_OK
+
+    if command == "memory":
+        if args.memory_command == "curate":
+            from datetime import datetime, timezone
+            from pathlib import Path
+            import stat
+            from hg.memory.curation import CurationInputError, analyze_memories
+            from hg.memory.store import MemoryStore
+            ledger = Path(args.ledger)
+            try:
+                if not ledger.is_absolute() or ledger.is_symlink() or not ledger.is_file():
+                    raise NoteError("--ledger must be an absolute path to an existing regular file, not a symlink")
+                mode = ledger.stat().st_mode
+                if not stat.S_ISREG(mode):
+                    raise NoteError("--ledger must be a regular file")
+                store = MemoryStore(ledger)
+                report = analyze_memories(store.all_records(), as_of=datetime.now(timezone.utc).isoformat(),
+                                          near_duplicate_threshold=args.threshold,
+                                          max_pair_comparisons=args.max_comparisons, max_findings=args.max_findings)
+            except CurationInputError as exc:
+                raise NoteError(str(exc)) from exc
+            except OSError as exc:
+                raise NoteError("memory ledger could not be read safely") from exc
+            if args.json:
+                _print_json(report, out)
+            else:
+                out(f"Rà soát chỉ đọc ledger {ledger.name}: {report['records_seen']} bản ghi.")
+                for title, key in (
+                    ("Trùng chính xác", "exact_duplicate_groups"),
+                    ("Gần trùng", "near_duplicate_pairs"),
+                    ("Mốc thời gian", "staleness_candidates"),
+                    ("Mâu thuẫn/divergence", "conflict_candidates"),
+                ):
+                    out(f"{title}: {len(report[key])}")
+                    for row in report[key]:
+                        out("  " + ", ".join(row["memory_ids"]) + " — "
+                            + row.get("classification", row["type"]))
+                out("Không có bản ghi nào bị tự động sửa đổi.")
+            return EXIT_OK if report["records_seen"] else EXIT_NO_DATA
 
     if command == "note":
         nb = Notebook(_home())
@@ -196,6 +258,67 @@ def _dispatch(args, stdin, out):
             record = nb.forget(args.id, reason=args.reason)
             out(f"Đã thu hồi {record['memory_id']} (vẫn còn trong lịch sử: hg note show {record['memory_id']}).")
             return EXIT_OK
+        if sub == "curate":
+            from datetime import datetime, timezone
+            from hg.memory.curation import CurationInputError, analyze_memories
+            try:
+                report = analyze_memories(nb.snapshot(), as_of=datetime.now(timezone.utc).isoformat(),
+                                          near_duplicate_threshold=args.threshold,
+                                          max_pair_comparisons=args.max_comparisons, max_findings=args.max_findings)
+            except CurationInputError as exc:
+                raise NoteError(str(exc)) from exc
+            if args.json:
+                _print_json(report, out)
+            else:
+                out(f"Rà soát chỉ đọc: {report['records_seen']} bản ghi, "
+                    f"{report['active_non_working_records']} đang hoạt động, "
+                    f"{report['inactive_records_preserved']} bản ghi lịch sử.")
+                for title, key in (
+                    ("Trùng chính xác", "exact_duplicate_groups"),
+                    ("Gần trùng (chỉ là tín hiệu từ vựng)", "near_duplicate_pairs"),
+                    ("Mốc thời gian cần xem xét", "staleness_candidates"),
+                    ("Mâu thuẫn/divergence cần xem xét", "conflict_candidates"),
+                    ("Ứng viên khác subject (chỉ xem xét)", "cross_subject_candidates"),
+                ):
+                    rows = report[key]
+                    out(f"{title}: {len(rows)}")
+                    for row in rows:
+                        out("  " + ", ".join(row["memory_ids"]) + " — "
+                            + row.get("classification", row["type"])
+                            + (f" (Jaccard={row['lexical_jaccard']})" if "lexical_jaccard" in row else ""))
+                out(f"So sánh {report['comparisons_evaluated']} cặp; giới hạn {report['resource_limits']['max_pair_comparisons']} cặp; "
+                    + ("BÁO CÁO BỊ CẮT — cần thu hẹp phạm vi hoặc tăng giới hạn có chủ đích." if report['truncated']
+                       else "đã hoàn tất phạm vi so sánh trong giới hạn."))
+                out("Không có bản ghi nào bị tự động xóa, gộp, thay thế hoặc phân xử.")
+            return EXIT_OK if report["records_seen"] else EXIT_NO_DATA
+        if sub == "save-ask":
+            from hg.assistant.ask_archive import AskArchiveError, preview_model_derived_save, save_model_derived_content
+            try:
+                preview = preview_model_derived_save(_home(), args.receipt_id, subject=args.subject, text=args.text)
+                if args.confirm is None:
+                    if args.json:
+                        _print_json(preview, out)
+                    else:
+                        out("CHƯA LƯU — đây chỉ là bản xem trước.")
+                        out(f"Nguồn ASK: {preview['receipt_event_id']} "
+                            f"({preview.get('provider') or 'provider không rõ'}:{preview.get('model') or 'model không rõ'})")
+                        out(f"Chủ đề: {preview['subject']}")
+                        out(f"Nội dung MODEL_DERIVED (nguồn từ model): {preview['content']}")
+                        out(f"SHA-256 xác nhận: {preview['confirmation_sha256']}")
+                        out("Kiểm tra nội dung rồi chạy lại đúng lệnh với --confirm <SHA-256> để lưu.")
+                    return EXIT_OK
+                record, created = save_model_derived_content(
+                    _home(), args.receipt_id, subject=args.subject, text=args.text, confirm_sha256=args.confirm)
+                result = {"created": created, "memory_id": record["memory_id"], "subject": record["subject"],
+                          "source_ref": record["source_ref"], "status": record["status"]}
+                if args.json:
+                    _print_json(result, out)
+                else:
+                    out(("Đã lưu ghi chú " if created else "Đã có ghi chú ACTIVE từ cùng thao tác ")
+                        + f"{record['memory_id']} — MODEL_DERIVED; Chủ Nhân xác nhận quyền lưu, không xác minh tính đúng/sự thật.")
+                return EXIT_OK
+            except AskArchiveError as exc:
+                raise NoteError(str(exc)) from exc
 
     if command == "check":
         from hg.assistant.check import LABELS_VI, check
