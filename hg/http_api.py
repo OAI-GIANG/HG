@@ -13,7 +13,6 @@ import threading
 import time
 import unicodedata
 from pathlib import Path, PurePosixPath
-from urllib.parse import urlsplit
 
 from maep.core import MAEPError
 from maep.sqlite_nofollow import connect_nofollow
@@ -554,13 +553,33 @@ class HGHTTPServer(http.server.ThreadingHTTPServer):
                 value = auth_values[0]
                 if not isinstance(value, str) or not hmac.compare_digest(value.encode("utf-8", "ignore"), expected):
                     raise HTTPBoundaryError(401, "unauthorized", "Bearer token required")
-                if self.headers.get("Transfer-Encoding"):
+                # Any Transfer-Encoding field, even an empty one first in a list, is refused:
+                # Content-Length is the only framing this service reads.
+                if self.headers.get_all("Transfer-Encoding"):
                     raise HTTPBoundaryError(400, "transfer_encoding_denied", "Transfer-Encoding is not supported")
+
+            def _origin_path(self):
+                """The route is the origin-form target itself (RFC 9112 3.2.1), with no query or fragment.
+
+                urlsplit() would drop an absolute-form authority or scheme ("http://other/v1/tasks",
+                "x:/v1/tasks") and an empty "?" or "#", so those targets would reach a route.
+                """
+                target = self.path
+                if (not target.startswith("/") or target.startswith("//")
+                        or any(ch in target for ch in "?#")):
+                    raise HTTPBoundaryError(400, "invalid_path",
+                                            "only an origin-form path without query or fragment is accepted")
+                return target
 
             def _body_length(self):
                 content_types = self.headers.get_all("Content-Type", [])
                 if len(content_types) != 1 or self.headers.get_content_type() != "application/json":
                     raise HTTPBoundaryError(415, "content_type", "one Content-Type: application/json header is required")
+                # The body is decoded as UTF-8, so the only parameter allowed is charset=utf-8.
+                params = (self.headers.get_params() or [])[1:]
+                if params and (len(params) != 1 or params[0][0] != "charset"
+                               or params[0][1].lower() != "utf-8"):
+                    raise HTTPBoundaryError(415, "content_type", "Content-Type parameters other than charset=utf-8 are not supported")
                 lengths = self.headers.get_all("Content-Length", [])
                 if len(lengths) != 1 or not lengths[0].isdecimal():
                     raise HTTPBoundaryError(400, "content_length", "one valid Content-Length is required")
@@ -602,20 +621,20 @@ class HGHTTPServer(http.server.ThreadingHTTPServer):
                         self._send_static(*asset)
                         return
                     self._authenticate()
-                    parsed = urlsplit(self.path)
-                    if parsed.query or parsed.fragment or "%" in parsed.path:
+                    path = self._origin_path()
+                    if "%" in path:
                         raise HTTPBoundaryError(400, "invalid_path", "query, fragment and escaped paths are not supported")
-                    if parsed.path == "/v1/health/live":
+                    if path == "/v1/health/live":
                         self._send(200, {"status": "LIVE", "repository": "OAI-GIANG/HG"})
                         return
-                    if parsed.path == "/v1/integrity":
+                    if path == "/v1/integrity":
                         try:
                             release = outer.release_report()
                         except Exception:
                             release = {"result": "FAILED"}
                         self._send(200 if release.get("result") == "VERIFIED" else 503, release)
                         return
-                    if parsed.path == "/v1/health/ready":
+                    if path == "/v1/health/ready":
                         try:
                             release = outer.release_report()
                         except Exception:
@@ -640,7 +659,7 @@ class HGHTTPServer(http.server.ThreadingHTTPServer):
                             "idempotency": idempotency,
                         })
                         return
-                    match = re.fullmatch(r"/v1/tasks/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})", parsed.path)
+                    match = re.fullmatch(r"/v1/tasks/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})", path)
                     if match:
                         snap = outer.runtime.store.snapshot(match.group(1))
                         self._send(200, snap)
@@ -678,11 +697,11 @@ class HGHTTPServer(http.server.ThreadingHTTPServer):
             def do_POST(self):
                 try:
                     self._authenticate()
-                    parsed = urlsplit(self.path)
-                    if parsed.path == "/v1/chat" and not parsed.query and not parsed.fragment:
+                    path = self._origin_path()
+                    if path == "/v1/chat":
                         self._chat()
                         return
-                    if parsed.path != "/v1/tasks" or parsed.query or parsed.fragment:
+                    if path != "/v1/tasks":
                         raise HTTPBoundaryError(404, "not_found", "route not found")
                     idem_values = self.headers.get_all("Idempotency-Key", [])
                     if len(idem_values) != 1:
