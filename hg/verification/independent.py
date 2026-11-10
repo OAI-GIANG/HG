@@ -98,8 +98,11 @@ class IndependentVerifier:
         return self._run("python_syntax", root, relative_path, candidate_ref=candidate_ref,
                          expected_sha256=expected_sha256)
 
-    def verify_sqlite_integrity(self, root, relative_path, *, candidate_ref):
-        return self._run("sqlite_integrity", root, relative_path, candidate_ref=candidate_ref)
+    def verify_sqlite_integrity(self, root, relative_path, *, candidate_ref, expected_sha256=None):
+        # Without expected_sha256 the result attests structure only: integrity_check
+        # does not detect altered row content or appended bytes.
+        return self._run("sqlite_integrity", root, relative_path, candidate_ref=candidate_ref,
+                         expected_sha256=expected_sha256)
 
 
 def python_syntax_verifier(root, relative_path, expected_sha256, *, verifier=None):

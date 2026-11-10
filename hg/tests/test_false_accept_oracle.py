@@ -152,6 +152,34 @@ class FalseAcceptOracleTests(unittest.TestCase):
                 report = self.verifier.verify_sqlite_integrity(self.root, rel, candidate_ref="bad")
                 self.assertNotEqual(report["status"], "PASS", report)
 
+    def test_altered_sqlite_snapshot_is_not_passed_against_its_expected_digest(self):
+        # integrity_check verifies b-tree structure, not row content: a snapshot whose
+        # payload bytes were altered, or that gained trailing bytes, is still "ok".
+        # Only a binding to the expected content digest can reject it.
+        _valid_db(self.root / "good.sqlite3")
+        whole = (self.root / "good.sqlite3").read_bytes()
+        expected = hashlib.sha256(whole).hexdigest()
+        flipped = bytearray(whole)
+        at = flipped.rfind(b"x" * 50)
+        self.assertGreater(at, 100)
+        flipped[at] = ord("y")
+        self._write("flipped.sqlite3", bytes(flipped))
+        self._write("trailing.sqlite3", whole + b"\x00" * 4096)
+        for rel in ("flipped.sqlite3", "trailing.sqlite3"):
+            with self.subTest(rel):
+                report = self.verifier.verify_sqlite_integrity(
+                    self.root, rel, candidate_ref="alt", expected_sha256=expected)
+                self.assertNotEqual(report["status"], "PASS", report)
+                self.assertNotEqual(report.get("sha256"), expected, report)
+
+    def test_control_sqlite_snapshot_reports_and_matches_its_digest(self):
+        _valid_db(self.root / "good.sqlite3")
+        expected = hashlib.sha256((self.root / "good.sqlite3").read_bytes()).hexdigest()
+        report = self.verifier.verify_sqlite_integrity(
+            self.root, "good.sqlite3", candidate_ref="ctl", expected_sha256=expected)
+        self.assertEqual(report["status"], "PASS", report)
+        self.assertEqual(report["sha256"], expected, report)
+
     def test_empty_file_is_not_reported_as_a_database_snapshot(self):
         # SQLite opens a zero-byte file as an empty database whose integrity_check is
         # "ok". A snapshot that lost every byte must not be attested as intact.
