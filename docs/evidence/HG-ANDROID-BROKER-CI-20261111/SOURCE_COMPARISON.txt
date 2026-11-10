@@ -1,0 +1,13 @@
+Repository: OAI-GIANG/HG
+Candidate source: ~/HG-GO-LIVE-CANDIDATE
+Candidate branch: stt/hg-go-live-certification-20261111
+Candidate HEAD: e465db2ef8143d013d6195abfa077f5010b3fd1c
+Isolated worktree: ~/HG-ANDROID-BROKER-CI
+Isolated branch: stt/hg-android-broker-ci-v1-20261111
+Isolated base HEAD: e465db2ef8143d013d6195abfa077f5010b3fd1c
+Imported source records: 23
+Byte-identical paths: 17
+Intentionally modified paths: 6
+Missing paths: 0
+
+The original candidate was read-only during this work. The current candidate source manifest verifies all 23 origin files. The isolated port changes 6 paths: app/build.gradle.kts, AndroidManifest.xml, BrokerStore.java, settings.gradle.kts, hg-go-live-android-broker.yml, and HG_ANDROID_LISTENER_ATTESTATION_BROKER_V1.md. New probe application, added JVM tests and evidence files are new isolated-branch files, not overwrites of candidate paths.

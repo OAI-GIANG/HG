@@ -1,0 +1,200 @@
+name: HG GO-LIVE Android Broker Qualification
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - stt/hg-go-live-certification-20261111
+      - stt/hg-android-broker-ci-v1-20261111
+    paths:
+      - "android/cim-broker/**"
+      - ".github/workflows/hg-go-live-android-broker.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hg-go-live-android-broker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  broker-build-unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.9.1"
+      - uses: android-actions/setup-android@v3
+      - name: Install pinned Android SDK components
+        run: |
+          sdkmanager "platforms;android-37" "build-tools;36.0.0"
+          sdkmanager --list_installed
+          echo "$ANDROID_HOME/build-tools/36.0.0" >> "$GITHUB_PATH"
+      - name: Run JVM policy tests and build Broker + negative-caller APKs
+        run: |
+          set -euo pipefail
+          gradle --no-daemon --stacktrace -p android/cim-broker \
+            :app:testDebugUnitTest :app:assembleDebug :probe:assembleDebug
+      - name: Verify package identities, signer and build digests
+        run: |
+          set -euo pipefail
+          BROKER=android/cim-broker/app/build/outputs/apk/debug/app-debug.apk
+          PROBE=android/cim-broker/probe/build/outputs/apk/debug/probe-debug.apk
+          test -s "$BROKER"
+          test -s "$PROBE"
+          apksigner verify --verbose --print-certs "$BROKER"
+          apksigner verify --verbose --print-certs "$PROBE"
+          aapt dump badging "$BROKER" | grep -F "package: name='org.hg.cim.broker'"
+          aapt dump badging "$PROBE" | grep -F "package: name='org.hg.cim.broker.probe'"
+          mkdir -p android-broker-dist
+          cp "$BROKER" android-broker-dist/app-debug.apk
+          cp "$PROBE" android-broker-dist/probe-debug.apk
+          sha256sum "$BROKER" "$PROBE" | tee android-broker-dist/android-broker-apk-sha256.txt
+          cp -a android/cim-broker/app/build/test-results android-broker-dist/ || true
+          cp -a android/cim-broker/app/build/reports android-broker-dist/ || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hg-cim-broker-build-${{ github.sha }}
+          if-no-files-found: error
+          path: android-broker-dist/*
+
+  emulator-negative-binder:
+    needs: broker-build-unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: hg-cim-broker-build-${{ github.sha }}
+          path: broker-artifacts
+      - uses: android-actions/setup-android@v3
+      - name: Install emulator and verification tools
+        run: |
+          sdkmanager "platforms;android-37" "build-tools;36.0.0" "platform-tools" \
+            "emulator" "system-images;android-35;google_apis;x86_64"
+          sdkmanager --list_installed
+          echo "$ANDROID_HOME/build-tools/36.0.0" >> "$GITHUB_PATH"
+      - name: Download and verify the pinned F-Droid Termux caller package
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            https://f-droid.org/repo/com.termux_1002.apk \
+            --output termux-fdroid-0.118.3.apk
+          TERMUX_SIGNER="$(apksigner verify --print-certs termux-fdroid-0.118.3.apk \
+            | awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print tolower($2); exit}')"
+          test "$TERMUX_SIGNER" = "228fb2cfe90831c1499ec3ccaf61e96e8e1ce70766b9474672ce427334d41c42"
+          aapt dump badging termux-fdroid-0.118.3.apk | grep -F "package: name='com.termux'"
+          sha256sum termux-fdroid-0.118.3.apk | tee termux-apk-sha256.txt
+          printf 'TERMUX_SIGNER_SHA256=%s\n' "$TERMUX_SIGNER" | tee -a termux-apk-sha256.txt
+      - name: Install distinct-UID Android emulator and test actual Binder caller denial
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          script: |
+            set -euo pipefail
+            BROKER=broker-artifacts/app-debug.apk
+            PROBE=broker-artifacts/probe-debug.apk
+            test -s "$BROKER"
+            test -s "$PROBE"
+            adb install --no-streaming termux-fdroid-0.118.3.apk
+            adb install --no-streaming "$BROKER"
+            adb install --no-streaming "$PROBE"
+
+            uid_for() {
+              adb shell pm list packages -U | tr -d '\r' \
+                | awk -v package="package:$1" '$1 == package { sub(/^uid:/, "", $2); print $2; exit }'
+            }
+            TERMUX_UID="$(uid_for com.termux)"
+            BROKER_UID="$(uid_for org.hg.cim.broker)"
+            PROBE_UID="$(uid_for org.hg.cim.broker.probe)"
+            test -n "$TERMUX_UID"
+            test -n "$BROKER_UID"
+            test -n "$PROBE_UID"
+            test "$TERMUX_UID" != "$BROKER_UID"
+            test "$PROBE_UID" != "$BROKER_UID"
+            test "$TERMUX_UID" != "$PROBE_UID"
+            {
+              echo "TERMUX_UID=$TERMUX_UID"
+              echo "BROKER_UID=$BROKER_UID"
+              echo "PROBE_UID=$PROBE_UID"
+              echo "UIDS_DISTINCT=PASS"
+            } | tee android-emulator-uid-evidence.txt
+
+            adb shell am start -W -n org.hg.cim.broker/.MainActivity
+            python3 - <<'PY'
+            import subprocess, time, re, xml.etree.ElementTree as ET
+
+            def dump_ui():
+                subprocess.run(
+                    ["adb", "shell", "uiautomator", "dump", "/sdcard/window.xml"],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False
+                )
+                raw = subprocess.check_output(
+                    ["adb", "shell", "cat", "/sdcard/window.xml"], text=True, errors="replace"
+                )
+                return ET.fromstring(raw[raw.find("<?xml"):])
+
+            def tap_label(label, timeout=75):
+                deadline = time.time() + timeout
+                last = ""
+                while time.time() < deadline:
+                    try:
+                        root = dump_ui()
+                        for node in root.iter("node"):
+                            if node.attrib.get("text", "").strip() == label:
+                                bounds = node.attrib.get("bounds", "")
+                                match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", bounds)
+                                if match:
+                                    x1, y1, x2, y2 = map(int, match.groups())
+                                    if y2 > y1 and x2 > x1:
+                                        subprocess.run(
+                                            ["adb", "shell", "input", "tap",
+                                             str((x1+x2)//2), str((y1+y2)//2)],
+                                            check=True
+                                        )
+                                        time.sleep(2)
+                                        return
+                        last = "label not visible"
+                        subprocess.run(
+                            ["adb", "shell", "input", "swipe", "540", "1800", "540", "700", "400"],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False
+                        )
+                    except Exception as exc:
+                        last = type(exc).__name__
+                    time.sleep(2)
+                raise SystemExit(f"could not tap owner confirmation control {label!r}: {last}")
+
+            tap_label("Trust this installed Termux")
+            tap_label("Trust")
+            PY
+
+            PAIRING="$(adb shell run-as org.hg.cim.broker cat shared_prefs/hg_cim_broker_owner_pairing_v1.xml | tr -d '\r')"
+            echo "$PAIRING" | grep -E 'name="owner_paired".*value="true"'
+            echo "$PAIRING" | grep -E 'name="termux_uid".*value="'"$TERMUX_UID"'"'
+
+            adb logcat -c
+            adb shell am force-stop org.hg.cim.broker.probe
+            adb shell am start -W -n org.hg.cim.broker.probe/.BinderProbeActivity
+            sleep 3
+            adb logcat -d -s HGBinderProbe:V | tee android-emulator-binder-negative.log
+            grep -F "NEGATIVE_BINDER_PASS_DENY_UID caller_uid=$PROBE_UID" android-emulator-binder-negative.log
+            ! grep -E "NEGATIVE_BINDER_FAIL|NEGATIVE_BINDER_INCONCLUSIVE" android-emulator-binder-negative.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hg-cim-broker-emulator-evidence-${{ github.sha }}
+          if-no-files-found: warn
+          path: |
+            termux-apk-sha256.txt
+            android-emulator-uid-evidence.txt
+            android-emulator-binder-negative.log
