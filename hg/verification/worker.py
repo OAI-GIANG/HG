@@ -67,6 +67,20 @@ def _read(fd, size, limit):
     return raw
 
 
+def _sha256_fd(fd, size):
+    """Digest exactly ``size`` bytes of ``fd`` with positional reads (offset unchanged)."""
+    digest, offset = hashlib.sha256(), 0
+    while offset < size:
+        chunk = os.pread(fd, min(65536, size - offset), offset)
+        if not chunk:
+            raise ValueError("target changed while being read")
+        digest.update(chunk)
+        offset += len(chunk)
+    if os.pread(fd, 1, size):
+        raise ValueError("target changed while being read")
+    return digest.hexdigest()
+
+
 def _python_syntax(root, path):
     target, fd, size = _target(root, path, MAX_SOURCE_BYTES)
     try:
@@ -102,6 +116,9 @@ def _sqlite_integrity(root, path):
         # descriptor that passed O_NOFOLLOW/fstat.
         if size < 100 or os.pread(fd, 16, 0) != b"SQLite format 3\x00":
             raise ValueError("not a SQLite database file: missing or invalid header")
+        # integrity_check verifies structure, not content; report the digest of the
+        # exact bytes on the descriptor so the caller can bind the result to a snapshot.
+        digest = _sha256_fd(fd, size)
         # Only verify a closed, standalone snapshot. A live/WAL-backed database must be
         # copied consistently before this worker is used.
         for suffix in ("-wal", "-shm", "-journal"):
@@ -122,8 +139,10 @@ def _sqlite_integrity(root, path):
         db.set_progress_handler(lambda: 1 if time.monotonic() > deadline else 0, 1000)
         row = db.execute("PRAGMA integrity_check(1)").fetchone()
         result = row[0] if row else "no result"
+        if os.fstat(fd).st_size != size or _sha256_fd(fd, size) != digest:
+            raise ValueError("SQLite snapshot changed during the integrity check")
         return {"check": "SQLITE_INTEGRITY", "status": "PASS" if result == "ok" else "FAIL",
-                "bytes": size, "integrity_result": str(result)[:240],
+                "sha256": digest, "bytes": size, "integrity_result": str(result)[:240],
                 "reason": "read-only SQLite integrity_check on the opened snapshot inode"}
     finally:
         if db is not None:

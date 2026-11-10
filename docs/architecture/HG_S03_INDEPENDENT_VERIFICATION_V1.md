@@ -142,6 +142,7 @@ The syntax result proves parse/compile acceptance by the current Python interpre
 - Rejects adjacent `-wal`, `-shm` and `-journal` files. Only a closed, standalone, consistent snapshot may be checked.
 - Opens using SQLite URI `mode=ro`, sets `PRAGMA query_only=ON` and runs `PRAGMA integrity_check(1)`.
 - Keeps the O_NOFOLLOW-opened file descriptor and compares its device/inode with the pathname after SQLite opens the database, rejecting a changed path.
+- Reports `sha256` of the exact bytes on the opened descriptor, recomputed after the check (a change during the check is BLOCKED). `verify_sqlite_integrity(..., expected_sha256=...)` turns a digest mismatch into FAIL. `integrity_check` verifies b-tree structure, not content: a snapshot with altered row bytes or appended bytes is still `ok` (false accept found by `hg/tests/test_false_accept_oracle.py`, 2026-11-10), so a result without `expected_sha256` attests structure only, not that the snapshot is the expected one.
 - Only a single result equal to `ok` is PASS. Open, timeout, malformed database or snapshot-state uncertainty is BLOCKED/INCONCLUSIVE, never PASS.
 
 The checker must not be pointed at a live production database. A consistent offline snapshot must be captured through the owning service's approved backup procedure first.
