@@ -151,7 +151,11 @@ def home_for_path(path):
 
 
 def private_file(path):
-    """Create (if needed) a 0600 file and refuse anything else: symlink, other owner, wider mode."""
+    """Create (if needed) a 0600 file and refuse anything else: symlink, hard link, other owner, wider mode.
+
+    A second hard link would let the owner's notes or receipts be read or written under a name
+    outside the private home, so only a file with exactly one link is accepted.
+    """
     path = Path(path)
     flags = os.O_CREAT | os.O_RDWR | os.O_APPEND | getattr(os, "O_NOFOLLOW", 0)
     try:
@@ -162,6 +166,8 @@ def private_file(path):
         st = os.fstat(fd)
         if not stat.S_ISREG(st.st_mode) or st.st_uid != os.getuid() or stat.S_IMODE(st.st_mode) & 0o077:
             raise HomeError(f"{path.name} must be a private regular file (chmod 600)")
+        if st.st_nlink != 1:
+            raise HomeError(f"{path.name} must have exactly one link (it is hard-linked elsewhere)")
     finally:
         os.close(fd)
     return path
