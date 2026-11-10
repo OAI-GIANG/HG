@@ -96,3 +96,13 @@ FACT (phone, read-only): `hg-runtime` pid 9512 up since ≈12:06 +07 (log `HG_RU
 
 Deploy: NOT_EXECUTED by choice. Another session was running tests on the phone at 13:18 +07 (`~/HG-RCME-INTEGRATION-20261110`, evidence `audit-rcme-integration-20261110`, `audit-pr77-*`); a deploy runs the Termux suites (5 s oracle deadlines) and switches the service, so it was not started concurrently. #104 and #106 are fail-closed robustness fixes, not false accepts; install them together with the next batch when the phone is idle. Production stays `7698097` (release `13c335cc`).
 
+
+## 11. Addendum 2026-11-10 14:21–14:35 +07 (hourly run, phone reachable) — #104/#106 deployed (main `5476315`)
+
+FACT: phone idle before the run (no test or deploy process; only `hg serve` pid 9512, release `13c335cc`). Push CI on `5476315` success (run 42769583663). `deploy/` unchanged since `7698097`; `hg/release.py` changed by #106, covered by the Termux suites before the switch and by READY/integrity after it.
+
+FACT: deploy of `5476315` (`~/hg-v1-evidence/deploy-5476315-20261110/`, clean clone `~/hg-deploy-control/5476315…/repo`, HEAD/tree `498e280a…` checked; script = `deploy-7698097…` with only `C`, `MAIN`, `TREE`, smoke tag changed, `diff.log`) `RESULT=PASS`, `DEPLOY_FIX_COMPLETE` 14:28:18 +07: release `adff9c8dae20…`, Termux MAEP 362 OK (skip 3), HG 633 OK (skip 1), switch `switch-20261110T072805Z`, smoke write/readback/replay/409 PASS. `SHA256SUMS` re-checked, 0 mismatches; `evidence-selfcheck.log` 24 OK.
+
+FACT (independent re-read after the run): `sv status` pid 20590 up; `ready` 200 READY / integrity VERIFIED / trust LOADED / `trust_commit` `5476315`; `~/.config/hg/assistant-release` → `adff9c8d…`. Rollback: `sh deploy/termux/switch_service.sh --restore ~/hg-v1-evidence/switch-20261110T072805Z`.
+
+So production now includes #104 (assistant repair/config) and #106 (release manifest/archive reads). No merged runtime change is left undeployed.
