@@ -179,3 +179,26 @@ The workflow now:
 The trusted signer pin is intentionally unchanged until the observed output is independently inspected. The uploaded debug Broker APK certificate is not the F-Droid Termux certificate and must not be confused with it.
 
 **Disposition:** Broker build/unit job PASS; Termux signer verification not qualified; emulator install/UID/Binder tests SKIPPED. G7 remains PARTIAL/BLOCKED for the unexecuted cross-UID Binder/physical-device requirements. GO-LIVE remains NO-GO.
+
+
+## 12. Run #13 — F-Droid signature verified; parser label mismatch identified
+
+GitHub Actions PR run `42897711844`, emulator job `130116156981`, reached the pinned F-Droid Termux verification step. `apksigner verify --verbose --print-certs` returned exit code 0 and emitted a verified V3.0 signer record:
+
+`V3.0 Signer: certificate SHA-256 digest: 228fb2cfe90831c1499ec3ccaf61e96e8e1ce70766b9474672ce427334d41c42`
+
+This digest exactly matches the already pinned F-Droid Termux signer in `BrokerStore.java`. Therefore **the signer pin is confirmed by the downloaded APK's own verified signature output**; it was not changed.
+
+The job stopped because the extraction regular expression only matched the older label `Signer #1 certificate SHA-256 digest`, while Build Tools 37.0.0 emitted `V3.0 Signer: certificate SHA-256 digest`. Signature verification itself passed; the parser yielded an empty string and the non-empty guard correctly failed closed. The emulator install, PackageManager UID observation, Broker pairing and Binder test were skipped.
+
+### Run #13 correction
+
+The parser now extracts the fingerprint from the invariant `certificate SHA-256 digest:` label, independent of the APK signature scheme prefix. It still requires:
+- `apksigner verify` exit code 0;
+- a non-empty parsed digest;
+- exact equality with the pinned F-Droid fingerprint;
+- package identity `com.termux`.
+
+The full apksigner output remains stored as an artifact. This change does not weaken the trust decision or change the trusted key.
+
+**Run #13 status:** signature verification PASS; signer parser failed; no emulator/Binder test executed. The corrected workflow is queued for a new PR run. G7 remains PARTIAL, not PASS.
