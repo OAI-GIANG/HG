@@ -17,6 +17,7 @@ from pathlib import Path
 
 from maep.core import POLICY_VERSION
 from hg.brain.planner import StructuredGoalPlanner
+from hg.brain.providers import parse_model_json
 from hg.runtime import build_runtime
 from hg.tools.gateway import LocalFileWriteAdapter
 from hg.verification.regressions import _grants, _task, load_cases, read_back, run_case
@@ -100,6 +101,30 @@ def run_benchmark(cases=None, *, workdir=None):
     return {"metrics": metrics, "failed_cases": failed, "recovery": recovery,
             "results": [{"case_id": r["case_id"], "passed": r["passed"], "state": r["observed"]["state"],
                          "effects": r["observed"]["effects"], "duration_ms": r["duration_ms"]} for r in results]}
+
+
+class BaselineError(ValueError):
+    """The --baseline file cannot be read with one meaning; the run fails before benchmarking."""
+
+
+def load_baseline(path):
+    """Read a previous report for `verdict`: one reading, numbers only, or BaselineError.
+
+    A repeated key reads one way here and another way elsewhere; NaN compares False with
+    everything, so a NaN baseline would hide every regression; a string or bool would crash
+    the comparison or compare as a number. Each is refused instead of read one way.
+    """
+    try:
+        doc = parse_model_json(Path(path).read_bytes().decode("utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        raise BaselineError(f"{type(exc).__name__}: {exc}") from None
+    if not isinstance(doc, dict) or not isinstance(doc.get("metrics"), dict):
+        raise BaselineError("baseline must be a JSON object with a \"metrics\" object")
+    for name in HIGHER_IS_BETTER:
+        value = doc["metrics"].get(name)
+        if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float))):
+            raise BaselineError(f"baseline metric {name} must be a number or null, not {value!r}")
+    return doc
 
 
 def verdict(report, baseline=None):

@@ -4,7 +4,6 @@ It never touches the owner's notes: a fresh private HG_HOME is created for the r
 evaluation's synthetic notes are written there. Scoring rules and thresholds come from the
 evaluation file itself and must not change after its first on-device run.
 """
-import json
 import os
 import shutil
 import statistics
@@ -15,6 +14,7 @@ from pathlib import Path
 from hg.assistant import textvi
 from hg.assistant.ask import ask
 from hg.assistant.notes import Notebook
+from hg.brain.providers import parse_model_json
 
 INJECTION_MARKERS = ("hacked", "pwned")
 
@@ -78,9 +78,24 @@ def score(spec, receipts, key_to_id):
     return {"metrics": metrics, "checks": checks, "verdict": "PASS" if all(checks.values()) else "FAIL", "rows": rows}
 
 
+class EvalSpecError(ValueError):
+    """The evaluation file cannot be read with one meaning; nothing is asked."""
+
+
+def load_spec(path):
+    """Read the evaluation file: UTF-8, one JSON object, no repeated key, no NaN/Infinity."""
+    try:
+        spec = parse_model_json(Path(path).read_bytes().decode("utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        raise EvalSpecError(f"{type(exc).__name__}: {exc}") from None
+    if not isinstance(spec, dict):
+        raise EvalSpecError("evaluation file must be a JSON object")
+    return spec
+
+
 def run(spec_path, *, router_factory, listener=None, model_check=None, release="dev", keep_home=False,
         monotonic=time.monotonic, progress=None):
-    spec = json.loads(Path(spec_path).read_text(encoding="utf-8"))
+    spec = load_spec(spec_path)
     home = Path(tempfile.mkdtemp(prefix="hg-eval-"))
     os.chmod(home, 0o700)
     try:
