@@ -177,6 +177,13 @@ class ToolAdapter:
         for key, kind in self.params_schema.items():
             if not isinstance(params[key], kind):
                 raise AdapterInputError(f"param {key} must be {kind.__name__}")
+            if isinstance(params[key], str):
+                try:
+                    params[key].encode("utf-8")
+                except UnicodeEncodeError:
+                    # A lone surrogate is not text: the effect, its intent and the ledger
+                    # record of the plan could not be written as UTF-8.
+                    raise AdapterInputError(f"param {key} must be valid Unicode text") from None
 
     def resource_for(self, params):
         raise NotImplementedError
@@ -207,7 +214,7 @@ class _RootedFileAdapter(ToolAdapter):
 
     def _rel(self, raw):
         path = PurePosixPath(raw)
-        if not raw or path.is_absolute() or ".." in path.parts or "\\" in raw:
+        if not raw or "\x00" in raw or path.is_absolute() or ".." in path.parts or "\\" in raw:
             raise AdapterInputError("path must be relative, inside the root, without '..'")
         full = (self._root / path).resolve()
         if full != self._root and self._root not in full.parents:

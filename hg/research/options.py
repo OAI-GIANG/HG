@@ -12,6 +12,7 @@ import itertools
 import json
 
 from maep.core import MAEPError
+from hg.brain.providers import parse_model_json
 
 
 def _canonical(option):
@@ -113,7 +114,7 @@ def proposals_from_model(router, brief, *, n=5, task_id=None):
     text = response["text"]
     start, end = text.find("["), text.rfind("]")
     try:
-        data = json.loads(text[start:end + 1]) if start >= 0 and end > start else []
+        data = parse_model_json(text[start:end + 1]) if start >= 0 and end > start else []
     except ValueError:
         return []
     return [d for d in data if isinstance(d, dict) and d][:n]
