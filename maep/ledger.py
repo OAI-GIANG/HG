@@ -186,8 +186,20 @@ def _require_terminated_tail(fd):
         raise MAEPError("torn ledger tail: missing record terminator; refusing to append")
 
 
-def _append_unlocked(fd, event):
-    payload = (json.dumps(event, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
+def _encode_event(event):
+    """The one exact record for ``event``: standard JSON (no NaN/Infinity), valid UTF-8, one line.
+
+    Raises MAEPError before any byte is written when the event has no such encoding (a lone
+    surrogate in a key or value, a non-finite number, a non-JSON value).
+    """
+    try:
+        text = json.dumps(event, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        return (text + "\n").encode("utf-8")
+    except (TypeError, ValueError) as exc:  # UnicodeEncodeError is a ValueError
+        raise MAEPError(f"event has no exact JSON/UTF-8 encoding ({type(exc).__name__})") from exc
+
+
+def _append_unlocked(fd, payload):
     view = memoryview(payload)
     while view:
         written = os.write(fd, view)
@@ -207,6 +219,10 @@ def append_event(path, event, *, writer_session=None):
     """
     if not isinstance(event, dict) or not isinstance(event.get("event_id"), str) or not event["event_id"]:
         raise LedgerAppendRefused("event must have a non-empty event_id")
+    try:
+        payload = _encode_event(event)
+    except MAEPError as exc:
+        raise LedgerAppendRefused(str(exc)) from exc
     path = Path(path)
     try:
         require_writer_session(path, writer_session)
@@ -221,7 +237,7 @@ def append_event(path, event, *, writer_session=None):
             raise LedgerAppendRefused(str(exc)) from exc
         if any(existing["event_id"] == event["event_id"] for existing in current):
             raise LedgerAppendRefused("event_id already exists; append an amendment with a new ID")
-        _append_unlocked(fd, event)
+        _append_unlocked(fd, payload)
     return event["event_id"]
 
 
@@ -238,5 +254,5 @@ def append_generated(path, factory, *, writer_session=None):
             raise MAEPError("event factory must return an event with a non-empty event_id")
         if any(existing["event_id"] == event["event_id"] for existing in current):
             raise MAEPError("event_id already exists; append an amendment with a new ID")
-        _append_unlocked(fd, event)
+        _append_unlocked(fd, _encode_event(event))
     return event
