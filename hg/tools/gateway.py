@@ -15,6 +15,7 @@ restarts (rebuilt from the ledger), and blocks further effects on that task unti
 reconcile() inspects live state.
 """
 import concurrent.futures
+import errno
 import hashlib
 import os
 import stat
@@ -132,6 +133,18 @@ def _sha256(data):
     return hashlib.sha256(data).hexdigest()
 
 
+def _fsync_directory(path):
+    """Make a rename or create inside `path` durable; EINVAL (unsupported) is accepted."""
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_CLOEXEC", 0))
+    try:
+        os.fsync(fd)
+    except OSError as exc:
+        if exc.errno != errno.EINVAL:
+            raise
+    finally:
+        os.close(fd)
+
+
 class ToolAdapter:
     """Contract every adapter declares (MIID §10). Subclasses override the methods."""
 
@@ -238,8 +251,18 @@ class _RootedFileAdapter(ToolAdapter):
 
 
 class LocalFileWriteAdapter(_RootedFileAdapter):
+    """fs.write 1.1: the planned effect and nothing else, durable before it is reported.
+
+    - A path that is a directory, or has a parent that is not a directory, is checked
+      before any effect and is a known failure (AdapterFailure), not UNKNOWN.
+    - Replacing an existing regular file keeps its permission bits; a new file is 0600.
+    - The data and then the parent directory (and the parent of every directory created
+      for the path) are fsynced before success is returned, so a recorded SUCCEEDED
+      survives a power loss. A filesystem that cannot fsync a directory (EINVAL) is
+      accepted as is.
+    """
     name = "fs.write"
-    version = "1.0"
+    version = "1.1"
     action = "WRITE"
     idempotent = True        # atomic replace with the same content gives the same state
     risk = "MEDIUM"
@@ -250,13 +273,46 @@ class LocalFileWriteAdapter(_RootedFileAdapter):
         data = params["content"].encode("utf-8")
         return {"path": self._rel(params["path"])[0], "sha256": _sha256(data), "bytes": len(data)}
 
+    def _inspect(self, full):
+        """(directories to create, mode of the existing file or None); no effect."""
+        if full == self._root:
+            raise AdapterFailure("path is a directory")
+        missing, current = [], self._root
+        try:
+            for part in full.relative_to(self._root).parts[:-1]:
+                current = current / part
+                if missing:
+                    missing.append(current)
+                    continue
+                try:
+                    st = os.lstat(current)
+                except FileNotFoundError:
+                    missing.append(current)
+                    continue
+                if not stat.S_ISDIR(st.st_mode):
+                    raise AdapterFailure("a parent of the path is not a directory")
+            if missing:
+                return missing, None
+            try:
+                st = os.lstat(full)
+            except FileNotFoundError:
+                return missing, None
+        except OSError as exc:
+            raise AdapterFailure(f"cannot inspect the path: {exc.strerror or exc}") from None
+        if stat.S_ISDIR(st.st_mode):
+            raise AdapterFailure("path is a directory")
+        return missing, (stat.S_IMODE(st.st_mode) if stat.S_ISREG(st.st_mode) else None)
+
     def _perform(self, params):
         rel, full = self._rel(params["path"])
         data = params["content"].encode("utf-8")
+        missing, mode = self._inspect(full)
         full.parent.mkdir(parents=True, exist_ok=True)
         fd, tmp = tempfile.mkstemp(dir=str(full.parent), prefix=".hg-tmp-")
         try:
             with os.fdopen(fd, "wb") as stream:
+                if mode is not None:
+                    os.fchmod(stream.fileno(), mode)
                 stream.write(data)
                 stream.flush()
                 os.fsync(stream.fileno())
@@ -265,6 +321,8 @@ class LocalFileWriteAdapter(_RootedFileAdapter):
             if os.path.exists(tmp):
                 os.unlink(tmp)
             raise
+        for directory in [full.parent] + [d.parent for d in reversed(missing)]:
+            _fsync_directory(directory)
         return {"path": rel, "sha256": _sha256(data), "bytes": len(data)}
 
     def verify(self, params, observed):
