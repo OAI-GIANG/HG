@@ -17,6 +17,7 @@ from pathlib import Path, PurePosixPath
 from maep.core import MAEPError
 from maep.sqlite_nofollow import connect_nofollow
 from maep.admission import require_writer_session
+from hg.tools.gateway import read_regular_file
 
 
 # Reading one request (request line, headers, body) is bounded twice:
@@ -197,13 +198,21 @@ def planned_write_readback_verifier(root):
                 cursor = cursor / part
                 if cursor.is_symlink():
                     return False, f"read-back path contains a symlink: {rel.as_posix()}"
-            if not target.is_file():
-                return False, f"read-back target missing or not a regular file: {rel.as_posix()}"
+            content = params.get("content")
             try:
-                actual = target.read_text(encoding="utf-8")
-            except (OSError, UnicodeError) as exc:
-                return False, f"read-back failed ({type(exc).__name__})"
-            if actual != params.get("content"):
+                expected = content.encode("utf-8") if isinstance(content, str) else None
+            except UnicodeError:
+                expected = None
+            if expected is None:
+                return False, f"planned content is not UTF-8 text: {rel.as_posix()}"
+            # Compare the exact bytes fs.write produced. Text mode would translate CRLF/CR to LF,
+            # accepting a file that differs from the plan and refusing a correct write of CR.
+            try:
+                actual = read_regular_file(target, max_bytes=len(expected))
+            except OSError as exc:
+                return False, (f"read-back target missing, not a regular file or unreadable "
+                               f"({type(exc).__name__}): {rel.as_posix()}")
+            if actual != expected:
                 return False, f"read-back differs from planned content: {rel.as_posix()}"
         return True, f"read-back matched {len(writes)} planned write(s)"
 
