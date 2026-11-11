@@ -19,7 +19,7 @@ from maep.core import POLICY_VERSION
 from hg.brain.planner import StructuredGoalPlanner
 from hg.runtime import build_runtime
 from hg.tools.gateway import LocalFileWriteAdapter
-from hg.verification.regressions import _grants, _task, load_cases, run_case
+from hg.verification.regressions import _grants, _task, load_cases, read_back, run_case
 
 INVARIANTS = ("unauthorized_effects", "false_closures")
 HIGHER_IS_BETTER = ("pass_rate", "completion_rate", "correct_denial_rate", "recovery_rate", "evidence_backed_closures")
@@ -53,8 +53,7 @@ def recovery_scenario(workdir):
     adapter = _CrashOnceWrite(root)
 
     def check(_snapshot):
-        path = root / "out/rec.txt"
-        return path.is_file() and path.read_text(encoding="utf-8") == "rec", "file content"
+        return read_back(root, "out/rec.txt", "rec")
     rt = build_runtime(workdir / "run", _grants(steps, task["task_id"], datetime.now(timezone.utc)),
                        allow_fixture_grants=True, extra_adapters=[adapter], verifiers={"AC-1": check})
     first = rt.orch.execute_goal(task, goal, StructuredGoalPlanner())

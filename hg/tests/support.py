@@ -10,6 +10,7 @@ from pathlib import Path
 from maep.core import POLICY_VERSION
 from hg.runtime import DEFAULT_PRINCIPAL as PRINCIPAL
 from hg.runtime import build_runtime
+from hg.verification.regressions import read_back
 
 NOW = datetime(2026, 10, 23, 8, 0, tzinfo=timezone.utc)
 
@@ -59,9 +60,8 @@ def write_step(step_id="S-1", *, path="out/hello.txt", content="xin chao", autho
 
 def content_verifier(root, path="out/hello.txt", expected="xin chao"):
     def file_content_matches(_snapshot):
-        target = Path(root) / path
-        actual = target.read_text(encoding="utf-8") if target.is_file() else None
-        return actual == expected, f"expected {expected!r}, found {actual!r}"
+        matches, detail = read_back(root, path, expected)
+        return matches, f"expected {expected!r}, found {detail}"
     return file_content_matches
 
 
