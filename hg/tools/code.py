@@ -31,6 +31,7 @@ import signal
 import stat
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -169,9 +170,76 @@ class CodeSearchAdapter(_ReadOnlyRooted):
                 "truncated": truncated, "matches": matches, "files_skipped": skipped}
 
 
+PARSE_STACK_BYTES = 16 << 20
+_PARSE_STACK_LOCK = threading.Lock()
+
+
+def _on_parse_stack(fn, *args):
+    """Run fn(*args) on a thread with a known 16 MiB stack and return its result.
+
+    CPython's parser, AST construction and AST deallocation recurse in C. Their depth
+    guard assumes a stack a thread does not always have: on Termux/Android (Python 3.14)
+    a worker thread with the platform default stack is killed by SIGSEGV parsing a
+    5000-term sum (the main thread raises RecursionError), and freeing a deep tree that
+    parsed can overflow it too. The gateway runs adapters on worker threads, and a
+    SIGSEGV takes the whole HG process (`hg serve`) with it. So the tree is built, walked
+    and freed on this thread; only plain data comes back. Exceptions are re-raised here.
+    """
+    result = {}
+
+    def run():
+        try:
+            result["value"] = fn(*args)
+        except BaseException as exc:
+            result["error"] = exc
+    with _PARSE_STACK_LOCK:
+        previous = threading.stack_size(PARSE_STACK_BYTES)
+        try:
+            worker = threading.Thread(target=run, name="hg-code-parse", daemon=True)
+            worker.start()
+        finally:
+            threading.stack_size(previous)
+    worker.join()
+    if "error" in result:
+        raise result["error"]
+    return result["value"]
+
+
+def _index_python(name, text):
+    """(symbols, calls, error) of one file; error is a syntax_errors entry or None."""
+    symbols, calls = [], {}
+    try:
+        tree = ast.parse(text, filename=name)
+    except SyntaxError as exc:
+        return symbols, calls, {"file": name, "line": exc.lineno, "error": exc.msg}
+    except (ValueError, RecursionError, MemoryError):
+        # CPython reports a too-deep parse as RecursionError or MemoryError; the
+        # file is bounded (MAX_FILE_BYTES), so this is the file, not the process.
+        return symbols, calls, {"file": name, "line": None, "error": "too deeply nested to parse"}
+    # Pre-order walk without recursion: a file that parses can still be deeper than
+    # Python's own recursion limit.
+    stack = [(child, "") for child in reversed(list(ast.iter_child_nodes(tree)))]
+    while stack:
+        node, prefix = stack.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            qual = f"{prefix}{node.name}"
+            kind = "class" if isinstance(node, ast.ClassDef) else "function"
+            symbols.append({"file": name, "name": node.name, "qualname": qual, "kind": kind,
+                            "line": node.lineno})
+            prefix = qual + "."
+        stack.extend((child, prefix) for child in reversed(list(ast.iter_child_nodes(node))))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            func = node.func
+            called = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
+            if called:
+                calls[called] = calls.get(called, 0) + 1
+    return symbols, calls, None
+
+
 class SymbolIndexAdapter(_ReadOnlyRooted):
     name = "code.symbols"
-    version = "1.1"
+    version = "1.2"
     description = "Index Python classes/functions (with qualified names and lines) and called names, via ast."
     params_schema = {"path": str}
 
@@ -182,34 +250,13 @@ class SymbolIndexAdapter(_ReadOnlyRooted):
         symbols, calls, errors = [], {}, []
         files, skipped = _scan(self, full, suffix=".py")
         for name, text in files:
-            try:
-                tree = ast.parse(text, filename=name)
-            except SyntaxError as exc:
-                errors.append({"file": name, "line": exc.lineno, "error": exc.msg})
+            file_symbols, file_calls, error = _on_parse_stack(_index_python, name, text)
+            if error is not None:
+                errors.append(error)
                 continue
-            except (ValueError, RecursionError, MemoryError):
-                # CPython reports a too-deep parse as RecursionError or MemoryError; the
-                # file is bounded (MAX_FILE_BYTES), so this is the file, not the process.
-                errors.append({"file": name, "line": None, "error": "too deeply nested to parse"})
-                continue
-            # Pre-order walk without recursion: a file that parses can still be deeper than
-            # Python's own recursion limit.
-            stack = [(child, "") for child in reversed(list(ast.iter_child_nodes(tree)))]
-            while stack:
-                node, prefix = stack.pop()
-                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                    qual = f"{prefix}{node.name}"
-                    kind = "class" if isinstance(node, ast.ClassDef) else "function"
-                    symbols.append({"file": name, "name": node.name, "qualname": qual, "kind": kind,
-                                    "line": node.lineno})
-                    prefix = qual + "."
-                stack.extend((child, prefix) for child in reversed(list(ast.iter_child_nodes(node))))
-            for node in ast.walk(tree):
-                if isinstance(node, ast.Call):
-                    func = node.func
-                    called = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
-                    if called:
-                        calls[called] = calls.get(called, 0) + 1
+            symbols.extend(file_symbols)
+            for called, count in file_calls.items():
+                calls[called] = calls.get(called, 0) + count
         return {"path": rel, "symbol_count": len(symbols), "symbols": symbols,
                 "top_calls": sorted(calls.items(), key=lambda kv: (-kv[1], kv[0]))[:50], "syntax_errors": errors,
                 "files_skipped": skipped}
