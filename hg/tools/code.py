@@ -12,6 +12,8 @@ URL read is authorized, permitted and recorded.
                a crash: an interrupted run stays UNKNOWN until a person decides.
 - url.read     READ    HTTP(S) GET of one URL (resource "url:<url>"), size-capped.
                The owner manifest must list a matching "url:" scope for anchored use.
+               Redirects are never followed: a 3xx names a URL nobody authorized, so it is
+               a known failure, not a read of the redirect target.
 """
 import ast
 import difflib
@@ -222,6 +224,15 @@ class TestRunAdapter(_RootedFileAdapter):
         return "UNKNOWN"     # a test run's side effects cannot be inspected afterwards
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    # Returning None makes urllib raise HTTPError for the 3xx instead of requesting Location.
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
+_URL_OPENER = urllib.request.build_opener(_NoRedirect())
+
+
 class UrlReadAdapter(ToolAdapter):
     name = "url.read"
     version = "1.0"
@@ -271,7 +282,8 @@ class UrlReadAdapter(ToolAdapter):
         url = self._canonical(params["url"])
         request = urllib.request.Request(url, headers={"User-Agent": "HG-url.read/1.0"})
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout_s - 2) as response:
+            # Only the URL the gateway authorized and scope-checked is read (WS-04).
+            with _URL_OPENER.open(request, timeout=self.timeout_s - 2) as response:
                 data = response.read(self.MAX_BYTES + 1)
                 status, ctype = response.status, response.headers.get("Content-Type", "")
         except urllib.error.HTTPError as exc:
