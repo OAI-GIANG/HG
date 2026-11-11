@@ -15,7 +15,6 @@ first, the kept prefix is validated before the rewrite, and the result is loaded
 prove it is consistent. Any other damage is reported and left alone for the owner to inspect;
 HG never guesses which of several bad lines to drop.
 """
-import json
 import os
 import stat
 from datetime import datetime, timezone
@@ -26,12 +25,22 @@ from hg.assistant.home import locked
 from hg.verification.evidence import EventLog
 
 
-def _valid(line):
-    try:
-        event = json.loads(line)
-    except ValueError:
-        return False
-    return isinstance(event, dict) and isinstance(event.get("event_id"), str) and bool(event["event_id"])
+def _bad_lines(lines):
+    """1-based numbers of the complete lines the ledger reader refuses, read the way it reads them.
+
+    Same rules as `maep.ledger._check_line` plus the EventLog kind/seq types: strict UTF-8, one
+    JSON object, no repeated key, a non-empty string event_id not seen on an earlier line.
+    """
+    bad, seen = [], set()
+    for number, raw in enumerate(lines, 1):
+        try:
+            event = []
+            ledger._check_line(raw.decode("utf-8") + "\n", number, event, seen)
+            if not isinstance(event[0].get("kind"), str) or not isinstance(event[0].get("seq"), int):
+                raise MAEPError("lacks kind/seq")
+        except (UnicodeDecodeError, MAEPError):
+            bad.append(number)
+    return bad
 
 
 def _read_safely(path):
@@ -95,8 +104,7 @@ def _inspect(path):
         else:
             return ({"file": path.name, "status": "TORN_LAST_LINE", "reason": reason, "line": len(lines),
                      "bytes_removed": len(raw) - len(keep)}, raw, keep)
-    bad = [i for i, line in enumerate(lines) if not _valid(line.decode("utf-8", errors="replace"))]
-    return {"file": path.name, "status": "DAMAGED", "reason": reason, "bad_lines": [i + 1 for i in bad][:10]}, raw, None
+    return {"file": path.name, "status": "DAMAGED", "reason": reason, "bad_lines": _bad_lines(lines)[:10]}, raw, None
 
 
 def inspect(path):

@@ -238,6 +238,11 @@ def _dispatch(args, stdin, out):
 
     if command == "eval":
         from hg.assistant import evaluate
+        try:
+            evaluate.load_spec(args.spec)           # refuse an ambiguous file before contacting the model
+        except evaluate.EvalSpecError as exc:
+            out(f"Tệp đánh giá không dùng được: {exc}")
+            return EXIT_INPUT
         home = _home()
         conf, listener, check = _model_parts(home)
         if check["status"] != "READY":

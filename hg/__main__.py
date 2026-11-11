@@ -173,9 +173,13 @@ def main(argv=None):
         return run_service(args.config, check=args.check)
 
     if args.command == "bench":
-        from hg.verification.benchmark import run_benchmark, verdict
+        from hg.verification.benchmark import BaselineError, load_baseline, run_benchmark, verdict
+        try:
+            baseline = load_baseline(args.baseline) if args.baseline else None
+        except BaselineError as exc:
+            print(json.dumps({"verdict": [f"baseline unusable: {exc}"]}, indent=2, ensure_ascii=False))
+            return 1
         report = run_benchmark()
-        baseline = json.loads(Path(args.baseline).read_text(encoding="utf-8")) if args.baseline else None
         problems = verdict(report, baseline)
         report["verdict"] = problems or ["PASS"]
         if args.json:
