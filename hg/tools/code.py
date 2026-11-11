@@ -9,7 +9,9 @@ URL read is authorized, permitted and recorded.
 - code.diff    READ    unified diff of a file against provided text
 - test.run     EXECUTE `python -m unittest discover` on a path, with a timeout. It runs
                code, so it is not idempotent and its outcome cannot be reconciled after
-               a crash: an interrupted run stays UNKNOWN until a person decides.
+               a crash: an interrupted run stays UNKNOWN until a person decides. Output
+               is streamed (hashed in full, tail kept), never decides the outcome beyond
+               unittest's own final summary, and no process the run starts outlives it.
 - url.read     READ    HTTP(S) GET of one URL (resource "url:<url>"), size-capped.
                The owner manifest must list a matching "url:" scope for anchored use.
                Redirects are never followed: a 3xx names a URL nobody authorized, so it is
@@ -20,9 +22,12 @@ import difflib
 import hashlib
 import os
 import re
+import selectors
+import signal
 import stat
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -178,13 +183,86 @@ class CodeDiffAdapter(_ReadOnlyRooted):
         return {"path": rel, "identical": not diff, "added": added, "removed": removed, "diff": diff[:2000]}
 
 
-_RAN = re.compile(r"^Ran (\d+) tests? in", re.M)
-_FAILED = re.compile(r"^FAILED \((.*)\)$", re.M)
+_RAN = re.compile(r"^Ran (\d+) tests? in [^\n]*\n", re.M)
+_RESULT = re.compile(r"\s*(?:OK|NO TESTS RAN|FAILED \(([^)\n]*)\))[^\n]*$", re.M)
+TAIL_BYTES = 65536          # per stream; the run's output is hashed in full, never held in full
+
+
+def _summary(stderr_text):
+    """unittest's own summary: the LAST "Ran N tests" line and the result line right after it.
+
+    Text a test prints (on either stream, before the summary) can look like a summary line;
+    only the runner's final one counts. Returns (tests_run, counts) or (None, {}).
+    """
+    last = None
+    for last in _RAN.finditer(stderr_text):
+        pass
+    if last is None:
+        return None, {}
+    result = _RESULT.match(stderr_text, last.end())
+    if result is None:
+        return None, {}
+    counts = dict(re.findall(r"(\w+)=(\d+)", result.group(1) or ""))
+    return int(last.group(1)), counts
+
+
+def _run_streamed(argv, *, cwd, env, timeout_s):
+    """Run argv in its own process group; return (returncode, {stream: (sha256, bytes, tail)}).
+
+    Output is read as it arrives: hashed in full, only the last TAIL_BYTES of each stream
+    kept, so a flooding test costs time, not memory. stdin is /dev/null. When the main
+    process exits, what it wrote is drained and every process it left in its group is
+    killed, so a background child neither holds the run open nor outlives it; on the
+    deadline the whole group is killed and TimeoutError is raised.
+    """
+    deadline = time.monotonic() + timeout_s
+    proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            cwd=cwd, env=env, start_new_session=True)
+    state = {"stdout": [hashlib.sha256(), 0, bytearray()], "stderr": [hashlib.sha256(), 0, bytearray()]}
+    timed_out, exited_at = False, None
+    try:
+        with selectors.DefaultSelector() as selector:
+            selector.register(proc.stdout, selectors.EVENT_READ, state["stdout"])
+            selector.register(proc.stderr, selectors.EVENT_READ, state["stderr"])
+            while selector.get_map():
+                now = time.monotonic()
+                if now >= deadline:
+                    timed_out = True
+                    break
+                if exited_at is None and proc.poll() is not None:
+                    exited_at = now
+                if exited_at is not None and now - exited_at > 1.0:
+                    break                       # a left-behind child keeps writing: stop reading
+                wait = 0 if exited_at is not None else min(0.2, deadline - now)
+                events = selector.select(wait)
+                if not events and exited_at is not None:
+                    break                       # main exited and its output is drained
+                for key, _ in events:
+                    chunk = os.read(key.fd, 65536)
+                    if not chunk:
+                        selector.unregister(key.fileobj)
+                        continue
+                    digest, _count, tail = key.data
+                    digest.update(chunk)
+                    key.data[1] += len(chunk)
+                    tail += chunk
+                    del tail[:-TAIL_BYTES]
+    finally:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+        proc.wait()
+        proc.stdout.close()
+        proc.stderr.close()
+    if timed_out:
+        raise TimeoutError("test run exceeded its time limit")
+    return proc.returncode, {name: (d.hexdigest(), n, bytes(t)) for name, (d, n, t) in state.items()}
 
 
 class TestRunAdapter(_RootedFileAdapter):
     name = "test.run"
-    version = "1.0"
+    version = "1.1"
     action = "EXECUTE"
     idempotent = False
     risk = "HIGH"
@@ -202,20 +280,20 @@ class TestRunAdapter(_RootedFileAdapter):
             raise AdapterFailure("test path is not a directory")
         env = {k: v for k, v in os.environ.items() if k in {"PATH", "HOME", "LANG", "LC_ALL", "SYSTEMROOT", "TMPDIR"}}
         env["PYTHONDONTWRITEBYTECODE"] = "1"
-        try:
-            proc = subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", str(full), "-t", str(full)],
-                                  cwd=str(full), env=env, capture_output=True, text=True,
-                                  timeout=max(self.timeout_s - 5, 1))
-        except subprocess.TimeoutExpired:
-            raise TimeoutError("test run exceeded its time limit")
-        output = proc.stderr + proc.stdout
-        ran = _RAN.search(output)
-        failed = _FAILED.search(output)
-        counts = dict(re.findall(r"(\w+)=(\d+)", failed.group(1))) if failed else {}
-        return {"path": rel, "exit_code": proc.returncode, "tests_run": int(ran.group(1)) if ran else None,
+        returncode, streams = _run_streamed(
+            [sys.executable, "-m", "unittest", "discover", "-s", str(full), "-t", str(full)],
+            cwd=str(full), env=env, timeout_s=max(self.timeout_s - 5, 1))
+        # Bytes that are not UTF-8 are shown replaced; they never decide the outcome, which is
+        # the exit code and unittest's own summary (ASCII) on stderr.
+        err_text = streams["stderr"][2].decode("utf-8", errors="replace")
+        out_text = streams["stdout"][2].decode("utf-8", errors="replace")
+        tests_run, counts = _summary(err_text)
+        return {"path": rel, "exit_code": returncode, "tests_run": tests_run,
                 "failures": int(counts.get("failures", 0)), "errors": int(counts.get("errors", 0)),
-                "ok": proc.returncode == 0 and ran is not None,
-                "output_sha256": hashlib.sha256(output.encode()).hexdigest(), "output_tail": output[-4000:]}
+                "ok": returncode == 0 and tests_run is not None,
+                "stdout_sha256": streams["stdout"][0], "stdout_bytes": streams["stdout"][1],
+                "stderr_sha256": streams["stderr"][0], "stderr_bytes": streams["stderr"][1],
+                "output_tail": (err_text + out_text)[-4000:]}
 
     def verify(self, params, observed):
         return observed.get("tests_run") is not None       # the run completed and reported
