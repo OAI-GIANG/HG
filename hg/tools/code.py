@@ -235,7 +235,10 @@ class UrlReadAdapter(ToolAdapter):
     MAX_BYTES = 2_000_000
 
     def _canonical(self, raw):
-        parts = urllib.parse.urlsplit(raw)
+        try:
+            parts = urllib.parse.urlsplit(raw)
+        except ValueError:
+            raise AdapterInputError("url is invalid") from None
         if parts.scheme not in {"http", "https"} or not parts.hostname:
             raise AdapterInputError("url must be absolute http(s)")
         if parts.username or parts.password:
@@ -243,7 +246,11 @@ class UrlReadAdapter(ToolAdapter):
         if any(urllib.parse.unquote(seg) in (".", "..") for seg in parts.path.split("/")):
             # Scope is a prefix test; a dot segment would name a path outside the prefix.
             raise AdapterInputError("url path must not contain dot segments")
-        netloc = parts.hostname.lower() + (f":{parts.port}" if parts.port else "")
+        try:
+            port = parts.port
+        except ValueError:
+            raise AdapterInputError("url port is invalid") from None
+        netloc = parts.hostname.lower() + (f":{port}" if port else "")
         return urllib.parse.urlunsplit((parts.scheme, netloc, parts.path or "/", parts.query, ""))
 
     def validate_params(self, params):

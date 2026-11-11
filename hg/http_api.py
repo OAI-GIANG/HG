@@ -121,8 +121,12 @@ def _unique_object(pairs):
 
 def strict_json(data: bytes):
     try:
-        return json.loads(data.decode("utf-8"), object_pairs_hook=_unique_object,
-                          parse_constant=lambda _x: (_ for _ in ()).throw(ValueError("invalid JSON constant")))
+        value = json.loads(data.decode("utf-8"), object_pairs_hook=_unique_object,
+                           parse_constant=lambda _x: (_ for _ in ()).throw(ValueError("invalid JSON constant")))
+        # A lone surrogate escape (\\ud800) decodes to a string UTF-8 cannot encode: it would
+        # fail later at canonical_json/the ledger as a 500. It is not valid text: refuse it here.
+        json.dumps(value, ensure_ascii=False).encode("utf-8")
+        return value
     except (UnicodeError, ValueError, TypeError) as exc:
         raise HTTPBoundaryError(400, "invalid_json", "request body is not strict UTF-8 JSON") from exc
 

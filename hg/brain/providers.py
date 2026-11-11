@@ -93,6 +93,25 @@ def parse_json(text):
     return json.loads(text, object_pairs_hook=_reject_duplicate_keys)
 
 
+def _reject_constant(name):
+    raise ValueError(f"non-standard JSON number {name}")
+
+
+def parse_model_json(text):
+    """Read JSON a model wrote as data HG will act on: one reading or ValueError.
+
+    Repeated keys, NaN/Infinity and strings that are not valid Unicode text (a lone
+    surrogate escape such as \\ud800, which UTF-8 cannot encode and the ledger cannot
+    record) are refused, so every reader of the answer sees the same plan.
+    """
+    data = json.loads(text, object_pairs_hook=_reject_duplicate_keys, parse_constant=_reject_constant)
+    try:
+        json.dumps(data, ensure_ascii=False).encode("utf-8")
+    except UnicodeEncodeError:
+        raise ValueError("JSON string is not valid Unicode text (lone surrogate)") from None
+    return data
+
+
 def read_bounded(resp, limit=MAX_RESPONSE_BYTES, what="response"):
     """Read at most `limit` bytes and decode them as UTF-8, or raise INVALID_RESPONSE."""
     data = resp.read(limit + 1)
