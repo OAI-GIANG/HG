@@ -15,6 +15,9 @@ Invariants
   said, never a verified claim, never promoted.
 - In SEMANTIC and PROJECT, a FACT or DECISION that contradicts the ACTIVE record on the
   same subject is refused (MemoryConflict) unless it explicitly supersedes that record.
+- A record's value is exact JSON (what is returned is what a reopened store reads); values
+  are compared by their canonical JSON, so the same value with keys in another order is
+  not a contradiction.
 - Nothing is overwritten: supersede and retract append status events (MAEP-015);
   history() returns every version.
 - Memory never grants authority: HG's authorization path does not read it (tested).
@@ -23,6 +26,7 @@ Persistence: append-only JSONL through EventLog; restore() replays it and report
 subject left with competing ACTIVE records.
 """
 import copy
+import json
 import uuid
 from datetime import datetime, timezone
 
@@ -45,9 +49,34 @@ class MemoryConflict(MAEPError):
                          "supersede it explicitly or record a HYPOTHESIS")
 
 
+def _canonical(value):
+    """The JSON text the ledger stores for ``value``, keys sorted; None if JSON would change it.
+
+    A tuple would come back as a list and a non-string key as a string, so such a value has no
+    exact record and is refused (the store never persists something other than it was given).
+    """
+    try:
+        text = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        text.encode("utf-8")
+    except (TypeError, ValueError):
+        return None
+    return text if _same_json(json.loads(text), value) else None
+
+
+def _same_json(decoded, value):
+    if type(decoded) is not type(value):
+        return False
+    if isinstance(value, dict):
+        return decoded.keys() == value.keys() and all(_same_json(decoded[k], value[k]) for k in value)
+    if isinstance(value, list):
+        return len(decoded) == len(value) and all(_same_json(a, b) for a, b in zip(decoded, value))
+    return decoded == value
+
+
 def _norm(record):
+    # Compare values by meaning: the canonical JSON text, so key order does not matter.
     if record.get("value") is not None:
-        return ("value", repr(record["value"]))
+        return ("value", _canonical(record["value"]))
     return ("content", " ".join(record["content"].lower().split()))
 
 
@@ -225,6 +254,9 @@ class MemoryStore:
     def _validate(self, r):
         if r["layer"] not in LAYERS or r["kind"] not in KINDS or r["source"] not in SOURCES:
             raise MAEPError("unknown memory layer, kind or source")
+        if _canonical(r["value"]) is None:
+            raise MAEPError("memory value must be exact JSON (objects with string keys, lists, strings, "
+                            "finite numbers, booleans, null)")
         for field in ("subject", "content", "source_ref"):
             if not _nonempty_string(r[field]):
                 raise MAEPError(f"memory {field} must be a non-empty string")
