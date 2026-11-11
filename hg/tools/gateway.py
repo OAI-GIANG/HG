@@ -288,12 +288,13 @@ class LocalFileWriteAdapter(_RootedFileAdapter):
 
 class LocalFileReadAdapter(_RootedFileAdapter):
     name = "fs.read"
-    version = "1.0"
+    version = "1.1"
     action = "READ"
     idempotent = True
     risk = "LOW"
-    description = "Read a UTF-8 text file under the adapter root."
+    description = "Read a UTF-8 text file (at most MAX_BYTES) under the adapter root."
     params_schema = {"path": str}
+    MAX_BYTES = 2_000_000
 
     def intent(self, params):
         return {"path": self._rel(params["path"])[0]}
@@ -301,14 +302,22 @@ class LocalFileReadAdapter(_RootedFileAdapter):
     def _perform(self, params):
         rel, full = self._rel(params["path"])
         try:
-            data = read_regular_file(full)
+            data = read_regular_file(full, self.MAX_BYTES)
         except OSError:
             raise AdapterFailure("path is not an existing regular file")
-        return {"path": rel, "sha256": _sha256(data), "bytes": len(data),
-                "content": data.decode("utf-8", errors="replace")}
+        if data is None:     # refused from fstat, or once the read passed the bound (WS-04)
+            raise AdapterFailure(f"file is larger than {self.MAX_BYTES} bytes")
+        try:
+            # One reading: the returned text is exactly the bytes named by sha256 (WS-04).
+            content = data.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise AdapterFailure(f"file is not UTF-8 text (byte {exc.start})") from None
+        return {"path": rel, "sha256": _sha256(data), "bytes": len(data), "content": content}
 
     def verify(self, params, observed):
-        return True
+        content = observed.get("content")
+        return (isinstance(content, str) and len(content.encode("utf-8")) == observed.get("bytes")
+                and _sha256(content.encode("utf-8")) == observed.get("sha256"))
 
     def reconcile(self, intent):
         return "APPLIED"     # reads have no effect to reconcile
