@@ -195,6 +195,14 @@ class CodeSymbolsContentOracle(CodeToolsContentBase):
         self.assertEqual([s["qualname"] for s in obs["symbols"]], ["f"])
         self.assertEqual([e["file"] for e in obs["syntax_errors"]], ["out/s/deep.py"])
 
+    def test_long_expression_that_parses_is_indexed(self):
+        # A 5000-term sum parses in CPython; on a small worker-thread stack (Termux)
+        # the parser crashed the process instead (see test_code_symbols_thread_stack_oracle).
+        src = ("TABLE = " + "+".join(["1"] * 5000) + "\n\ndef f():\n    pass\n").encode()
+        obs = self.symbols({"out/s/long.py": src})
+        self.assertEqual([s["qualname"] for s in obs["symbols"]], ["f"])
+        self.assertEqual(obs["syntax_errors"], [])
+
     def test_parser_stack_overflow_is_a_syntax_error_entry_not_unknown(self):
         # CPython reports a too-deep parser stack as MemoryError, not SyntaxError.
         deep = ("x = " + "-" * 6000 + "1\n").encode()
