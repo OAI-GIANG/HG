@@ -134,6 +134,14 @@ class FsWritePermissionOracle(Base):
         self.assertEqual(existing.read_text(encoding="utf-8"), "old")
         self.assertEqual(self.temp_files(), [])
 
+    def test_failure_whose_cleanup_fails_is_not_called_failed(self):
+        # The attempt created out/new but cannot remove it: something it did remains, so
+        # the outcome is UNKNOWN until reconcile() (which inspects only the target file).
+        with mock.patch("tempfile.mkstemp", side_effect=PermissionError(errno.EACCES, "Permission denied")), \
+                mock.patch("os.rmdir", side_effect=OSError(errno.EBUSY, "Device or resource busy")):
+            self.assert_unknown_until_reconciled("out/new/x.txt", "NOT_APPLIED")
+        self.assertFalse((self.root / "out" / "new" / "x.txt").exists())
+
     # ---- fault injection: once the rename may have happened, it stays UNKNOWN ----
 
     def test_error_after_the_rename_happened_is_not_called_failed(self):
