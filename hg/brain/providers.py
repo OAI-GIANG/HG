@@ -23,6 +23,11 @@ Providers here:
 
 Every call is recorded as a MODEL_CALL event (provider, model, kind, status, usage,
 duration, a hash of the request) -- never the prompt text or any key.
+
+Model-server bytes are read with one meaning or refused as INVALID_RESPONSE (model response
+read oracle, hg/tests/test_model_response_oracle.py): bounded reads, UTF-8 only, no repeated
+JSON keys, JSON objects where objects are expected, string text, non-negative integer token
+counts, nothing after a stream's final message.
 """
 import hashlib
 import ipaddress
@@ -38,6 +43,11 @@ from maep.core import MAEPError
 
 ERROR_KINDS = {"UNAVAILABLE", "TIMEOUT", "REFUSED", "INVALID_REQUEST", "INVALID_RESPONSE", "NOT_CONFIGURED"}
 RETRYABLE = {"UNAVAILABLE", "TIMEOUT", "INVALID_RESPONSE"}
+
+MAX_RESPONSE_BYTES = 8 * 1024 * 1024        # one non-streamed answer body
+MAX_STREAM_LINE_BYTES = 1024 * 1024         # one NDJSON line of a streamed answer
+MAX_STREAM_BYTES = 64 * 1024 * 1024         # a whole streamed answer (64000 tokens of small lines)
+MAX_ERROR_BYTES = 64 * 1024                 # an HTTP error body (only a message is read from it)
 
 
 class ProviderError(Exception):
@@ -69,6 +79,55 @@ def request_digest(request):
     return "sha256:" + hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
+def _reject_duplicate_keys(pairs):
+    obj = {}
+    for key, value in pairs:
+        if key in obj:
+            raise ValueError(f"repeated JSON key {key!r}")
+        obj[key] = value
+    return obj
+
+
+def parse_json(text):
+    """json.loads that refuses repeated keys (raises ValueError): one body, one reading."""
+    return json.loads(text, object_pairs_hook=_reject_duplicate_keys)
+
+
+def read_bounded(resp, limit=MAX_RESPONSE_BYTES, what="response"):
+    """Read at most `limit` bytes and decode them as UTF-8, or raise INVALID_RESPONSE."""
+    data = resp.read(limit + 1)
+    if len(data) > limit:
+        raise ProviderError("INVALID_RESPONSE", f"{what} is larger than {limit} bytes")
+    return _utf8(data, what)
+
+
+def _utf8(data, what):
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ProviderError("INVALID_RESPONSE", f"{what} is not UTF-8: {exc.reason} at byte {exc.start}")
+
+
+def _error_body(exc):
+    return exc.read(MAX_ERROR_BYTES).decode("utf-8", errors="replace") if exc.fp else ""
+
+
+def token_count(value):
+    """A token count is a non-negative int (not bool); callers pass 0 for an absent field, null is refused."""
+    if value is None:
+        raise ProviderError("INVALID_RESPONSE", "token count is null")
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ProviderError("INVALID_RESPONSE", f"token count must be a non-negative integer, got {value!r}")
+    return value
+
+
+def _optional_str(data, key, default):
+    value = data.get(key, default)
+    if value is not None and not isinstance(value, str):
+        raise ProviderError("INVALID_RESPONSE", f"{key} must be a string")
+    return value
+
+
 def urllib_post_json(url, headers, payload, timeout):
     """POST JSON; returns (status, headers_dict, text). Network errors raise ProviderError."""
     data = json.dumps(payload).encode("utf-8")
@@ -76,10 +135,9 @@ def urllib_post_json(url, headers, payload, timeout):
                                  headers=dict(headers, **{"content-type": "application/json"}))
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return resp.status, dict(resp.headers), resp.read().decode("utf-8")
+            return resp.status, dict(resp.headers), read_bounded(resp)
     except urllib.error.HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace") if exc.fp else ""
-        return exc.code, dict(exc.headers or {}), body
+        return exc.code, dict(exc.headers or {}), _error_body(exc)
     except TimeoutError as exc:
         raise ProviderError("TIMEOUT", str(exc))
     except (urllib.error.URLError, OSError) as exc:
@@ -131,22 +189,38 @@ def local_post_json(url, headers, payload, timeout):
     """Like urllib_post_json, but never through a proxy and never following redirects."""
     try:
         with _local_request(url, json.dumps(payload).encode("utf-8"), timeout) as resp:
-            return resp.status, dict(resp.headers), resp.read().decode("utf-8")
+            return resp.status, dict(resp.headers), read_bounded(resp)
     except urllib.error.HTTPError as exc:
-        return exc.code, dict(exc.headers or {}), exc.read().decode("utf-8", errors="replace") if exc.fp else ""
+        return exc.code, dict(exc.headers or {}), _error_body(exc)
 
 
 def local_post_stream(url, payload, timeout, on_json):
-    """POST and call on_json(obj) for each NDJSON line as it arrives. Returns the HTTP status."""
+    """POST and call on_json(obj) for each NDJSON line as it arrives. Returns the HTTP status.
+
+    Each line must be one UTF-8 JSON object without repeated keys, at most
+    MAX_STREAM_LINE_BYTES long; the whole stream at most MAX_STREAM_BYTES.
+    """
     try:
         with _local_request(url, json.dumps(payload).encode("utf-8"), timeout) as resp:
-            for raw in resp:
-                line = raw.decode("utf-8").strip()
+            total = 0
+            while True:
+                raw = resp.readline(MAX_STREAM_LINE_BYTES + 1)
+                if not raw:
+                    break
+                if len(raw) > MAX_STREAM_LINE_BYTES:
+                    raise ProviderError("INVALID_RESPONSE", f"stream line longer than {MAX_STREAM_LINE_BYTES} bytes")
+                total += len(raw)
+                if total > MAX_STREAM_BYTES:
+                    raise ProviderError("INVALID_RESPONSE", f"stream larger than {MAX_STREAM_BYTES} bytes")
+                line = _utf8(raw, "stream line").strip()
                 if line:
                     try:
-                        on_json(json.loads(line))
+                        obj = parse_json(line)
                     except ValueError as exc:
                         raise ProviderError("INVALID_RESPONSE", f"bad stream line: {exc}")
+                    if not isinstance(obj, dict):
+                        raise ProviderError("INVALID_RESPONSE", "stream line is not a JSON object")
+                    on_json(obj)
             return resp.status
     except urllib.error.HTTPError as exc:
         return exc.code
@@ -155,7 +229,7 @@ def local_post_stream(url, payload, timeout, on_json):
 def local_get_json(url, timeout):
     try:
         with _local_request(url, None, timeout) as resp:
-            return resp.status, json.loads(resp.read().decode("utf-8"))
+            return resp.status, parse_json(read_bounded(resp))
     except urllib.error.HTTPError as exc:
         return exc.code, None
     except ValueError as exc:
@@ -253,24 +327,29 @@ class AnthropicProvider(ModelProvider):
         if status != 200:
             raise self._error(status, headers, body)
         try:
-            data = json.loads(body)
-            blocks = data["content"]
-            text = "".join(b.get("text", "") for b in blocks if isinstance(b, dict) and b.get("type") == "text")
-            usage = data.get("usage") or {}
-            finish = data.get("stop_reason")
+            data = parse_json(body)
+            if not isinstance(data, dict) or not isinstance(data["content"], list):
+                raise TypeError("content must be a list in a JSON object")
+            texts = [b.get("text", "") for b in data["content"] if isinstance(b, dict) and b.get("type") == "text"]
+            if not all(isinstance(t, str) for t in texts):
+                raise TypeError("text blocks must carry string text")
+            usage = data.get("usage", {})
+            if not isinstance(usage, dict):
+                raise TypeError("usage must be a JSON object")
         except (ValueError, KeyError, TypeError) as exc:
             raise ProviderError("INVALID_RESPONSE", f"unparseable Messages API response: {exc}")
+        finish = _optional_str(data, "stop_reason", None)
         if finish == "refusal":
             raise ProviderError("REFUSED", "the model declined the request")
-        return {"text": text, "provider": self.name, "model": data.get("model", self.model),
-                "usage": {"input_tokens": int(usage.get("input_tokens", 0)),
-                          "output_tokens": int(usage.get("output_tokens", 0))},
+        return {"text": "".join(texts), "provider": self.name, "model": _optional_str(data, "model", self.model),
+                "usage": {"input_tokens": token_count(usage.get("input_tokens", 0)),
+                          "output_tokens": token_count(usage.get("output_tokens", 0))},
                 "finish_reason": finish}
 
     @staticmethod
     def _error(status, headers, body):
         try:
-            message = json.loads(body)["error"]["message"]
+            message = str(parse_json(body)["error"]["message"])[:500]
         except (ValueError, KeyError, TypeError):
             message = f"HTTP {status}"
         retry_after = {k.lower(): v for k, v in (headers or {}).items()}.get("retry-after")
@@ -327,8 +406,10 @@ class OllamaProvider(ModelProvider):
         status, _headers, body = self._post(self._url, {}, self._payload(request, False), self._timeout)
         self._check_status(status)
         try:
-            data = json.loads(body)
+            data = parse_json(body)
             text = data["message"]["content"]
+            if not isinstance(data, dict) or not isinstance(text, str):
+                raise TypeError("message.content must be a string")
         except (ValueError, KeyError, TypeError) as exc:
             raise ProviderError("INVALID_RESPONSE", f"unparseable /api/chat response: {exc}")
         return self._response(strip_thinking(text), data)
@@ -338,13 +419,25 @@ class OllamaProvider(ModelProvider):
         visible = _ThinkFilter(on_delta)
 
         def on_json(obj):
+            if final:
+                raise ProviderError("INVALID_RESPONSE", "stream continued after its final message")
             if obj.get("error"):
                 raise ProviderError("UNAVAILABLE", str(obj["error"])[:200])
-            chunk = (obj.get("message") or {}).get("content") or ""
+            message = obj.get("message")
+            message = {} if message is None else message
+            done = obj.get("done", False)
+            if not isinstance(message, dict) or not isinstance(done, bool):
+                raise ProviderError("INVALID_RESPONSE", "stream line needs an object message and a boolean done")
+            chunk = message.get("content")
+            chunk = "" if chunk is None else chunk
+            if not isinstance(chunk, str):
+                raise ProviderError("INVALID_RESPONSE", "message.content must be a string")
+            if done:
+                self._response("", obj)            # refuse a bad final line before accepting it
             if chunk:
                 parts.append(chunk)
                 visible.feed(chunk)
-            if obj.get("done"):
+            if done:
                 final.update(obj)
 
         status = self._stream_post(self._url, self._payload(request, True), self._timeout, on_json)
@@ -361,10 +454,10 @@ class OllamaProvider(ModelProvider):
             raise ProviderError("UNAVAILABLE" if status >= 500 else "INVALID_REQUEST", f"HTTP {status}")
 
     def _response(self, text, data):
-        return {"text": text, "provider": self.name, "model": data.get("model", self.model),
-                "usage": {"input_tokens": int(data.get("prompt_eval_count", 0)),
-                          "output_tokens": int(data.get("eval_count", 0))},
-                "finish_reason": data.get("done_reason", "stop")}
+        return {"text": text, "provider": self.name, "model": _optional_str(data, "model", self.model),
+                "usage": {"input_tokens": token_count(data.get("prompt_eval_count", 0)),
+                          "output_tokens": token_count(data.get("eval_count", 0))},
+                "finish_reason": _optional_str(data, "done_reason", "stop")}
 
     def tags(self, *, get_json=local_get_json, timeout=5):
         """Locally available models: [{name, digest, size}] (GET /api/tags)."""
@@ -452,6 +545,9 @@ class ModelRouter:
                     attempts.append({"provider": provider.name, "attempt": attempt + 1, "error": "UNAVAILABLE"})
                     self._record(task_id, kind, provider, "ERROR", None, started, digest,
                                  f"UNAVAILABLE:{type(exc).__name__}")
+                    if shown:      # same rule as above: never a second answer after a partial one
+                        raise ProviderError("UNAVAILABLE", "the answer stopped part-way: provider error "
+                                            + type(exc).__name__)
                     break
                 self._account(provider, response)
                 self._record(task_id, kind, provider, "OK", response, started, digest, None)
