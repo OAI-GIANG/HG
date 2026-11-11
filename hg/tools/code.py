@@ -20,6 +20,7 @@ URL read is authorized, permitted and recorded.
 import ast
 import difflib
 import hashlib
+import http.client
 import os
 import re
 import selectors
@@ -302,6 +303,20 @@ class TestRunAdapter(_RootedFileAdapter):
         return "UNKNOWN"     # a test run's side effects cannot be inspected afterwards
 
 
+_TEXT_CODECS = {"utf-8": "utf-8", "utf8": "utf-8", "us-ascii": "ascii", "ascii": "ascii"}
+
+
+def _media_type(ctype):
+    """`type/subtype` and charset of a Content-Type value, lower-cased (RFC 9110: case-insensitive)."""
+    main, _, rest = ctype.partition(";")
+    charset = None
+    for param in rest.split(";"):
+        name, eq, value = param.partition("=")
+        if eq and name.strip().lower() == "charset":
+            charset = value.strip().strip('"').strip().lower()
+    return main.strip().lower(), charset
+
+
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     # Returning None makes urllib raise HTTPError for the 3xx instead of requesting Location.
     def redirect_request(self, *args, **kwargs):
@@ -313,12 +328,12 @@ _URL_OPENER = urllib.request.build_opener(_NoRedirect())
 
 class UrlReadAdapter(ToolAdapter):
     name = "url.read"
-    version = "1.0"
+    version = "1.1"
     action = "READ"
     idempotent = True
     risk = "LOW"
     timeout_s = 20
-    description = "HTTP(S) GET of one URL; text responses returned, size-capped at 2 MB."
+    description = "HTTP(S) GET of one URL; the whole body (at most 2 MB) or a known failure; UTF-8 text returned exactly."
     params_schema = {"url": str}
     ledger_exclude = {"text"}
     MAX_BYTES = 2_000_000
@@ -358,25 +373,56 @@ class UrlReadAdapter(ToolAdapter):
 
     def _perform(self, params):
         url = self._canonical(params["url"])
-        request = urllib.request.Request(url, headers={"User-Agent": "HG-url.read/1.0"})
+        request = urllib.request.Request(url, headers={"User-Agent": "HG-url.read/1.1"})
+        # Everything (connect, every read, the whole body) ends before the gateway's timeout,
+        # so a slow or dripping server is a known failure and no read outlives the action.
+        budget = max(self.timeout_s - 2, 0.5)
+        per_read = min(5.0, budget / 2)
+        deadline = time.monotonic() + budget - per_read
         try:
             # Only the URL the gateway authorized and scope-checked is read (WS-04).
-            with _URL_OPENER.open(request, timeout=self.timeout_s - 2) as response:
-                data = response.read(self.MAX_BYTES + 1)
+            with _URL_OPENER.open(request, timeout=per_read) as response:
                 status, ctype = response.status, response.headers.get("Content-Type", "")
+                chunks, size = [], 0
+                while True:
+                    if time.monotonic() > deadline:
+                        raise AdapterFailure(f"response not complete within {budget:g} s")
+                    chunk = response.read1(65536)
+                    if not chunk:
+                        break
+                    size += len(chunk)
+                    if size > self.MAX_BYTES:
+                        raise AdapterFailure(f"response is larger than {self.MAX_BYTES} bytes")
+                    chunks.append(chunk)
+                if response.length:     # Content-Length promised more than the server sent
+                    raise AdapterFailure("response body is shorter than its Content-Length")
         except urllib.error.HTTPError as exc:
             raise AdapterFailure(f"HTTP {exc.code}")
-        except (urllib.error.URLError, OSError) as exc:
-            raise AdapterFailure(f"cannot read {url}: {getattr(exc, 'reason', exc)}")
-        truncated = len(data) > self.MAX_BYTES
-        data = data[:self.MAX_BYTES]
-        textual = ctype.startswith("text/") or "json" in ctype or "xml" in ctype
-        return {"url": url, "status": status, "content_type": ctype, "bytes": len(data), "truncated": truncated,
-                "sha256": hashlib.sha256(data).hexdigest(),
-                "text": data.decode("utf-8", errors="replace") if textual else None}
+        except (urllib.error.URLError, OSError, http.client.HTTPException) as exc:
+            raise AdapterFailure(f"cannot read {url}: {getattr(exc, 'reason', None) or type(exc).__name__}")
+        data = b"".join(chunks)
+        mtype, charset = _media_type(ctype)
+        text = None
+        if mtype.startswith("text/") or "json" in mtype or "xml" in mtype:
+            # The text is the exact reading of the bytes under `sha256`, or there is no result.
+            codec = _TEXT_CODECS.get(charset or "utf-8")
+            if codec is None:
+                raise AdapterFailure(f"response charset {charset!r} is not UTF-8")
+            try:
+                text = data.decode(codec)
+            except UnicodeDecodeError as exc:
+                raise AdapterFailure(f"response is not {codec} text (byte {exc.start})") from None
+        return {"url": url, "status": status, "content_type": ctype, "bytes": len(data), "truncated": False,
+                "sha256": hashlib.sha256(data).hexdigest(), "text": text}
 
     def verify(self, params, observed):
-        return observed.get("status") == 200
+        if observed.get("status") != 200:
+            return False
+        text = observed.get("text")
+        if text is None:
+            return True
+        raw = text.encode("utf-8")
+        return len(raw) == observed.get("bytes") and hashlib.sha256(raw).hexdigest() == observed.get("sha256")
 
     def reconcile(self, intent):
         return "APPLIED"
