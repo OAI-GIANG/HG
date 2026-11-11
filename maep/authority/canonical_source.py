@@ -19,6 +19,7 @@ import json
 import os
 import re
 import threading
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -30,25 +31,61 @@ from maep.authority.trust_anchor import (
 
 API_ROOT = "https://api.github.com"
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$")
-HTTP_TIMEOUT_S = 10
+HTTP_TIMEOUT_S = 10      # per socket operation
+HTTP_DEADLINE_S = 30     # whole response; a slow drip under the socket timeout still ends
+HTTP_MAX_BODY = 16 << 20  # a commit or contents response; larger is refused, not read to EOF
+_READ_CHUNK = 65536
 
 
 def _utc_now():
     return datetime.now(timezone.utc)
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """The repository, ref and path are constants: a 3xx names another source, so it is
+    returned as a status (and denied) rather than followed -- the target never sees the
+    request or the token."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def _read_bounded(response):
+    declared = response.headers.get("Content-Length")
+    if declared is not None and declared.strip().isdigit() and int(declared) > HTTP_MAX_BODY:
+        raise TrustAnchorError(f"response too large (Content-Length {declared} > {HTTP_MAX_BODY})")
+    deadline = time.monotonic() + HTTP_DEADLINE_S
+    chunks, total = [], 0
+    while True:
+        if time.monotonic() > deadline:
+            raise TrustAnchorError(f"response not complete within the {HTTP_DEADLINE_S}s deadline")
+        chunk = response.read1(_READ_CHUNK)
+        if not chunk:
+            return b"".join(chunks)
+        total += len(chunk)
+        if total > HTTP_MAX_BODY:
+            raise TrustAnchorError(f"response too large (> {HTTP_MAX_BODY} bytes)")
+        chunks.append(chunk)
+
+
 def urllib_get(url):
-    """GET a GitHub API URL; returns (status, text). Honours HTTPS_PROXY. Never logs the token."""
+    """GET a GitHub API URL; returns (status, text). Honours HTTPS_PROXY. Never logs the token.
+
+    Bounded: at most HTTP_MAX_BODY bytes and HTTP_DEADLINE_S seconds per response; redirects
+    are not followed (a 3xx is returned as its status, which callers deny).
+    """
     request = urllib.request.Request(url, headers={
         "Accept": "application/vnd.github+json", "User-Agent": "HG-RT06-trust-anchor",
         "X-GitHub-Api-Version": "2022-11-28"})
     token = os.environ.get("GITHUB_TOKEN")
     if token:
         request.add_header("Authorization", f"Bearer {token}")
+    opener = urllib.request.build_opener(_NoRedirect)
     try:
-        with urllib.request.urlopen(request, timeout=HTTP_TIMEOUT_S) as response:
-            return response.status, response.read().decode("utf-8")
+        with opener.open(request, timeout=HTTP_TIMEOUT_S) as response:
+            return response.status, _read_bounded(response).decode("utf-8")
     except urllib.error.HTTPError as exc:
+        exc.close()
         return exc.code, ""
 
 
