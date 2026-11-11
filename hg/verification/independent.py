@@ -9,8 +9,10 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import selectors
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 
@@ -63,37 +65,40 @@ class IndependentVerifier:
                     "reason": "verification worker changed after it was pinned", "worker_sha256": self.worker_sha256}
         request = {"operation": operation, "root": str(root), "path": relative_path}
         env = {"PATH": os.environ.get("PATH", ""), "PYTHONIOENCODING": "utf-8", "LANG": "C"}
+        payload = json.dumps(request, separators=(",", ":")).encode("utf-8")
         try:
-            completed = subprocess.run(
-                [self.python, "-I", "-B", "-c", self._worker_source],
-                input=json.dumps(request, separators=(",", ":")),
-                text=True, encoding="utf-8", errors="replace",
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                cwd=str(root), env=env, timeout=self.timeout_s, check=False,
-            )
-        except subprocess.TimeoutExpired:
-            return {"check": operation.upper(), "status": "INCONCLUSIVE", "candidate_ref": candidate_ref,
-                    "reason": "verification worker timed out", "worker_sha256": self.worker_sha256}
+            outcome, stdout, stderr, returncode = _run_bounded(
+                [self.python, "-I", "-B", "-c", self._worker_source], payload, cwd=str(root), env=env,
+                timeout_s=self.timeout_s, limit=self.max_output_bytes)
         except OSError as exc:
             return {"check": operation.upper(), "status": "INCONCLUSIVE", "candidate_ref": candidate_ref,
                     "reason": f"verification worker unavailable: {type(exc).__name__}",
                     "worker_sha256": self.worker_sha256}
-        stdout = completed.stdout or ""
-        if len(stdout.encode("utf-8", errors="replace")) > self.max_output_bytes:
+        if outcome == "TIMEOUT":
+            return {"check": operation.upper(), "status": "INCONCLUSIVE", "candidate_ref": candidate_ref,
+                    "reason": "verification worker timed out", "worker_sha256": self.worker_sha256}
+        if outcome == "OVERFLOW":
             return {"check": operation.upper(), "status": "FAIL", "candidate_ref": candidate_ref,
                     "reason": "verification worker output exceeded limit", "worker_sha256": self.worker_sha256}
         try:
-            result = json.loads(stdout)
-        except (TypeError, ValueError):
-            stderr = (completed.stderr or "")[:240]
+            result = _read_answer(stdout)
+        except ValueError as exc:
             return {"check": operation.upper(), "status": "INCONCLUSIVE", "candidate_ref": candidate_ref,
-                    "reason": "verification worker returned invalid output " + stderr,
-                    "worker_exit": completed.returncode, "worker_sha256": self.worker_sha256}
-        if not isinstance(result, dict) or result.get("status") not in {"PASS", "FAIL", "BLOCKED"}:
+                    "reason": f"verification worker returned invalid output: {exc} "
+                              + stderr[:240].decode("utf-8", errors="replace"),
+                    "worker_exit": returncode, "worker_sha256": self.worker_sha256}
+        if not isinstance(result.get("status"), str) or result["status"] not in {"PASS", "FAIL", "BLOCKED"}:
             return {"check": operation.upper(), "status": "INCONCLUSIVE", "candidate_ref": candidate_ref,
                     "reason": "verification worker response schema is invalid",
-                    "worker_exit": completed.returncode, "worker_sha256": self.worker_sha256}
-        if result.get("status") == "PASS" and completed.returncode != 0:
+                    "worker_exit": returncode, "worker_sha256": self.worker_sha256}
+        if result["status"] == "PASS":
+            # A PASS attests this operation on one exact candidate: the right check name,
+            # its digest and its size. Anything less is not evidence about this candidate.
+            problem = _pass_problem(result, operation.upper())
+            if problem:
+                result["status"] = "INCONCLUSIVE"
+                result["reason"] = problem
+        if result.get("status") == "PASS" and returncode != 0:
             result["status"] = "INCONCLUSIVE"
             result["reason"] = "worker reported PASS with a non-zero exit code"
         if expected_sha256 is not None:
@@ -105,7 +110,7 @@ class IndependentVerifier:
             "candidate_ref": candidate_ref,
             "worker_sha256": self.worker_sha256,
             "verification_boundary": "separate-process-same-uid-not-an-os-sandbox",
-            "worker_exit": completed.returncode,
+            "worker_exit": returncode,
         })
         return result
 
@@ -118,6 +123,104 @@ class IndependentVerifier:
         # does not detect altered row content or appended bytes.
         return self._run("sqlite_integrity", root, relative_path, candidate_ref=candidate_ref,
                          expected_sha256=expected_sha256)
+
+
+_SHA256_HEX = frozenset("0123456789abcdef")
+
+
+def _unique_object(pairs):
+    obj = {}
+    for key, value in pairs:
+        if key in obj:
+            raise ValueError(f"repeated key {key!r}")
+        obj[key] = value
+    return obj
+
+
+def _no_constant(token):
+    raise ValueError(f"non-standard number {token}")
+
+
+def _read_answer(raw):
+    """One reading of the worker's stdout: strict UTF-8, one JSON object, no repeated key, no NaN."""
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError("output is not UTF-8") from exc
+    try:
+        result = json.loads(text, object_pairs_hook=_unique_object, parse_constant=_no_constant)
+    except json.JSONDecodeError as exc:
+        raise ValueError("output is not one JSON document") from exc
+    if not isinstance(result, dict):
+        raise ValueError("output is not a JSON object")
+    return result
+
+
+def _pass_problem(result, check):
+    if result.get("check") != check:
+        return "worker PASS names another check"
+    digest = result.get("sha256")
+    if not isinstance(digest, str) or len(digest) != 64 or not set(digest) <= _SHA256_HEX:
+        return "worker PASS lacks the candidate SHA-256"
+    size = result.get("bytes")
+    if isinstance(size, bool) or not isinstance(size, int) or size < 0:
+        return "worker PASS lacks the candidate size"
+    return None
+
+
+def _run_bounded(argv, payload, *, cwd, env, timeout_s, limit):
+    """Run argv; return (outcome, stdout, stderr, returncode) with outcome OK, TIMEOUT or OVERFLOW.
+
+    stdout and stderr together are read only up to ``limit`` bytes and only until the deadline;
+    past either the worker is killed, so a flooding or stalled worker costs neither memory nor
+    time beyond the bounds (subprocess.run would buffer everything until the worker exits).
+    """
+    deadline = time.monotonic() + timeout_s
+    proc = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            cwd=cwd, env=env)
+    out, err, total = bytearray(), bytearray(), 0
+    outcome = "OK"
+    try:
+        with selectors.DefaultSelector() as selector:
+            selector.register(proc.stdout, selectors.EVENT_READ, out)
+            selector.register(proc.stderr, selectors.EVENT_READ, err)
+            try:
+                proc.stdin.write(payload)
+                proc.stdin.close()
+            except (BrokenPipeError, OSError):
+                pass
+            while selector.get_map():
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    outcome = "TIMEOUT"
+                    break
+                for key, _ in selector.select(remaining):
+                    chunk = os.read(key.fd, 65536)
+                    if not chunk:
+                        selector.unregister(key.fileobj)
+                        continue
+                    total += len(chunk)
+                    if total > limit:
+                        outcome = "OVERFLOW"
+                        break
+                    key.data.extend(chunk)
+                if outcome != "OK":
+                    break
+        if outcome == "OK":
+            try:
+                proc.wait(max(0.0, deadline - time.monotonic()))
+            except subprocess.TimeoutExpired:
+                outcome = "TIMEOUT"
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        proc.wait()
+        for stream in (proc.stdin, proc.stdout, proc.stderr):
+            try:
+                stream.close()
+            except (OSError, ValueError):
+                pass
+    return outcome, bytes(out), bytes(err), proc.returncode
 
 
 def python_syntax_verifier(root, relative_path, expected_sha256, *, verifier=None):
