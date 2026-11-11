@@ -13,20 +13,37 @@ needed, so the suite runs offline and deterministically).
 import json
 import time
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from maep.authority.canonical_source import CanonicalManifest
 from maep.authority.trust_anchor import fingerprint, load_manifest
 from maep.core import MAEPError, POLICY_VERSION
 from hg.brain.planner import PlanRejected, StructuredGoalPlanner
 from hg.runtime import DEFAULT_PRINCIPAL, build_runtime
+from hg.tools.gateway import read_regular_file
 
 CASES_PATH = Path(__file__).with_name("regression_cases.json")
 REQUIRED = {"case_id", "description", "origin", "mode", "goal", "expect"}
 
 
+def _unique_object(pairs):
+    obj = {}
+    for key, value in pairs:
+        if key in obj:
+            raise ValueError(f"repeated JSON key {key!r}")
+        obj[key] = value
+    return obj
+
+
 def load_cases(path=CASES_PATH):
-    cases = json.loads(Path(path).read_text(encoding="utf-8"))
+    try:
+        # One reading: json.loads keeps the last value of a repeated key, so a case could
+        # expect one outcome to a reviewer and another to the gate.
+        cases = json.loads(Path(path).read_bytes().decode("utf-8"), object_pairs_hook=_unique_object)
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise MAEPError(f"regression case file is not one unambiguous JSON document: {exc}") from exc
+    if not isinstance(cases, list) or not all(isinstance(case, dict) for case in cases):
+        raise MAEPError("regression case file must be a JSON list of objects")
     ids = set()
     for case in cases:
         missing = REQUIRED - set(case)
@@ -59,15 +76,37 @@ def _grants(steps, task_id, now):
              "expires_at": (now + timedelta(minutes=30)).isoformat()} for s in steps]
 
 
+def read_back(root, rel, expected):
+    """(matches, detail): does root/rel hold exactly the UTF-8 bytes of `expected`?
+
+    Harness verifiers (bench, selfcheck, regression cases) decide false_closures, so they read
+    like the production AC-READBACK verifier: exact bytes (text mode would turn CRLF/CR into
+    LF), no symlink in any component, a FIFO refused without blocking, bounded to the length.
+    """
+    want = expected.encode("utf-8")
+    parts = PurePosixPath(rel).parts
+    cursor = Path(root)
+    for part in parts[:-1]:
+        cursor = cursor / part
+        if cursor.is_symlink():
+            return False, f"{rel}: symlink in path"
+    try:
+        actual = read_regular_file(Path(root, *parts), max_bytes=len(want))
+    except OSError as exc:
+        return False, f"{rel}: missing or not a regular file ({type(exc).__name__})"
+    if actual is None:
+        return False, f"{rel}: longer than expected"
+    return actual == want, f"{rel} = {actual!r}"
+
+
 def _verifier(spec, root):
     if not spec:
         return {}
 
     def case_verifier(snapshot):
         if "file" in spec:
-            path = root / spec["file"]
-            actual = path.read_text(encoding="utf-8") if path.is_file() else None
-            return actual == spec["equals"], f"file {spec['file']} = {actual!r}"
+            matches, detail = read_back(root, spec["file"], spec["equals"])
+            return matches, f"file {detail}"
         step, field = spec["outcome"]
         observed = next((o["observed"] for o in snapshot["outcomes"] if o["step_id"] == step), {})
         return observed.get(field) == spec["equals"], f"{step}.{field} = {observed.get(field)!r}"

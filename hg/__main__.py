@@ -38,6 +38,7 @@ from maep.task_store import TaskStore
 from hg.runtime import DEFAULT_PRINCIPAL, build_runtime
 from hg.tools.gateway import pending_from_events
 from hg.verification.evidence import EventLog
+from hg.verification.regressions import read_back
 
 
 def _task(task_id, path):
@@ -74,9 +75,8 @@ def selfcheck(workdir):
 
     def readback(root, path):
         def file_content_matches(_snapshot):
-            target = root / path
-            actual = target.read_text(encoding="utf-8") if target.is_file() else None
-            return actual == content[path], f"read back {actual!r}"
+            matches, detail = read_back(root, path, content[path])
+            return matches, f"read back {detail}"
         return file_content_matches
 
     def scenario(name, subdir, grants, mode, task_id, path, expected_state, expect_file):
