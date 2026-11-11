@@ -17,6 +17,7 @@ from pathlib import Path, PurePosixPath
 from maep.core import MAEPError
 from maep.sqlite_nofollow import connect_nofollow
 from maep.admission import require_writer_session
+from hg.json_depth import MAX_JSON_DEPTH, json_depth_exceeds
 from hg.tools.gateway import read_regular_file
 
 
@@ -120,6 +121,11 @@ def _unique_object(pairs):
 
 
 def strict_json(data: bytes):
+    if json_depth_exceeds(data):
+        # json.loads recurses in C per level; on a worker thread with a small stack
+        # (Termux) a deep body is a SIGSEGV that takes `hg serve` down. Refuse it unread.
+        raise HTTPBoundaryError(400, "invalid_json",
+                                f"request body nests deeper than {MAX_JSON_DEPTH} levels")
     try:
         value = json.loads(data.decode("utf-8"), object_pairs_hook=_unique_object,
                            parse_constant=lambda _x: (_ for _ in ()).throw(ValueError("invalid JSON constant")))

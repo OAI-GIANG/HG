@@ -41,6 +41,8 @@ import urllib.request
 
 from maep.core import MAEPError
 
+from hg.json_depth import MAX_JSON_DEPTH, json_depth_exceeds
+
 ERROR_KINDS = {"UNAVAILABLE", "TIMEOUT", "REFUSED", "INVALID_REQUEST", "INVALID_RESPONSE", "NOT_CONFIGURED"}
 RETRYABLE = {"UNAVAILABLE", "TIMEOUT", "INVALID_RESPONSE"}
 
@@ -88,8 +90,19 @@ def _reject_duplicate_keys(pairs):
     return obj
 
 
+def _refuse_deep(text):
+    if json_depth_exceeds(text):
+        raise ValueError(f"JSON nests deeper than {MAX_JSON_DEPTH} levels")
+
+
 def parse_json(text):
-    """json.loads that refuses repeated keys (raises ValueError): one body, one reading."""
+    """json.loads that refuses repeated keys (raises ValueError): one body, one reading.
+
+    Nesting deeper than MAX_JSON_DEPTH is a ValueError before json.loads runs: the C
+    parser recurses per level and a model reply parsed on a worker thread must not be
+    able to overflow its stack (SIGSEGV on Termux).
+    """
+    _refuse_deep(text)
     return json.loads(text, object_pairs_hook=_reject_duplicate_keys)
 
 
@@ -104,6 +117,7 @@ def parse_model_json(text):
     surrogate escape such as \\ud800, which UTF-8 cannot encode and the ledger cannot
     record) are refused, so every reader of the answer sees the same plan.
     """
+    _refuse_deep(text)
     data = json.loads(text, object_pairs_hook=_reject_duplicate_keys, parse_constant=_reject_constant)
     try:
         json.dumps(data, ensure_ascii=False).encode("utf-8")
