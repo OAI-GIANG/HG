@@ -251,10 +251,16 @@ class _RootedFileAdapter(ToolAdapter):
 
 
 class LocalFileWriteAdapter(_RootedFileAdapter):
-    """fs.write 1.1: the planned effect and nothing else, durable before it is reported.
+    """fs.write 1.2: the planned effect and nothing else, durable before it is reported.
 
     - A path that is a directory, or has a parent that is not a directory, is checked
       before any effect and is a known failure (AdapterFailure), not UNKNOWN.
+    - An OSError before the rename (creating a parent directory, creating or writing the
+      temporary file, permission denied, no space) or a rename that did not happen (the
+      temporary file is still there) is a known failure once the attempt's temporary file
+      and the empty directories it created are removed. If they cannot be removed, or
+      the temporary name is gone after a failed rename, or the error comes after the
+      rename, the outcome stays UNKNOWN until reconcile() inspects the file.
     - Replacing an existing regular file keeps its permission bits; a new file is 0600.
     - The data and then the parent directory (and the parent of every directory created
       for the path) are fsynced before success is returned, so a recorded SUCCEEDED
@@ -262,7 +268,7 @@ class LocalFileWriteAdapter(_RootedFileAdapter):
       accepted as is.
     """
     name = "fs.write"
-    version = "1.1"
+    version = "1.2"
     action = "WRITE"
     idempotent = True        # atomic replace with the same content gives the same state
     risk = "MEDIUM"
@@ -279,6 +285,11 @@ class LocalFileWriteAdapter(_RootedFileAdapter):
             raise AdapterFailure("path is a directory")
         missing, current = [], self._root
         try:
+            # The adapter root itself may not exist yet (a fresh state directory).
+            absent = current
+            while not os.path.lexists(absent) and absent != absent.parent:
+                missing.insert(0, absent)
+                absent = absent.parent
             for part in full.relative_to(self._root).parts[:-1]:
                 current = current / part
                 if missing:
@@ -307,23 +318,52 @@ class LocalFileWriteAdapter(_RootedFileAdapter):
         rel, full = self._rel(params["path"])
         data = params["content"].encode("utf-8")
         missing, mode = self._inspect(full)
-        full.parent.mkdir(parents=True, exist_ok=True)
-        fd, tmp = tempfile.mkstemp(dir=str(full.parent), prefix=".hg-tmp-")
+        created, tmp = [], None       # what this attempt made before the rename
         try:
+            for directory in missing:
+                os.mkdir(directory)
+                created.append(directory)
+            fd, tmp = tempfile.mkstemp(dir=str(full.parent), prefix=".hg-tmp-")
             with os.fdopen(fd, "wb") as stream:
                 if mode is not None:
                     os.fchmod(stream.fileno(), mode)
                 stream.write(data)
                 stream.flush()
                 os.fsync(stream.fileno())
-            os.replace(tmp, full)
+        except OSError as exc:
+            self._undo(tmp, created, exc)
         except BaseException:
-            if os.path.exists(tmp):
-                os.unlink(tmp)
+            self._undo(tmp, created, None)
             raise
-        for directory in [full.parent] + [d.parent for d in reversed(missing)]:
+        try:
+            os.replace(tmp, full)
+        except OSError as exc:
+            if not os.path.lexists(tmp):
+                raise           # the temporary name is gone: the rename may have happened
+            self._undo(tmp, created, exc)
+        for directory in [full.parent] + [d.parent for d in reversed(created)]:
             _fsync_directory(directory)
         return {"path": rel, "sha256": _sha256(data), "bytes": len(data)}
+
+    @staticmethod
+    def _undo(tmp, created, exc):
+        """Remove this attempt's temporary file and the (empty) directories it created.
+
+        If everything is removed, the attempt had no effect: raise AdapterFailure (FAILED).
+        If anything cannot be removed, re-raise the original error (UNKNOWN, reconciled
+        later). With exc None (not an OSError) only clean up; the caller re-raises.
+        """
+        try:
+            if tmp is not None and os.path.lexists(tmp):
+                os.unlink(tmp)
+            for directory in reversed(created):
+                os.rmdir(directory)
+        except OSError:
+            if exc is None:
+                return
+            raise exc
+        if exc is not None:
+            raise AdapterFailure(f"nothing written: {exc.strerror or exc}") from None
 
     def verify(self, params, observed):
         _rel, full = self._rel(params["path"])
