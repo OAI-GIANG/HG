@@ -7,6 +7,9 @@ URL read is authorized, permitted and recorded.
 - code.search  READ    literal text search under a path (bounded output)
 - code.symbols READ    Python definitions and call names via `ast` (no execution)
 - code.diff    READ    unified diff of a file against provided text
+               These three count lines as Python does (LF, CRLF, CR), list every file
+               a walk did not read in `files_skipped` with a reason, and fail on a single
+               start file they cannot read; `identical` means the exact same text.
 - test.run     EXECUTE `python -m unittest discover` on a path, with a timeout. It runs
                code, so it is not idempotent and its outcome cannot be reconciled after
                a crash: an interrupted run stays UNKNOWN until a person decides. Output
@@ -38,6 +41,7 @@ from hg.tools.gateway import AdapterFailure, AdapterInputError, ToolAdapter, _Ro
 SKIP_DIRS = {".git", "__pycache__", ".venv", "node_modules"}
 MAX_FILE_BYTES = 1_000_000
 MAX_MATCHES = 200
+MAX_DIFF_LINES = 2000
 
 
 def _iter_text_files(full):
@@ -58,17 +62,62 @@ def _iter_text_files(full):
             yield type(full)(dirpath) / name
 
 
-def _read_text(path):
-    """UTF-8 text of a regular, non-symlinked file of at most MAX_FILE_BYTES, else None.
+def _read_file(path):
+    """(text, None) for a regular, non-symlinked UTF-8 file of at most MAX_FILE_BYTES,
+    else (None, reason).
 
     Never follows a symlinked file (it may point outside the root or the authorized scope)
-    and never blocks on a FIFO or device.
+    and never blocks on a FIFO or device. The reason names no content and no link target.
     """
     try:
         data = read_regular_file(path, MAX_FILE_BYTES)
-        return None if data is None else data.decode("utf-8")
-    except (OSError, UnicodeDecodeError):
-        return None
+    except OSError:
+        return None, "not a regular file"
+    if data is None:
+        return None, f"over {MAX_FILE_BYTES} bytes"
+    try:
+        return data.decode("utf-8"), None
+    except UnicodeDecodeError as exc:
+        return None, f"not UTF-8 text (byte {exc.start})"
+
+
+def _read_text(path):
+    return _read_file(path)[0]
+
+
+_LINE_BREAK = re.compile(r"\r\n|\r|\n")
+_LINE_KEEPENDS = re.compile(r"[^\r\n]*(?:\r\n|\r|\n)|[^\r\n]+\Z")
+
+
+def _lines(text):
+    """Lines as Python's tokenizer, editors and `grep -n` count them: only LF, CRLF and CR
+    end a line (str.splitlines also splits on VT, FF, FS/GS/RS, NEL, U+2028/U+2029)."""
+    parts = _LINE_BREAK.split(text)
+    if parts and parts[-1] == "":
+        parts.pop()
+    return parts
+
+
+def _scan(adapter, full, suffix=None):
+    """Yield (relative name, text) of each readable candidate file; record the others.
+
+    A single start file that cannot be read is a known failure, not an empty result."""
+    skipped = []
+    single = stat.S_ISREG(os.lstat(full).st_mode) if os.path.lexists(full) else False
+
+    def files():
+        for file in _iter_text_files(full):
+            if suffix is not None and file.suffix != suffix:
+                continue
+            name = file.relative_to(adapter._root).as_posix()
+            text, reason = _read_file(file)
+            if text is None:
+                if single:
+                    raise AdapterFailure(f"{name}: {reason}")
+                skipped.append({"file": name, "reason": reason})
+                continue
+            yield name, text
+    return files(), skipped
 
 
 class _ReadOnlyRooted(_RootedFileAdapter):
@@ -89,7 +138,7 @@ class _ReadOnlyRooted(_RootedFileAdapter):
 
 class CodeSearchAdapter(_ReadOnlyRooted):
     name = "code.search"
-    version = "1.0"
+    version = "1.1"
     description = "Literal text search in UTF-8 files under a path (skips VCS/cache dirs)."
     params_schema = {"path": str, "pattern": str}
 
@@ -97,33 +146,32 @@ class CodeSearchAdapter(_ReadOnlyRooted):
         super().validate_params(params)
         if not params["pattern"]:
             raise AdapterInputError("pattern must be non-empty")
+        if "\r" in params["pattern"] or "\n" in params["pattern"]:
+            raise AdapterInputError("pattern must not contain a line break (it is matched within one line)")
 
     def _perform(self, params):
         rel, full = self._rel(params["path"])
         if not full.exists():
             raise AdapterFailure("path does not exist")
         matches, scanned, truncated = [], 0, False
-        for file in _iter_text_files(full):
-            text = _read_text(file)
-            if text is None:
-                continue
+        files, skipped = _scan(self, full)
+        for name, text in files:
             scanned += 1
-            for number, line in enumerate(text.splitlines(), 1):
+            for number, line in enumerate(_lines(text), 1):
                 if params["pattern"] in line:
                     if len(matches) >= MAX_MATCHES:
                         truncated = True
                         break
-                    matches.append({"file": file.relative_to(self._root).as_posix(), "line": number,
-                                    "text": line.strip()[:300]})
+                    matches.append({"file": name, "line": number, "text": line.strip()[:300]})
             if truncated:
                 break
         return {"path": rel, "pattern": params["pattern"], "files_scanned": scanned, "match_count": len(matches),
-                "truncated": truncated, "matches": matches}
+                "truncated": truncated, "matches": matches, "files_skipped": skipped}
 
 
 class SymbolIndexAdapter(_ReadOnlyRooted):
     name = "code.symbols"
-    version = "1.0"
+    version = "1.1"
     description = "Index Python classes/functions (with qualified names and lines) and called names, via ast."
     params_schema = {"path": str}
 
@@ -132,30 +180,30 @@ class SymbolIndexAdapter(_ReadOnlyRooted):
         if not full.exists():
             raise AdapterFailure("path does not exist")
         symbols, calls, errors = [], {}, []
-        for file in _iter_text_files(full):
-            if file.suffix != ".py":
-                continue
-            text = _read_text(file)
-            if text is None:
-                continue
-            name = file.relative_to(self._root).as_posix()
+        files, skipped = _scan(self, full, suffix=".py")
+        for name, text in files:
             try:
                 tree = ast.parse(text, filename=name)
             except SyntaxError as exc:
                 errors.append({"file": name, "line": exc.lineno, "error": exc.msg})
                 continue
-
-            def visit(node, prefix):
-                for child in ast.iter_child_nodes(node):
-                    if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                        qual = f"{prefix}{child.name}"
-                        kind = "class" if isinstance(child, ast.ClassDef) else "function"
-                        symbols.append({"file": name, "name": child.name, "qualname": qual, "kind": kind,
-                                        "line": child.lineno})
-                        visit(child, qual + ".")
-                    else:
-                        visit(child, prefix)
-            visit(tree, "")
+            except (ValueError, RecursionError, MemoryError):
+                # CPython reports a too-deep parse as RecursionError or MemoryError; the
+                # file is bounded (MAX_FILE_BYTES), so this is the file, not the process.
+                errors.append({"file": name, "line": None, "error": "too deeply nested to parse"})
+                continue
+            # Pre-order walk without recursion: a file that parses can still be deeper than
+            # Python's own recursion limit.
+            stack = [(child, "") for child in reversed(list(ast.iter_child_nodes(tree)))]
+            while stack:
+                node, prefix = stack.pop()
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                    qual = f"{prefix}{node.name}"
+                    kind = "class" if isinstance(node, ast.ClassDef) else "function"
+                    symbols.append({"file": name, "name": node.name, "qualname": qual, "kind": kind,
+                                    "line": node.lineno})
+                    prefix = qual + "."
+                stack.extend((child, prefix) for child in reversed(list(ast.iter_child_nodes(node))))
             for node in ast.walk(tree):
                 if isinstance(node, ast.Call):
                     func = node.func
@@ -163,12 +211,13 @@ class SymbolIndexAdapter(_ReadOnlyRooted):
                     if called:
                         calls[called] = calls.get(called, 0) + 1
         return {"path": rel, "symbol_count": len(symbols), "symbols": symbols,
-                "top_calls": sorted(calls.items(), key=lambda kv: (-kv[1], kv[0]))[:50], "syntax_errors": errors}
+                "top_calls": sorted(calls.items(), key=lambda kv: (-kv[1], kv[0]))[:50], "syntax_errors": errors,
+                "files_skipped": skipped}
 
 
 class CodeDiffAdapter(_ReadOnlyRooted):
     name = "code.diff"
-    version = "1.0"
+    version = "1.1"
     description = "Unified diff of a file under the root against provided text (the file is only read)."
     params_schema = {"path": str, "against": str}
 
@@ -177,11 +226,19 @@ class CodeDiffAdapter(_ReadOnlyRooted):
         current = _read_text(full) if full.is_file() else None
         if current is None:
             raise AdapterFailure("path is not a readable UTF-8 file")
-        diff = list(difflib.unified_diff(params["against"].splitlines(), current.splitlines(),
+        against = params["against"]
+        # Lines keep their terminators, so a missing final newline or other line endings
+        # show as changed lines; `identical` is exact text equality, never "same lines".
+        diff = list(difflib.unified_diff(_LINE_KEEPENDS.findall(against), _LINE_KEEPENDS.findall(current),
                                          fromfile="against", tofile=rel, lineterm=""))
-        added = sum(1 for d in diff if d.startswith("+") and not d.startswith("+++"))
-        removed = sum(1 for d in diff if d.startswith("-") and not d.startswith("---"))
-        return {"path": rel, "identical": not diff, "added": added, "removed": removed, "diff": diff[:2000]}
+        body = diff[2:]
+        added = sum(1 for d in body if d.startswith("+"))
+        removed = sum(1 for d in body if d.startswith("-"))
+        return {"path": rel, "identical": current == against, "added": added, "removed": removed,
+                "diff": diff[:MAX_DIFF_LINES], "truncated": len(diff) > MAX_DIFF_LINES}
+
+    def verify(self, params, observed):
+        return observed["identical"] == (observed["added"] == observed["removed"] == 0)
 
 
 _RAN = re.compile(r"^Ran (\d+) tests? in [^\n]*\n", re.M)
