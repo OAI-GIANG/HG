@@ -82,30 +82,27 @@ def _home():
     return ensure_home(default_home())
 
 
-def _text_arg(words, stdin):
-    origin = getattr(stdin, "origin", None) or ("tty" if stdin.isatty() else "pipe")
-    if words:
-        return " ".join(words), origin
-    if stdin.isatty():
-        return None, origin
-    return stdin.read(), origin
+def _origin(stdin):
+    return getattr(stdin, "origin", None) or ("tty" if stdin.isatty() else "pipe")
 
 
 class InputError(ValueError):
     """Text a command cannot read as written."""
 
 
-def _check_input(words, stdin, out):
-    """Text for `hg check`, under the rules `hg summarize` applies to its input (UTF-8, no NUL, 1 MB).
+def _read_text(words, stdin, out, prompt):
+    """Owner text for `hg check`, `hg ask` and `hg note add`, from argv or stdin, under the rules
+    `hg summarize` applies to its input (UTF-8, no NUL, 1 MB, not blank).
 
-    Bytes are decoded strictly: a message in another encoding is refused, never compared mangled.
+    Bytes are decoded strictly: text in another encoding is refused (exit 2), never answered,
+    stored or compared mangled, and never reported later as a damaged ledger.
     """
     from hg.assistant import summarize as sm
     if words:
         text = " ".join(words)
     else:
         if stdin.isatty():
-            out("Dán văn bản cần đối chiếu (Ctrl-D để xong):")
+            out(prompt)
         buffer = getattr(stdin, "buffer", None)
         if buffer is not None:
             try:
@@ -187,11 +184,12 @@ def _dispatch(args, stdin, out):
         nb = Notebook(_home())
         sub = args.note_command
         if sub == "add":
-            text, origin = _text_arg(args.text, stdin)
-            if text is None:
-                out("Nhập nội dung ghi chú (Ctrl-D để lưu):")
-                text = stdin.read()
-            record, created = nb.add(text, subject=args.subject, replaces=args.replaces, origin=origin)
+            try:
+                text = _read_text(args.text, stdin, out, "Nhập nội dung ghi chú (Ctrl-D để lưu):")
+            except InputError as exc:
+                out(f"Không lưu được ghi chú: {exc}")
+                return EXIT_INPUT
+            record, created = nb.add(text, subject=args.subject, replaces=args.replaces, origin=_origin(stdin))
             if args.json:
                 _print_json({"created": created, "note": record}, out)
             else:
@@ -240,7 +238,7 @@ def _dispatch(args, stdin, out):
     if command == "check":
         from hg.assistant.check import LABELS_VI, check
         try:
-            text = _check_input(args.text, stdin, out)
+            text = _read_text(args.text, stdin, out, "Dán văn bản cần đối chiếu (Ctrl-D để xong):")
         except InputError as exc:
             out(f"Không đối chiếu được: {exc}")
             return EXIT_INPUT
@@ -266,11 +264,12 @@ def _dispatch(args, stdin, out):
     if command == "ask":
         from hg.assistant.ask import ask
         home = _home()
-        question, _origin = _text_arg(args.question, stdin)
-        if question is None:
-            out("Nhập câu hỏi (Ctrl-D để gửi):")
-            question = stdin.read()
-        if not question.strip():
+        try:
+            question = _read_text(args.question, stdin, out, "Nhập câu hỏi (Ctrl-D để gửi):")
+        except InputError as exc:
+            out(f"Không đọc được câu hỏi: {exc}")
+            return EXIT_INPUT
+        if not safe(question).strip():          # only control characters: nothing left to ask
             out("Câu hỏi trống.")
             return EXIT_INPUT
         return _ask(home, question, args, out)

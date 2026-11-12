@@ -76,7 +76,7 @@ termux-clipboard-get | hg summarize -      # tóm tắt nội dung vừa sao ch�
 
 `summarize` chỉ nhận file văn bản UTF-8 tối đa 1 MB. PDF chưa hỗ trợ trong v1.
 
-`check` đọc văn bản theo cùng quy tắc (UTF-8, không có byte NUL, tối đa 1 MB); văn bản trống hoặc không đọc được → mã 2, không có câu nào đủ nội dung để đối chiếu → mã 5 (không bao giờ báo 0 khi chưa đối chiếu gì).
+`check`, `ask` và `note add` đọc văn bản (từ dòng lệnh hoặc stdin) theo cùng quy tắc (UTF-8, không có byte NUL, tối đa 1 MB); văn bản trống hoặc không đọc được → mã 2, không ghi gì vào sổ cái. Với `check`: văn bản trống hoặc không đọc được → mã 2, không có câu nào đủ nội dung để đối chiếu → mã 5 (không bao giờ báo 0 khi chưa đối chiếu gì).
 
 ## 5. Model trên máy
 
