@@ -18,6 +18,14 @@ This file guides agent sessions. It is **not** an enforcement mechanism: nothing
 - Governance source of truth: `maep/spec/MAEP_CONSTITUTION_V1.md` (MAEP-001..028) and `maep/spec/STATE_TRANSITION_TABLE_V1.md`. If this file conflicts with them, the spec wins and the conflict is reported, not silently resolved.
 - No mandatory independent review — owner decision OD-IR-20261109 (`docs/governance/OWNER_DECISION_OD-IR-20261109.md`): `INDEPENDENT_REVIEW_REQUIRED = false` for every task, gate and lifecycle stage. No task needs a second person, a second GitHub account, another organisation, Gemini or any other AI/agent to proceed, be accepted, close, merge, release or deploy, and its absence is never a HOLD, BLOCK or delay reason. Do not recreate it under another name. The owner or the owner's delegate decides; outside reviews are advisory, and a real defect they find fails the technical gate it belongs to. Unchanged: tests, CI, security, integrity, rollback, owner authority over policy (MAEP-017), and MAEP-021 (never *call* self-review independent). This decision supersedes every older task prompt, schedule, checklist, PR description, legacy instruction and gate text in HG that requested or implied mandatory independent review; treat such historical wording as superseded, never as an active condition. Technical verification and security checks remain required where their own acceptance criteria say so, but they do not create a separate reviewer requirement.
 
+## Stabilization mode (owner directive 2026-11-13, in force until the owner accepts GO-LIVE)
+
+- HG is in AUDIT → RECONCILE → INTEGRATE → VERIFY → ACCEPT, not feature expansion. Allowed: fixes for security, data loss, wrong state, integration failures and real blockers. Deferred: nonessential features, new architecture, experiments without acceptance criteria, optimisations that close no blocker (P3/P4).
+- A new PR needs an admission record in its description: finding/blocker, workstream, root cause, why no existing PR fits, files/interfaces, dependencies, tests and acceptance, production impact. Never open duplicate PRs or split changes without a technical reason.
+- The ledger line for a fix goes in the same PR. Do not open separate "ledger addendum" PRs.
+- Never delete, reset, clean, overwrite or move dirty worktrees or `recovery/*` branches. Never auto-merge divergent branches. Never change production before production acceptance.
+- Report with VERIFIED / PARTIALLY VERIFIED / UNVERIFIED / BLOCKED / NOT EXECUTED / NOT APPLICABLE. Completion is never claimed from the number of merged PRs. Record: ledger `docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md` §53.
+
 ## Before changing anything
 
 1. Verify the remote URL, branch, HEAD and working tree (`git remote -v`, `git rev-parse HEAD`, `git status`). Do not infer repository identity from a directory or branch name.
