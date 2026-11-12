@@ -22,8 +22,12 @@ Invariants
   history() returns every version.
 - Memory never grants authority: HG's authorization path does not read it (tested).
 
-Persistence: append-only JSONL through EventLog; restore() replays it and reports any
-subject left with competing ACTIVE records.
+Persistence: append-only JSONL through EventLog; opening the store replays it and reports
+any subject left with competing ACTIVE records. A ledger event that `remember`/`retract`
+could not have written (reused memory_id, non-ACTIVE or WORKING write, bad supersession or
+version, status other than RETRACTED, retraction of a non-ACTIVE record, unknown MEMORY_*
+kind, malformed record) is refused with MAEPError, never replayed into a state the API never
+produced.
 """
 import copy
 import json
@@ -40,6 +44,9 @@ SOURCES = {"USER", "TOOL", "EVIDENCE", "INFERENCE", "SYSTEM"}
 CLAIM_KINDS = {"FACT", "INFERENCE", "HYPOTHESIS", "PROPOSAL"}
 CONFLICT_LAYERS = {"SEMANTIC", "PROJECT"}
 CONFLICT_KINDS = {"FACT", "DECISION"}
+RECORD_FIELDS = frozenset({"memory_id", "layer", "kind", "subject", "content", "value", "source", "source_ref",
+                           "evidence_refs", "limitations", "task_id", "supersedes", "status", "version",
+                           "created_at"})
 
 
 class MemoryConflict(MAEPError):
@@ -301,11 +308,49 @@ class MemoryStore:
         self._records[payload["memory_id"]]["status"] = payload["status"]
 
     def _replay(self, event):
-        payload = event["payload"]
-        if event["kind"] == "MEMORY_WRITE":
-            self._validate(payload["record"])
-            self._apply_write(payload["record"])
-        elif event["kind"] == "MEMORY_STATUS":
-            if payload.get("memory_id") not in self._records:
-                raise MAEPError("memory ledger references an unknown record")
+        """Apply one ledger event only if `remember`/`retract` could have written it.
+
+        Anything else (a reused memory_id, a status other than RETRACTED, a retraction of a
+        record that is not ACTIVE, a supersession the API refuses, persisted WORKING memory,
+        an unknown MEMORY_* event kind, a malformed record) is refused: replaying it would yield a
+        state the API never produced, e.g. a forgotten note ACTIVE again or a note's text
+        replaced with its earlier version gone (MAEP-015). Competing ACTIVE records on one
+        subject are still loaded and reported by restore_conflicts.
+        """
+        where = f"memory ledger history inconsistent at seq {event.get('seq')}"
+        kind, payload = event.get("kind"), event.get("payload")
+        if kind == "MEMORY_WRITE":
+            record = payload.get("record") if isinstance(payload, dict) else None
+            if not isinstance(record, dict) or not RECORD_FIELDS <= record.keys():
+                raise MAEPError(f"{where}: malformed MEMORY_WRITE")
+            try:
+                self._validate(record)
+            except MAEPError as exc:
+                raise MAEPError(f"{where}: {exc}") from None
+            except (TypeError, ValueError, KeyError, AttributeError):
+                raise MAEPError(f"{where}: malformed memory record") from None
+            memory_id, supersedes, version = record["memory_id"], record["supersedes"], record["version"]
+            if not _nonempty_string(memory_id) or memory_id in self._records:
+                raise MAEPError(f"{where}: memory_id is empty or already used")
+            if record["layer"] == "WORKING" or record["status"] != "ACTIVE":
+                raise MAEPError(f"{where}: a written record is persisted ACTIVE and never WORKING")
+            expected = 1
+            if supersedes is not None:
+                previous = self._records.get(supersedes) if isinstance(supersedes, str) else None
+                if previous is None or previous["status"] != "ACTIVE" or previous["subject"] != record["subject"]:
+                    raise MAEPError(f"{where}: supersedes a record that is unknown, not ACTIVE or on another subject")
+                expected = previous["version"] + 1
+            if type(version) is not int or version != expected:
+                raise MAEPError(f"{where}: record version {version!r}, expected {expected}")
+            self._apply_write(record)
+        elif kind == "MEMORY_STATUS":
+            if not isinstance(payload, dict) or payload.get("status") != "RETRACTED" \
+                    or not _nonempty_string(payload.get("reason")):
+                raise MAEPError(f"{where}: a status event is a RETRACTED with a reason")
+            record = self._records.get(payload.get("memory_id")) if isinstance(payload.get("memory_id"), str) else None
+            if record is None or record["status"] != "ACTIVE":
+                raise MAEPError(f"{where}: retracts a record that is unknown or not ACTIVE")
             self._apply_status(payload)
+        elif isinstance(kind, str) and kind.startswith("MEMORY_"):
+            raise MAEPError(f"{where}: unknown memory event kind {kind!r}")
+        # Other kinds belong to other writers sharing the ledger (notes.jsonl: NOTE_TRUST).
