@@ -1,0 +1,55 @@
+# Source facts gathered 2026-10-31T12:59:24Z (read-only clones in the sandbox; nothing built or executed from them)
+
+## Ollama upstream (https://github.com/ollama/ollama)
+tag v0.40.13 -> commit 04088e7c9d41cba5d33bafbf788d87a465c79d5b (latest tag at time of check; v0.40.12 -> f067033f9126993b6172bdfffa71a74ad693fda4)
+go.mod: go 1.26.10
+--- cmd/cmd.go (RunServer):
+2269:func RunServer(_ *cobra.Command, _ []string) error {
+2270-	if err := initializeKeypair(); err != nil {
+2271-		return err
+2272-	}
+2273-
+2274-	ln, err := net.Listen("tcp", envconfig.Host().Host)
+2275-	if err != nil {
+2276-		return err
+2277-	}
+--- server/routes.go:
+2472:func Serve(ln net.Listener) error {
+--- inherited-listener search (cmd server envconfig, non-test): LISTEN_FDS|LISTEN_PID|FileListener|os.NewFile
+(no matches)
+--- SO_REUSEPORT search (cmd server, non-test):
+(no matches)
+
+## termux-packages (https://github.com/termux/termux-packages) tree ed2ff96a1160c710303c260e08eb62786bfcfda1
+packages/ollama/build.sh sha256 091bf7cabc581682acab2212b9cb4f37238d1f536da762ebfba347d56f67dd74
+5:TERMUX_PKG_VERSION="0.40.13"
+6:TERMUX_PKG_SRCURL=git+https://github.com/ollama/ollama
+7:TERMUX_PKG_DEPENDS="libandroid-spawn, libc++"
+11:TERMUX_PKG_EXCLUDED_ARCHES="arm, i686"
+15:-DGGML_BACKEND_DL=ON
+17:-DGGML_OPENMP=OFF
+91:	go build -trimpath -ldflags="-w -s -X=github.com/ollama/ollama/version.Version=$TERMUX_PKG_VERSION -X=github.com/ollama/ollama/server.mode=release"
+92:	install -Dm700 ollama $TERMUX_PREFIX/bin/
+patches:
+bdc3809603f3b17144b146bab35ff1bdde932ef0991fc276c19bdfcb8b5dde58  0001-do-not-use-flash-attention-when-using-cpu.patch
+c3005747f714e67e0783f92bda665e2a3f0c3a09d187061a7c139a08b3fe34bc  0002-properly-search-libs-on-android.patch
+e321e7ce05b96d7c010311da5b8d4f4960647b446910458e1db6bdf52f82e58f  0003-force-disable-features-on-Android.patch
+ef5bd1066a497993ff7fbffb68d1b1e0f83c861d22bd78b5fbe563ad45f064bb  0004-append-toolchain.patch
+0314bdbb56bd6965898e70afde9bc7aae7b0037864a9199e34b7d8b8658b0dd7  0005-apply-patches.patch
+6a734fd1d656bd2dbf4e55f70bfaeb767fd0b2f027dd96244caac54fb0e033c7  0006-aligned_malloc.patch
+
+## AOSP bionic mirror (https://github.com/aosp-mirror/platform_bionic) commit 731631f300090436d7f5df80d50b6275c8c60a93 (2025-03-26)
+389:# <sys/pidfd.h>
+390:__pidfd_open:pidfd_open(pid_t, unsigned int) all
+391:__pidfd_getfd:pidfd_getfd(int, int, unsigned int) all
+392:pidfd_send_signal(int, int, siginfo_t*, unsigned int) all
+pidfd/ptrace in SECCOMP_BLOCKLIST_*: <sandbox>/bionic/libc/SECCOMP_BLOCKLIST_APP.TXT:0 <sandbox>/bionic/libc/SECCOMP_BLOCKLIST_COMMON.TXT:0 
+
+## SELinux (web, quoted)
+https://os.unplugged.com/werunplugged/unplugged-vendor/raw/branch/main/system/sepolicy/private/untrusted_app_all.te (AOSP 14 based):
+  # gdbserver for ndk-gdb ptrace attaches to app process.
+  allow untrusted_app_all self:process ptrace;
+https://man7.org/linux/man-pages/man2/pidfd_getfd.2.html: PTRACE_MODE_ATTACH_REALCREDS check; flags must be 0; FD_CLOEXEC set; same open file description; Linux 5.6; errors EBADF EINVAL EMFILE ENFILE EPERM ESRCH
+
+## Termux package repositories from the sandbox
+packages.termux.dev, packages-cf.termux.dev, grimler.se InRelease -> HTTP 000 (blocked by sandbox network allowlist)

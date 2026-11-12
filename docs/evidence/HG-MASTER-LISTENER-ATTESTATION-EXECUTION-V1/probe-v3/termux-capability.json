@@ -1,0 +1,20 @@
+{
+  "capability": {
+    "code": "AVAILABLE",
+    "status": "PASS"
+  },
+  "environment": {
+    "android_release": "17",
+    "kernel_release": "6.6.118-android15-8-gc4127a25dcf3-ab15863337-4k",
+    "machine": "aarch64",
+    "os_pidfd_open_exposed": false,
+    "python": "3.14.8",
+    "python_build_api_level": 24,
+    "runtime_android_sdk": "37",
+    "security_patch": "2026-09-01",
+    "selinux": "untrusted_app",
+    "sys_platform": "android"
+  },
+  "raw_output_sha256": "1d129359881b696ecc575daf742f0ea7e7e644a068a723da8709b016b354c373",
+  "scope": "Self-process pidfd_open/pidfd_getfd capability only; actual Ollama target PID not tested."
+}
