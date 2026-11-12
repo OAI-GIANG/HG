@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 
 from maep.core import MAEPError
 from hg.assistant import textvi
-from hg.assistant.home import ensure_home, locked, private_file
+from hg.assistant.home import absent, ensure_home, locked, private_file
 from hg.memory.index import Index
 from hg.memory.store import MemoryStore
 from hg.verification.evidence import EventLog
@@ -137,8 +137,9 @@ class Notebook:
 
     def trusted_ids(self):
         with locked(self.home, exclusive=False, wait_s=self._wait):
-            if not self.path.exists():
+            if absent(self.path):
                 return set()
+            private_file(self.path)
             return {e["payload"]["memory_id"] for e in EventLog(self.path).events("NOTE_TRUST")}
 
     def forget(self, memory_id, *, reason="owner asked to forget"):
@@ -155,7 +156,7 @@ class Notebook:
     def snapshot(self):
         """Every NOTE record (all statuses), oldest first. Missing ledger -> []."""
         with locked(self.home, exclusive=False, wait_s=self._wait):
-            if not self.path.exists():
+            if absent(self.path):
                 return []
             store = self._store()
             records = [r for r in store.all_records() if r["kind"] == "NOTE"]

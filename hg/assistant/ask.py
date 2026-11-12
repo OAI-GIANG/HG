@@ -23,7 +23,7 @@ import unicodedata
 from datetime import datetime, timezone
 
 from hg.assistant import grounding, guard
-from hg.assistant.home import locked, private_file
+from hg.assistant.home import absent, locked, private_file
 from hg.brain.providers import ProviderError
 from hg.verification.evidence import EventLog
 
@@ -164,8 +164,10 @@ def footer(summary, model_name, seconds):
 
 
 def ledger_hash(path):
-    if not path.exists():
+    """sha256 of the notes ledger; None only when nothing is at the path (never a dangling link)."""
+    if absent(path):
         return None
+    private_file(path)
     return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
 
 

@@ -150,6 +150,23 @@ def home_for_path(path):
     return None
 
 
+def absent(path):
+    """True only when nothing at all is at ``path`` (ENOENT); same rule as ``maep.ledger``.
+
+    ``Path.exists()`` follows symlinks and swallows ENOENT/ENOTDIR/ELOOP, so a dangling symlink
+    or a symlink loop in place of a ledger read as a ledger never written (an empty notebook).
+    Anything present at the path is left to ``private_file``, which refuses it unless it is
+    the private regular file the assistant writes.
+    """
+    try:
+        os.lstat(path)
+    except FileNotFoundError:
+        return True
+    except OSError as exc:
+        raise HomeError(f"cannot inspect {Path(path).name} ({type(exc).__name__})") from exc
+    return False
+
+
 def private_file(path):
     """Create (if needed) a 0600 file and refuse anything else: symlink, hard link, other owner, wider mode.
 
