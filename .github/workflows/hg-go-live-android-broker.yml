@@ -108,8 +108,11 @@ jobs:
             SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager 2>/dev/null | sort -V | tail -n 1)"
           fi
           test -x "$SDKMANAGER"
-          "$SDKMANAGER" --channel=3 "build-tools;37.0.0" "platform-tools" \
-            "emulator" "system-images;android-35;google_apis;x86_64"
+          # Stable channel for the emulator stack: on the canary channel (3) sdkmanager resolves
+          # platform-tools to a preview build whose licence is not accepted on the runner, and the
+          # install stops at "Accept? (y/N)" (run 2026-11-13). Only build-tools 37 needs channel 3.
+          "$SDKMANAGER" "platform-tools" "emulator" "system-images;android-35;google_apis;x86_64"
+          "$SDKMANAGER" --channel=3 "build-tools;37.0.0"
           "$SDKMANAGER" --list_installed
           echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
           echo "$ANDROID_HOME/emulator" >> "$GITHUB_PATH"

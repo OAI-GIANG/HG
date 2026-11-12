@@ -37,6 +37,13 @@ class EmulatorRunnerScriptTest(unittest.TestCase):
         self.assertNotIn(value, {"|", ">", "|-", ">-", ""}, "multi-line inline script runs line by line")
         self.assertEqual(value, "bash android/cim-broker/ci/emulator_negative_binder.sh")
 
+    def test_emulator_stack_installs_from_stable_channel(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        for line in text.splitlines():
+            if "--channel=3" in line:
+                for package in ('"platform-tools"', '"emulator"', '"system-images;'):
+                    self.assertNotIn(package, line, f"canary channel for {package}: {line.strip()}")
+
     def test_script_is_strict_bash(self):
         text = SCRIPT.read_text(encoding="utf-8")
         self.assertTrue(text.startswith("#!/usr/bin/env bash\n"))
