@@ -14,7 +14,10 @@ remote session cannot cut them short:
    made elsewhere. Archive bytes and therefore `release_id` may differ between platforms (zlib); tree
    and manifest must not.
 2. `sh install_release.sh <commit>` — extracts to `~/hg-releases/<release_id>` (never overwrites),
-   installs the manifest, `verify-root`, points the `hg` command at the release
+   installs the manifest, `verify-root`, then `assistant_precheck.py <root>`: the release's own readers
+   (`repair.inspect`, `Notebook`, `config.load`) must accept a private copy of the owner's assistant
+   home (`notes.jsonl`, `config.json`, receipts; the live home is only read, its `.lock` held shared,
+   never created), or the install stops before any pointer changes; then points the `hg` command at the release
    (`~/.config/hg/assistant-release`, previous pointer kept as `.prev`) and installs the shim as
    `$PREFIX/bin/hg`. The service is untouched.
 3. `sh switch_service.sh --install-finish` — backs up the current `hg-runtime/finish` and installs
@@ -24,7 +27,8 @@ remote session cannot cut them short:
    `/rate_limit` endpoint, and is cut short by `sv down`.
 4. `sh switch_service.sh <release_id>` — while the old release keeps serving: recovery point (run
    script, shared config, finish, status, hashes), one config file per release (fields checked if it
-   already exists), GitHub quota ≥ 20, `verify-root`, read-only `serve --check`, the config matches the
+   already exists), GitHub quota ≥ 20, `verify-root`, read-only `serve --check`, the new release reads
+   the assistant home chat opens (`assistant_precheck.py`, report kept in the switch dir), the config matches the
    shared one in state_dir/port/token/host/body limit, the reviewed finish is installed, free space, the
    rendered run script parses, and the running run script names the config and release a rollback would
    return to. Only then a graceful `sv down` (never SIGKILL), a state backup under the service's own

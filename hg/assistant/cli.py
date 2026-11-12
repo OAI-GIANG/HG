@@ -11,7 +11,7 @@ import os
 import sys
 
 from maep.core import MAEPError
-from hg.assistant import config as cfg
+from hg.assistant import config as cfg, textvi
 from hg.assistant.home import Busy, HomeError, default_home, ensure_home
 from hg.assistant.notes import NoteConflict, NoteError, Notebook
 from hg.brain.providers import ProviderError
@@ -82,13 +82,50 @@ def _home():
     return ensure_home(default_home())
 
 
-def _text_arg(words, stdin):
-    origin = getattr(stdin, "origin", None) or ("tty" if stdin.isatty() else "pipe")
+def _origin(stdin):
+    return getattr(stdin, "origin", None) or ("tty" if stdin.isatty() else "pipe")
+
+
+class InputError(ValueError):
+    """Text a command cannot read as written."""
+
+
+def _read_text(words, stdin, out, prompt):
+    """Owner text for `hg check`, `hg ask` and `hg note add`, from argv or stdin, under the rules
+    `hg summarize` applies to its input (UTF-8, no NUL, 1 MB, not blank).
+
+    Bytes are decoded strictly: text in another encoding is refused (exit 2), never answered,
+    stored or compared mangled, and never reported later as a damaged ledger.
+    """
+    from hg.assistant import summarize as sm
     if words:
-        return " ".join(words), origin
-    if stdin.isatty():
-        return None, origin
-    return stdin.read(), origin
+        text = " ".join(words)
+    else:
+        if stdin.isatty():
+            out(prompt)
+        buffer = getattr(stdin, "buffer", None)
+        if buffer is not None:
+            try:
+                text, _info = sm.read_input("-", stdin=buffer)
+            except sm.InputError as exc:
+                raise InputError(str(exc)) from exc
+            return _nonblank(text)
+        text = stdin.read()
+    try:
+        data = text.encode("utf-8")              # argv bytes that were not UTF-8 arrive as lone surrogates
+    except UnicodeEncodeError as exc:
+        raise InputError("input is not valid UTF-8 text") from exc
+    if len(data) > sm.MAX_BYTES:
+        raise InputError(f"input is larger than {sm.MAX_BYTES // 1000} KB")
+    if "\x00" in text:
+        raise InputError("input contains NUL bytes (binary file?)")
+    return _nonblank(textvi.nfc(text))
+
+
+def _nonblank(text):
+    if not text.strip():
+        raise InputError("văn bản trống")
+    return text
 
 
 def _print_json(obj, out):
@@ -147,11 +184,12 @@ def _dispatch(args, stdin, out):
         nb = Notebook(_home())
         sub = args.note_command
         if sub == "add":
-            text, origin = _text_arg(args.text, stdin)
-            if text is None:
-                out("Nhập nội dung ghi chú (Ctrl-D để lưu):")
-                text = stdin.read()
-            record, created = nb.add(text, subject=args.subject, replaces=args.replaces, origin=origin)
+            try:
+                text = _read_text(args.text, stdin, out, "Nhập nội dung ghi chú (Ctrl-D để lưu):")
+            except InputError as exc:
+                out(f"Không lưu được ghi chú: {exc}")
+                return EXIT_INPUT
+            record, created = nb.add(text, subject=args.subject, replaces=args.replaces, origin=_origin(stdin))
             if args.json:
                 _print_json({"created": created, "note": record}, out)
             else:
@@ -199,17 +237,22 @@ def _dispatch(args, stdin, out):
 
     if command == "check":
         from hg.assistant.check import LABELS_VI, check
-        text, _origin = _text_arg(args.text, stdin)
-        if text is None:
-            out("Dán văn bản cần đối chiếu (Ctrl-D để xong):")
-            text = stdin.read()
+        try:
+            text = _read_text(args.text, stdin, out, "Dán văn bản cần đối chiếu (Ctrl-D để xong):")
+        except InputError as exc:
+            out(f"Không đối chiếu được: {exc}")
+            return EXIT_INPUT
         result = check(text, Notebook(_home()))
         if args.json:
             _print_json(result, out)
-        else:
-            if result["directives_in_text"]:
-                out("⚠ Văn bản này chứa câu lệnh nhắm vào AI (" + ", ".join(result["directives_in_text"])
-                    + ") — có thể là tin nhắn lừa đảo.")
+        elif result["directives_in_text"]:
+            out("⚠ Văn bản này chứa câu lệnh nhắm vào AI (" + ", ".join(result["directives_in_text"])
+                + ") — có thể là tin nhắn lừa đảo.")
+        if not result["claims"]:                   # nothing was compared: never a silent OK
+            if not args.json:
+                out("Không có câu nào đủ nội dung để đối chiếu với ghi chú.")
+            return EXIT_NO_DATA
+        if not args.json:
             for r in result["sentences"]:
                 tag = LABELS_VI[r["label"]]
                 out(f"[{tag}] {safe(r['sentence'])}" if tag else safe(r["sentence"]))
@@ -221,11 +264,12 @@ def _dispatch(args, stdin, out):
     if command == "ask":
         from hg.assistant.ask import ask
         home = _home()
-        question, _origin = _text_arg(args.question, stdin)
-        if question is None:
-            out("Nhập câu hỏi (Ctrl-D để gửi):")
-            question = stdin.read()
-        if not question.strip():
+        try:
+            question = _read_text(args.question, stdin, out, "Nhập câu hỏi (Ctrl-D để gửi):")
+        except InputError as exc:
+            out(f"Không đọc được câu hỏi: {exc}")
+            return EXIT_INPUT
+        if not safe(question).strip():          # only control characters: nothing left to ask
             out("Câu hỏi trống.")
             return EXIT_INPUT
         return _ask(home, question, args, out)
@@ -238,6 +282,11 @@ def _dispatch(args, stdin, out):
 
     if command == "eval":
         from hg.assistant import evaluate
+        try:
+            evaluate.load_spec(args.spec)           # refuse an ambiguous file before contacting the model
+        except evaluate.EvalSpecError as exc:
+            out(f"Tệp đánh giá không dùng được: {exc}")
+            return EXIT_INPUT
         home = _home()
         conf, listener, check = _model_parts(home)
         if check["status"] != "READY":

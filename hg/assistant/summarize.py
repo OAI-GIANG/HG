@@ -29,6 +29,7 @@ from hg.brain.providers import ProviderError
 MAX_BYTES = 1_000_000
 _LINE_CITE = re.compile(r"\[\s*L(\d+)(?:\s*[-–]\s*L?(\d+))?\s*\]", re.IGNORECASE)
 _SENT = re.compile(r"[^.!?…\n]+[.!?…]*", re.UNICODE)
+_LINE_BREAK = re.compile(r"\r\n|\r|\n")
 
 SYSTEM_PROMPT = (
     "Bạn tóm tắt một văn bản cho Chủ Nhân. Viết tối đa {n} câu ngắn bằng tiếng Việt (trừ khi văn bản là "
@@ -84,10 +85,20 @@ def read_input(path, *, stdin=None, limit=MAX_BYTES):
     return textvi.nfc(text), info
 
 
+def source_lines(text):
+    """Lines as editors, `less -N` and `grep -n` number them: only LF, CRLF and CR end a line.
+    (str.splitlines also splits on VT, FF, FS/GS/RS, NEL, U+2028/U+2029, which would shift
+    every later [L#] anchor away from the line the owner sees.)"""
+    parts = _LINE_BREAK.split(text)
+    if parts and parts[-1] == "":
+        parts.pop()
+    return parts
+
+
 def sentences_with_lines(text):
     """[(sentence, first_line, last_line)] — sentences never span blank lines."""
     out = []
-    for no, line in enumerate(text.splitlines(), 1):
+    for no, line in enumerate(source_lines(text), 1):
         for m in _SENT.finditer(line):
             s = m.group(0).strip()
             if len(textvi.content_words(s)) >= 3:
@@ -135,7 +146,7 @@ def with_model(text, router, *, max_sentences=5, max_tokens=500, strict=False):
     found = guard.directives(text)
     if found:
         raise DirectiveInput(", ".join(found))
-    lines = text.splitlines()
+    lines = source_lines(text)
     numbered = [f"L{i}: {line}" for i, line in enumerate(lines, 1) if line.strip()]
     body = "\n".join(numbered)
     if len(body) > 12000:            # long input: give the model the most central sentences only
@@ -181,5 +192,5 @@ def as_json(obj):
     return json.dumps(obj, ensure_ascii=False, indent=2)
 
 
-__all__ = ["read_input", "extractive", "with_model", "check_model_sentence", "render", "receipt",
+__all__ = ["read_input", "source_lines", "extractive", "with_model", "check_model_sentence", "render", "receipt",
            "InputError", "ProviderError", "DirectiveInput"]

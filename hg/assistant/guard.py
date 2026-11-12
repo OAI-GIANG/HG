@@ -32,7 +32,19 @@ _HOMOGLYPHS = str.maketrans({
 })
 _LEET = str.maketrans({"0": "o", "1": "i", "3": "e", "4": "a", "5": "s", "7": "t", "@": "a", "$": "s", "!": "i"})
 _DOTTED = re.compile(r"(?<![\w.])(?:\w\.){2,}\w(?![\w.])")   # "S.Y.S.T.E.M"
-_DROP = {"Cf", "Mn"}                               # format chars (zero-width, bidi); marks handled by fold
+# Unicode Default_Ignorable_Code_Point (DerivedCoreProperties.txt) that are not Cf: their canonical
+# combining class is 0, so NFKC keeps them and textvi.fold (which drops ccc > 0) does not, and
+# one between two letters splits the word for a regex while a reader or a model sees one word.
+_IGNORABLE = re.compile("[\u034f\u17b4\u17b5\u180b-\u180f\ufe00-\ufe0f\U000e0100-\U000e01ef]")
+# Characters that render as a blank (Hangul fillers are also default-ignorable, U+2800 is a blank
+# braille cell). Single letters separated only by fillers are one letter-spaced word ("y⠀o⠀u" ->
+# "you"); a filler before punctuation is dropped; any other filler reads as a space, so a filler
+# between words still separates them.
+_BLANK_CHARS = "\u115f\u1160\u3164\uffa0\u2800"
+_BLANK = re.compile(f"[{_BLANK_CHARS}]")
+_L = f"[^\\W{_BLANK_CHARS}]"                      # a word character other than a filler (Hangul fillers are Lo)
+_BLANK_SPACED = re.compile(f"(?<!{_L}){_L}(?:[{_BLANK_CHARS}]{_L})+(?!{_L})")
+_BLANK_BEFORE_PUNCT = re.compile(f"[{_BLANK_CHARS}]+(?=[,.;:!?)\\]])")   # "on⠀," is "on,", not "on ,"
 
 _OBJ = r"(?:huong dan|chi dan|chi thi|quy tac|lenh|yeu cau|thiet lap|luat|instruction|instructions|rules|prompt|prompts|" \
        r"guidelines|directives|directions|policy|policies|checks)"
@@ -120,10 +132,13 @@ _WEAK = [(n, re.compile(p)) for n, p in WEAK]
 
 
 def normalise(text):
-    """Matching copy: NFKC, homoglyphs to Latin, invisible format characters removed, lower-case,
+    """Matching copy: NFKC, homoglyphs to Latin, invisible format characters and other
+    default-ignorable characters removed, blank fillers read as spaces, lower-case,
     diacritics folded (đ -> d), letter-spaced words joined, whitespace collapsed."""
     text = unicodedata.normalize("NFKC", text or "").translate(_HOMOGLYPHS)
     text = "".join(c for c in text if unicodedata.category(c) != "Cf")
+    text = _BLANK_SPACED.sub(lambda m: _BLANK.sub("", m.group(0)), _IGNORABLE.sub("", text))
+    text = _BLANK.sub(" ", _BLANK_BEFORE_PUNCT.sub("", text))
     folded = textvi.fold(text.lower())
     folded = _DOTTED.sub(lambda m: m.group(0).replace(".", ""), folded)
     return " ".join(_join_spaced(chunk) for chunk in re.split(r"\s{2,}|\n", folded) if chunk.strip())

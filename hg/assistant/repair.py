@@ -14,24 +14,44 @@ rewritten: the backup `<name>.bak-<UTC timestamp>` (mode 0600, never overwrites)
 first, the kept prefix is validated before the rewrite, and the result is loaded again to
 prove it is consistent. Any other damage is reported and left alone for the owner to inspect;
 HG never guesses which of several bad lines to drop.
+
+"Loads" means what the command that sent the owner here means: notes.jsonl is also replayed
+as a MemoryStore history (which refuses histories its own API could not have written, #174),
+so a notes ledger whose lines are each well-formed but which `hg note`/`hg ask` refuse is
+DAMAGED, never OK, and a torn tail over such a history is not rewritten.
 """
-import json
 import os
 import stat
+import tempfile
 from datetime import datetime, timezone
+from pathlib import Path
 
 from maep import ledger
 from maep.core import MAEPError
 from hg.assistant.home import locked
+from hg.memory.store import MemoryStore
 from hg.verification.evidence import EventLog
 
+# Ledgers in the home that a reader replays beyond the line format, and that reader.
+_HISTORY_READERS = {"notes.jsonl": lambda path: MemoryStore(path, read_only=True)}
 
-def _valid(line):
-    try:
-        event = json.loads(line)
-    except ValueError:
-        return False
-    return isinstance(event, dict) and isinstance(event.get("event_id"), str) and bool(event["event_id"])
+
+def _bad_lines(lines):
+    """1-based numbers of the complete lines the ledger reader refuses, read the way it reads them.
+
+    Same rules as `maep.ledger._check_line` plus the EventLog kind/seq types: strict UTF-8, one
+    JSON object, no repeated key, a non-empty string event_id not seen on an earlier line.
+    """
+    bad, seen = [], set()
+    for number, raw in enumerate(lines, 1):
+        try:
+            event = []
+            ledger._check_line(raw.decode("utf-8") + "\n", number, event, seen)
+            if not isinstance(event[0].get("kind"), str) or not isinstance(event[0].get("seq"), int):
+                raise MAEPError("lacks kind/seq")
+        except (UnicodeDecodeError, MAEPError):
+            bad.append(number)
+    return bad
 
 
 def _read_safely(path):
@@ -72,6 +92,25 @@ def _check_prefix(data):
         raise MAEPError("ledger sequence numbers are not contiguous")
 
 
+def _history_refusal(name, data):
+    """The reason the ledger's own reader refuses ``data`` as a history, or None if it loads.
+
+    The inspected bytes are replayed from a private copy, so the check sees exactly what was
+    inspected and changes nothing in the home.
+    """
+    reader = _HISTORY_READERS.get(name)
+    if reader is None:
+        return None
+    with tempfile.TemporaryDirectory(prefix="hg-repair-") as tmp:
+        copy = Path(tmp) / name
+        _write_new(copy, data, exclusive=True)
+        try:
+            reader(copy)
+        except MAEPError as exc:
+            return f"records are well-formed but HG refuses the history: {exc}"
+    return None
+
+
 def _inspect(path):
     """Return (report, raw bytes or None, kept prefix or None) without changing anything."""
     try:
@@ -80,9 +119,13 @@ def _inspect(path):
         return {"file": path.name, "status": "DAMAGED", "reason": str(exc), "bad_lines": []}, None, None
     try:
         EventLog(path, read_only=True)
-        return {"file": path.name, "status": "OK"}, raw, None
     except MAEPError as exc:
         reason = str(exc)
+    else:
+        refusal = _history_refusal(path.name, raw)
+        if refusal is None:
+            return {"file": path.name, "status": "OK"}, raw, None
+        return {"file": path.name, "status": "DAMAGED", "reason": refusal, "bad_lines": []}, raw, None
     lines = raw.split(b"\n")
     if lines and lines[-1] == b"":
         lines = lines[:-1]
@@ -93,10 +136,13 @@ def _inspect(path):
         except MAEPError as exc:
             reason = f"{reason}; records before the torn tail are damaged too: {exc}"
         else:
+            refusal = _history_refusal(path.name, keep)
+            if refusal is not None:
+                return ({"file": path.name, "status": "DAMAGED", "reason": f"{reason}; {refusal}",
+                         "bad_lines": []}, raw, None)
             return ({"file": path.name, "status": "TORN_LAST_LINE", "reason": reason, "line": len(lines),
                      "bytes_removed": len(raw) - len(keep)}, raw, keep)
-    bad = [i for i, line in enumerate(lines) if not _valid(line.decode("utf-8", errors="replace"))]
-    return {"file": path.name, "status": "DAMAGED", "reason": reason, "bad_lines": [i + 1 for i in bad][:10]}, raw, None
+    return {"file": path.name, "status": "DAMAGED", "reason": reason, "bad_lines": _bad_lines(lines)[:10]}, raw, None
 
 
 def inspect(path):
@@ -129,6 +175,9 @@ def repair(home, *, clock=None, apply=True):
                 _write_new(tmp, keep, exclusive=False)
                 os.replace(tmp, path)
                 EventLog(path)          # must load cleanly now, or the exception reaches the owner
+                reader = _HISTORY_READERS.get(path.name)
+                if reader is not None:
+                    reader(path)
                 report.update(status="REPAIRED", backup=backup.name)
             results.append(report)
     return results

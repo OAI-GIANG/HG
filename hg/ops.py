@@ -4,13 +4,28 @@ Status: FAILING if a ledger cannot be read or is inconsistent; DEGRADED if actio
 pending reconciliation, memory has conflicts, tasks are blocked, or no model provider is
 available (when a router is given); OK otherwise. Each check says why.
 """
+import os
 from collections import Counter
 from pathlib import Path
 
+from maep.core import MAEPError
 from maep.ledger import read_events
 from maep.task_store import TaskStore
 from hg.tools.gateway import pending_from_events
 from hg.verification.evidence import EventLog
+
+
+def require_workdir(workdir):
+    """A runtime work directory must exist and be a directory (a symlink to one is fine).
+
+    Without this a mistyped path, a regular file or a dangling symlink read as a runtime
+    with no tasks and no actions, and health reported it OK.
+    """
+    workdir = Path(workdir)
+    if not workdir.is_dir():
+        what = "does not exist" if not os.path.lexists(workdir) else "is not a directory"
+        raise MAEPError(f"work directory {workdir} {what}")
+    return workdir
 
 
 def health(workdir, *, router=None, trust_loader=None):
@@ -20,6 +35,12 @@ def health(workdir, *, router=None, trust_loader=None):
     def check(name, status, detail):
         checks.append({"name": name, "status": status, "detail": detail})
 
+    try:
+        require_workdir(workdir)
+    except MAEPError as exc:
+        check("work directory", "FAILING", str(exc))
+        report.update(status="FAILING", checks=checks)
+        return report
     try:
         store = TaskStore.restore(workdir / "tasks.jsonl", read_only=True)
         task_ids = sorted({e["task_id"] for e in read_events(workdir / "tasks.jsonl") if e["type"] == "TASK_CREATED"})
@@ -42,14 +63,14 @@ def health(workdir, *, router=None, trust_loader=None):
     except Exception as exc:
         check("action ledger", "FAILING", f"{type(exc).__name__}: {exc}")
     models = workdir / "models.jsonl"
-    if models.exists():
+    if os.path.lexists(models):   # a dangling symlink is damage, not absence
         try:
             calls = [e["payload"] for e in EventLog(models, read_only=True).events("MODEL_CALL")]
             report["model_calls"] = {"total": len(calls), "errors": dict(Counter(c["error"] for c in calls if c["error"]))}
         except Exception as exc:
             check("model ledger", "FAILING", f"{type(exc).__name__}: {exc}")
     memory = workdir / "memory.jsonl"
-    if memory.exists():
+    if os.path.lexists(memory):
         try:
             from hg.memory.store import MemoryStore
             stats = MemoryStore(memory, read_only=True).stats()

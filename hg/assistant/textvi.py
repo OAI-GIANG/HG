@@ -163,22 +163,79 @@ def analyze_query(text):
 
 
 _GROUPED = re.compile(r"^\d{1,3}(?:[.,]\d{3})+$")
+# "8 giờ 30", "8h30", "8g30": an hour and its minutes, the same time as "8:30".
+_HOUR_MINUTE = re.compile(r"(?<!\w)(?<!\d[.,:/\-])(\d{1,2})\s*(?:giờ|gio|h|g)\s*(\d{1,2})(?!\w|[.,:/\-]\d)",
+                          re.IGNORECASE)
+
+
+def _number_values(token):
+    """Canonical values of one written number. Order, decimals and identifier zeros are kept:
+    '5/9' (5 September) is not '9/5'; '8:05' is not '5:08'; '0,5' is not '5'; '0420' is not '420'."""
+    if _GROUPED.match(token):                              # '18.200', '4,000,000'
+        return {str(int(re.sub(r"[.,]", "", token)))}
+    parts = re.split(r"[.,:/\-]", token)
+    seps = set(re.findall(r"[.,:/\-]", token))
+    if len(parts) == 1:
+        # A leading zero is part of an identifier (phone number, code): '0912345678', '0420'.
+        # One or two digits are a quantity or a date part: '05' == '5'.
+        return {token} if len(token) > 2 and token[0] == "0" else {str(int(token))}
+    if seps == {":"} and len(parts) in (2, 3):             # '8:05', '08:05:30'
+        return {f"{int(parts[0])}:" + ":".join(f"{int(p):02d}" for p in parts[1:])} | (
+            {str(int(parts[0]))} if all(int(p) == 0 for p in parts[1:]) else set())
+    if len(parts) == 2 and seps <= {".", ","}:             # decimal comma or point: '0,5', '2.5'
+        return {f"{int(parts[0])}.{parts[1].rstrip('0') or '0'}".removesuffix(".0")}
+    if len(parts) == 2 and seps == {"/"}:                  # day/month: '5/9'
+        return {f"--{int(parts[1]):02d}-{int(parts[0]):02d}"}
+    if len(parts) == 3 and len(seps) == 1 and seps <= {"/", "-", "."}:
+        if len(parts[0]) == 4:                             # ISO '2026-09-15'
+            y, m, d = parts
+        else:                                              # Vietnamese order '15/09/2026'
+            d, m, y = parts
+        return {f"{int(y)}-{int(m):02d}-{int(d):02d}"}
+    # Anything else (a range '10-15', mixed separators) keeps its integer atoms.
+    return {str(int(p)) for p in parts if p}
 
 
 def numbers(text):
-    """Integer atoms of every number, so '2026-09-15' == '15/09/2026' and '18.200' == '18200'.
+    """Canonical values of every number, so '2026-09-15' == '15/09/2026', '18.200' == '18200',
+    '8 giờ 30' == '8:30' and '0,5' == '0.5' -- and '5/9' != '9/5', '8:05' != '5:08',
+    '0,5' != '5', '0420' != '420'.
 
-    A thousands-grouped number ('18.200', '4,000,000') is one atom; anything else is split
-    on its separators and leading zeros dropped. Unit conversions ('20 giờ' vs '8 giờ tối')
-    are not understood and show up as a mismatch.
+    A thousands-grouped number ('18.200', '4,000,000') is one integer; a two-part number with
+    '.' or ',' that is not grouped is a decimal; 'd/m' and 'd/m/y' are Vietnamese day-first
+    dates and 'y-m-d' an ISO date; 'h:mm' is a time. Unit conversions ('20 giờ' vs '8 giờ
+    tối') are not understood and show up as a mismatch.
     """
-    atoms = set()
-    for n in _NUMBER.findall(nfc(text)):
-        if _GROUPED.match(n):
-            atoms.add(str(int(re.sub(r"[.,]", "", n))))
-        else:
-            atoms |= {str(int(p)) for p in re.split(r"[.,:/\-]", n) if p}
-    return atoms
+    text = nfc(text)
+    values = set()
+    for m in _HOUR_MINUTE.finditer(text):
+        values.add(f"{int(m.group(1))}:{int(m.group(2)):02d}")
+    text = _HOUR_MINUTE.sub(" ", text)
+    for n in _NUMBER.findall(text):
+        values |= _number_values(n)
+    return values
+
+
+def number_gap(claim_text, source_text, *, parts=False):
+    """Values the claim states that the source does not.
+
+    A day/month in the claim ('5/9') is found in a full date of the source ('05/09/2026'), not
+    the other way round. With parts=True (eval keys, written by the owner as separate atoms such
+    as ["18", "30"] or "2027") a plain integer may also be a part of a source date or time; never
+    a digit run of a decimal or an identifier ('5' is not in '0,5', '420' is not in '0420').
+    Grounding uses parts=False: "họp lúc 5 giờ" is not supported by a note saying 15:05."""
+    source = numbers(source_text)
+    offered = set(source)
+    days = set()
+    for v in source:
+        if re.match(r"^(?:\d+|-)-\d{2}-\d{2}$", v):          # '2026-09-05', '--09-05'
+            if not v.startswith("--"):
+                days.add(v[v.index("-"):])
+            if parts:
+                offered |= {str(int(p)) for p in v.split("-") if p}
+        elif ":" in v and parts:                              # '18:30'
+            offered |= {str(int(p)) for p in v.split(":")}
+    return {v for v in numbers(claim_text) - offered if not (v.startswith("--") and v[1:] in days)}
 
 
 def negations(text):

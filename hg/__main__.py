@@ -30,7 +30,7 @@ import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from maep.core import POLICY_VERSION
+from maep.core import POLICY_VERSION, MAEPError
 from maep.ledger import read_events
 from maep.authority.canonical_source import load_canonical_manifest
 from maep.authority.trust_anchor import TrustAnchorError
@@ -38,6 +38,7 @@ from maep.task_store import TaskStore
 from hg.runtime import DEFAULT_PRINCIPAL, build_runtime
 from hg.tools.gateway import pending_from_events
 from hg.verification.evidence import EventLog
+from hg.verification.regressions import read_back
 
 
 def _task(task_id, path):
@@ -74,9 +75,8 @@ def selfcheck(workdir):
 
     def readback(root, path):
         def file_content_matches(_snapshot):
-            target = root / path
-            actual = target.read_text(encoding="utf-8") if target.is_file() else None
-            return actual == content[path], f"read back {actual!r}"
+            matches, detail = read_back(root, path, content[path])
+            return matches, f"read back {detail}"
         return file_content_matches
 
     def scenario(name, subdir, grants, mode, task_id, path, expected_state, expect_file):
@@ -109,6 +109,8 @@ def selfcheck(workdir):
 
 def status(workdir):
     """Read-only: replays both ledgers without writing to either."""
+    from hg.ops import require_workdir
+    require_workdir(workdir)
     tasks_path, actions_path = workdir / "tasks.jsonl", workdir / "actions.jsonl"
     store = TaskStore.restore(tasks_path, read_only=True)
     pending = pending_from_events(EventLog(actions_path, read_only=True).events())
@@ -173,9 +175,13 @@ def main(argv=None):
         return run_service(args.config, check=args.check)
 
     if args.command == "bench":
-        from hg.verification.benchmark import run_benchmark, verdict
+        from hg.verification.benchmark import BaselineError, load_baseline, run_benchmark, verdict
+        try:
+            baseline = load_baseline(args.baseline) if args.baseline else None
+        except BaselineError as exc:
+            print(json.dumps({"verdict": [f"baseline unusable: {exc}"]}, indent=2, ensure_ascii=False))
+            return 1
         report = run_benchmark()
-        baseline = json.loads(Path(args.baseline).read_text(encoding="utf-8")) if args.baseline else None
         problems = verdict(report, baseline)
         report["verdict"] = problems or ["PASS"]
         if args.json:
@@ -184,7 +190,11 @@ def main(argv=None):
         return 1 if problems else 0
     if args.command == "learn":
         from hg.verification.learning import analyze, proposed_cases_json
-        report = analyze(args.workdir, threshold=args.threshold)
+        try:
+            report = analyze(args.workdir, threshold=args.threshold)
+        except MAEPError as exc:
+            print(json.dumps({"result": "FAILING", "reason": str(exc)}, ensure_ascii=False))
+            return 2
         if args.cases_out:
             Path(args.cases_out).write_text(proposed_cases_json(report), encoding="utf-8")
         print(json.dumps(report, indent=2, ensure_ascii=False))
@@ -209,7 +219,12 @@ def main(argv=None):
         report = selfcheck(workdir)
         print(json.dumps(report, indent=2, ensure_ascii=False))
         return 0 if report["result"] == "PASS" else 1
-    print(json.dumps(status(Path(args.workdir)), indent=2, ensure_ascii=False))
+    try:
+        report = status(Path(args.workdir))
+    except MAEPError as exc:
+        print(json.dumps({"result": "FAILING", "reason": str(exc)}, ensure_ascii=False))
+        return 2
+    print(json.dumps(report, indent=2, ensure_ascii=False))
     return 0
 
 

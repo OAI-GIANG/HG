@@ -16,6 +16,7 @@ Local-model integrity, as far as Android allows:
   through Ollama's unauthenticated API, so before each call HG compares /api/tags with the pin.
 """
 import json
+import math
 import os
 import stat
 from pathlib import Path
@@ -80,6 +81,45 @@ def _read_json(path):
         raise ConfigError(f"config.json is not valid JSON: {exc}") from exc
 
 
+def _text(value):
+    # One printable line: a model name or digest with a control character is not the one Ollama lists.
+    return isinstance(value, str) and value != "" and value.isprintable()
+
+
+def _count(limit):
+    return lambda v: isinstance(v, int) and not isinstance(v, bool) and 1 <= v <= limit
+
+
+def _seconds(value):
+    return (isinstance(value, (int, float)) and not isinstance(value, bool)
+            and math.isfinite(value) and value > 0)
+
+
+# What each consumer can act on (OllamaProvider, ModelRouter.make_request, attest_listener, the pin).
+_VALID = {
+    "ollama_url": (_text, "a non-empty URL string"),
+    "model": (_text, "a non-empty model name"),
+    "model_digest": (lambda v: v is None or _text(v), "null or the pinned digest string"),
+    "ollama_service_dir": (lambda v: v is None or _text(v), "null or a directory path"),
+    "num_ctx": (_count(1 << 20), "an integer >= 1"),
+    "num_thread": (_count(1024), "an integer between 1 and 1024"),
+    "keep_alive": (lambda v: v is None or _text(v) or (isinstance(v, int) and not isinstance(v, bool)),
+                   'null, a duration such as "30m", or an integer number of seconds'),
+    "think": (lambda v: v is None or isinstance(v, bool), "true, false or null"),
+    "timeout_s": (_seconds, "a finite number of seconds > 0"),
+    "max_tokens": (_count(64000), "an integer between 1 and 64000"),
+    "anthropic_model": (_text, "a non-empty model name"),
+}
+
+
+def validate(config):
+    """Refuse a value no consumer can act on, naming the key (exit 78 / chat 503)."""
+    for key, (ok, expected) in _VALID.items():
+        if not ok(config[key]):
+            raise ConfigError(f"config.json: {key} must be {expected} (got {config[key]!r:.60})")
+    return config
+
+
 def load(home, *, wait_s=5.0):
     with locked(home, exclusive=False, wait_s=wait_s):
         path = Path(home) / "config.json"
@@ -89,6 +129,7 @@ def load(home, *, wait_s=5.0):
             if not isinstance(data, dict) or set(data) - set(DEFAULTS):
                 raise ConfigError("config.json keys must be among: " + ", ".join(sorted(DEFAULTS)))
             config.update(data)
+            validate(config)
         env_model = os.environ.get("HG_MODEL")
         if env_model and env_model != config["model"]:
             config["model"], config["model_digest"] = env_model, None
@@ -96,6 +137,7 @@ def load(home, *, wait_s=5.0):
 
 
 def save(home, config):
+    validate(dict(DEFAULTS, **{k: v for k, v in config.items() if k in DEFAULTS}))
     with locked(home, exclusive=True):
         data = {k: v for k, v in config.items() if k in DEFAULTS and v != DEFAULTS[k]}
         path = Path(home) / "config.json"

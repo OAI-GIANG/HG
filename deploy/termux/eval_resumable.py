@@ -20,7 +20,18 @@ from hg.assistant.ask import ask  # noqa: E402
 from hg.assistant.evaluate import score  # noqa: E402
 from hg.assistant.notes import Notebook  # noqa: E402
 
-spec = json.loads(spec_path.read_text(encoding="utf-8"))
+try:  # the same reader as `hg eval`: refuse a file the release could not score as written
+    from hg.assistant.evaluate import EvalSpecError, load_spec  # noqa: E402
+except ImportError:  # releases before load_spec (7698097, 5476315, 4eaac81) read the file as before
+    load_spec = None
+if load_spec is None:
+    print("warning: this release has no evaluate.load_spec; the evaluation file is not checked", file=sys.stderr)
+    spec = json.loads(spec_path.read_text(encoding="utf-8"))
+else:
+    try:
+        spec = load_spec(spec_path)
+    except EvalSpecError as exc:
+        sys.exit(f"evaluation file not usable: {exc}")
 work.mkdir(mode=0o700, parents=True, exist_ok=True)
 home = work / "home"
 fresh = not home.exists()

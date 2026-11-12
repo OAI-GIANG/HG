@@ -20,6 +20,7 @@ import re
 
 from maep.core import MAEPError, retry_decision
 from hg.brain.plan import validate_plan
+from hg.brain.providers import parse_model_json
 from hg.tools.gateway import AdapterInputError
 
 OP_TOOLS = {"write": "fs.write", "read": "fs.read", "search": "code.search", "symbols": "code.symbols",
@@ -131,7 +132,7 @@ def _parse_proposal(text):
     if not match:
         raise PlanRejected(["response contains no JSON object"])
     try:
-        data = json.loads(match.group(0))
+        data = parse_model_json(match.group(0))   # one reading: no repeated key, NaN or lone surrogate
     except ValueError as exc:
         raise PlanRejected([f"response JSON is invalid: {exc}"])
     steps = data.get("steps") if isinstance(data, dict) else None

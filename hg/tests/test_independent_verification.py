@@ -378,13 +378,13 @@ class IndependentVerifierTests(unittest.TestCase):
         worker = self._pinned_copy()
         verifier = IndependentVerifier(worker_path=worker, timeout_s=5)
         forged = self._forging_worker()
-        real_run = subprocess.run
+        real_popen = subprocess.Popen
 
         def swap_then_run(*args, **kwargs):
             worker.write_bytes(forged)
-            return real_run(*args, **kwargs)
+            return real_popen(*args, **kwargs)
 
-        with mock.patch("hg.verification.independent.subprocess.run", side_effect=swap_then_run):
+        with mock.patch("hg.verification.independent.subprocess.Popen", side_effect=swap_then_run):
             report = verifier.verify_python_syntax(self.root, "bad.py", candidate_ref="candidate-T")
         self.assertEqual(worker.read_bytes(), forged)
         self.assertEqual(report["status"], "FAIL")

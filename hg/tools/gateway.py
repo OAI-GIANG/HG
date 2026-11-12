@@ -15,6 +15,7 @@ restarts (rebuilt from the ledger), and blocks further effects on that task unti
 reconcile() inspects live state.
 """
 import concurrent.futures
+import errno
 import hashlib
 import os
 import stat
@@ -132,6 +133,18 @@ def _sha256(data):
     return hashlib.sha256(data).hexdigest()
 
 
+def _fsync_directory(path):
+    """Make a rename or create inside `path` durable; EINVAL (unsupported) is accepted."""
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_CLOEXEC", 0))
+    try:
+        os.fsync(fd)
+    except OSError as exc:
+        if exc.errno != errno.EINVAL:
+            raise
+    finally:
+        os.close(fd)
+
+
 class ToolAdapter:
     """Contract every adapter declares (MIID §10). Subclasses override the methods."""
 
@@ -177,6 +190,13 @@ class ToolAdapter:
         for key, kind in self.params_schema.items():
             if not isinstance(params[key], kind):
                 raise AdapterInputError(f"param {key} must be {kind.__name__}")
+            if isinstance(params[key], str):
+                try:
+                    params[key].encode("utf-8")
+                except UnicodeEncodeError:
+                    # A lone surrogate is not text: the effect, its intent and the ledger
+                    # record of the plan could not be written as UTF-8.
+                    raise AdapterInputError(f"param {key} must be valid Unicode text") from None
 
     def resource_for(self, params):
         raise NotImplementedError
@@ -207,7 +227,7 @@ class _RootedFileAdapter(ToolAdapter):
 
     def _rel(self, raw):
         path = PurePosixPath(raw)
-        if not raw or path.is_absolute() or ".." in path.parts or "\\" in raw:
+        if not raw or "\x00" in raw or path.is_absolute() or ".." in path.parts or "\\" in raw:
             raise AdapterInputError("path must be relative, inside the root, without '..'")
         full = (self._root / path).resolve()
         if full != self._root and self._root not in full.parents:
@@ -231,8 +251,24 @@ class _RootedFileAdapter(ToolAdapter):
 
 
 class LocalFileWriteAdapter(_RootedFileAdapter):
+    """fs.write 1.2: the planned effect and nothing else, durable before it is reported.
+
+    - A path that is a directory, or has a parent that is not a directory, is checked
+      before any effect and is a known failure (AdapterFailure), not UNKNOWN.
+    - An OSError before the rename (creating a parent directory, creating or writing the
+      temporary file, permission denied, no space) or a rename that did not happen (the
+      temporary file is still there) is a known failure once the attempt's temporary file
+      and the empty directories it created are removed. If they cannot be removed, or
+      the temporary name is gone after a failed rename, or the error comes after the
+      rename, the outcome stays UNKNOWN until reconcile() inspects the file.
+    - Replacing an existing regular file keeps its permission bits; a new file is 0600.
+    - The data and then the parent directory (and the parent of every directory created
+      for the path) are fsynced before success is returned, so a recorded SUCCEEDED
+      survives a power loss. A filesystem that cannot fsync a directory (EINVAL) is
+      accepted as is.
+    """
     name = "fs.write"
-    version = "1.0"
+    version = "1.2"
     action = "WRITE"
     idempotent = True        # atomic replace with the same content gives the same state
     risk = "MEDIUM"
@@ -243,22 +279,91 @@ class LocalFileWriteAdapter(_RootedFileAdapter):
         data = params["content"].encode("utf-8")
         return {"path": self._rel(params["path"])[0], "sha256": _sha256(data), "bytes": len(data)}
 
+    def _inspect(self, full):
+        """(directories to create, mode of the existing file or None); no effect."""
+        if full == self._root:
+            raise AdapterFailure("path is a directory")
+        missing, current = [], self._root
+        try:
+            # The adapter root itself may not exist yet (a fresh state directory).
+            absent = current
+            while not os.path.lexists(absent) and absent != absent.parent:
+                missing.insert(0, absent)
+                absent = absent.parent
+            for part in full.relative_to(self._root).parts[:-1]:
+                current = current / part
+                if missing:
+                    missing.append(current)
+                    continue
+                try:
+                    st = os.lstat(current)
+                except FileNotFoundError:
+                    missing.append(current)
+                    continue
+                if not stat.S_ISDIR(st.st_mode):
+                    raise AdapterFailure("a parent of the path is not a directory")
+            if missing:
+                return missing, None
+            try:
+                st = os.lstat(full)
+            except FileNotFoundError:
+                return missing, None
+        except OSError as exc:
+            raise AdapterFailure(f"cannot inspect the path: {exc.strerror or exc}") from None
+        if stat.S_ISDIR(st.st_mode):
+            raise AdapterFailure("path is a directory")
+        return missing, (stat.S_IMODE(st.st_mode) if stat.S_ISREG(st.st_mode) else None)
+
     def _perform(self, params):
         rel, full = self._rel(params["path"])
         data = params["content"].encode("utf-8")
-        full.parent.mkdir(parents=True, exist_ok=True)
-        fd, tmp = tempfile.mkstemp(dir=str(full.parent), prefix=".hg-tmp-")
+        missing, mode = self._inspect(full)
+        created, tmp = [], None       # what this attempt made before the rename
         try:
+            for directory in missing:
+                os.mkdir(directory)
+                created.append(directory)
+            fd, tmp = tempfile.mkstemp(dir=str(full.parent), prefix=".hg-tmp-")
             with os.fdopen(fd, "wb") as stream:
+                if mode is not None:
+                    os.fchmod(stream.fileno(), mode)
                 stream.write(data)
                 stream.flush()
                 os.fsync(stream.fileno())
-            os.replace(tmp, full)
+        except OSError as exc:
+            self._undo(tmp, created, exc)
         except BaseException:
-            if os.path.exists(tmp):
-                os.unlink(tmp)
+            self._undo(tmp, created, None)
             raise
+        try:
+            os.replace(tmp, full)
+        except OSError as exc:
+            if not os.path.lexists(tmp):
+                raise           # the temporary name is gone: the rename may have happened
+            self._undo(tmp, created, exc)
+        for directory in [full.parent] + [d.parent for d in reversed(created)]:
+            _fsync_directory(directory)
         return {"path": rel, "sha256": _sha256(data), "bytes": len(data)}
+
+    @staticmethod
+    def _undo(tmp, created, exc):
+        """Remove this attempt's temporary file and the (empty) directories it created.
+
+        If everything is removed, the attempt had no effect: raise AdapterFailure (FAILED).
+        If anything cannot be removed, re-raise the original error (UNKNOWN, reconciled
+        later). With exc None (not an OSError) only clean up; the caller re-raises.
+        """
+        try:
+            if tmp is not None and os.path.lexists(tmp):
+                os.unlink(tmp)
+            for directory in reversed(created):
+                os.rmdir(directory)
+        except OSError:
+            if exc is None:
+                return
+            raise exc
+        if exc is not None:
+            raise AdapterFailure(f"nothing written: {exc.strerror or exc}") from None
 
     def verify(self, params, observed):
         _rel, full = self._rel(params["path"])
@@ -281,12 +386,13 @@ class LocalFileWriteAdapter(_RootedFileAdapter):
 
 class LocalFileReadAdapter(_RootedFileAdapter):
     name = "fs.read"
-    version = "1.0"
+    version = "1.1"
     action = "READ"
     idempotent = True
     risk = "LOW"
-    description = "Read a UTF-8 text file under the adapter root."
+    description = "Read a UTF-8 text file (at most MAX_BYTES) under the adapter root."
     params_schema = {"path": str}
+    MAX_BYTES = 2_000_000
 
     def intent(self, params):
         return {"path": self._rel(params["path"])[0]}
@@ -294,14 +400,22 @@ class LocalFileReadAdapter(_RootedFileAdapter):
     def _perform(self, params):
         rel, full = self._rel(params["path"])
         try:
-            data = read_regular_file(full)
+            data = read_regular_file(full, self.MAX_BYTES)
         except OSError:
             raise AdapterFailure("path is not an existing regular file")
-        return {"path": rel, "sha256": _sha256(data), "bytes": len(data),
-                "content": data.decode("utf-8", errors="replace")}
+        if data is None:     # refused from fstat, or once the read passed the bound (WS-04)
+            raise AdapterFailure(f"file is larger than {self.MAX_BYTES} bytes")
+        try:
+            # One reading: the returned text is exactly the bytes named by sha256 (WS-04).
+            content = data.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise AdapterFailure(f"file is not UTF-8 text (byte {exc.start})") from None
+        return {"path": rel, "sha256": _sha256(data), "bytes": len(data), "content": content}
 
     def verify(self, params, observed):
-        return True
+        content = observed.get("content")
+        return (isinstance(content, str) and len(content.encode("utf-8")) == observed.get("bytes")
+                and _sha256(content.encode("utf-8")) == observed.get("sha256"))
 
     def reconcile(self, intent):
         return "APPLIED"     # reads have no effect to reconcile

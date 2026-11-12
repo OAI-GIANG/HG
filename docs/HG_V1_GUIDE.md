@@ -58,7 +58,7 @@ hg note trust M-000003-7292b0                              # gỡ cách ly cho m
 
 Cùng một `--subject` mà nội dung khác, HG từ chối (mã 4) và chỉ ra ghi chú cũ. Muốn thay, ghi rõ: `hg note add --subject xe --replaces M-000002-5f4a22 "Thay dầu ngày 2026-10-01"`.
 
-`forget` **không xoá**: HG giữ lịch sử để biết ghi chú đã đổi thế nào. Ghi chú nằm trong `~/.local/share/hg/assistant/notes.jsonl` (chỉ Chủ Nhân đọc được, quyền 600).
+`forget` **không xoá**: HG giữ lịch sử để biết ghi chú đã đổi thế nào. Lý do `--reason` (mặc định "owner asked to forget") theo cùng quy tắc với nội dung ghi chú: UTF-8, không trống, không ký tự điều khiển, tối đa 500 ký tự; lý do không dùng được → mã thoát 2, sổ cái không đổi. Ghi chú nằm trong `~/.local/share/hg/assistant/notes.jsonl` (chỉ Chủ Nhân đọc được, quyền 600).
 
 ## 4. Hỏi, đối chiếu, tóm tắt
 
@@ -75,6 +75,8 @@ termux-clipboard-get | hg summarize -      # tóm tắt nội dung vừa sao ch�
 ```
 
 `summarize` chỉ nhận file văn bản UTF-8 tối đa 1 MB. PDF chưa hỗ trợ trong v1.
+
+`check`, `ask` và `note add` đọc văn bản (từ dòng lệnh hoặc stdin) theo cùng quy tắc (UTF-8, không có byte NUL, tối đa 1 MB); văn bản trống hoặc không đọc được → mã 2, không ghi gì vào sổ cái. Với `check`: văn bản trống hoặc không đọc được → mã 2, không có câu nào đủ nội dung để đối chiếu → mã 5 (không bao giờ báo 0 khi chưa đối chiếu gì).
 
 ## 5. Model trên máy
 
@@ -104,7 +106,7 @@ Model tắt hoặc chưa tải: `hg ask` vẫn chạy, đưa nguyên văn ghi ch
 
 | Hiện tượng | Cách xử lý |
 |---|---|
-| `Sổ cái hỏng hoặc không đọc được … Chạy: hg repair` | `hg repair` — HG sao lưu file rồi bỏ đúng dòng cuối bị cắt (xảy ra khi Android tắt Termux giữa lúc ghi). Hỏng ở giữa file thì HG không tự sửa |
+| `Sổ cái hỏng hoặc không đọc được … Chạy: hg repair` | `hg repair` — HG sao lưu file rồi bỏ đúng dòng cuối bị cắt (xảy ra khi Android tắt Termux giữa lúc ghi). Hỏng ở giữa file, hoặc các dòng đều đúng định dạng nhưng lịch sử ghi chú bị HG từ chối (ví dụ sửa tay), thì `hg repair` báo `DAMAGED` kèm lý do và không tự sửa |
 | `torn ledger tail at line N: missing record terminator` | Bản ghi cuối bị cắt trước ký tự xuống dòng nên chưa được ghi xong; HG từ chối đọc thay vì coi nó là đã ghi. Sổ cái trợ lý (thư mục `HG_HOME`): `hg repair`. Sổ cái của dịch vụ (`tasks.jsonl`, `actions.jsonl`, `memory.jsonl` trong thư mục trạng thái dịch vụ) không có công cụ tự sửa: `sv down hg-runtime`, sao lưu file, xóa đúng dòng cuối không có ký tự xuống dòng, rồi `sv up hg-runtime` |
 | `duplicate JSON key in ledger record at line N` | Một bản ghi trong sổ cái lặp lại cùng một khóa JSON. HG không bao giờ ghi như vậy, nên file đã bị sửa ngoài HG; HG từ chối đọc thay vì chọn một trong hai giá trị. Không tự sửa: dừng dịch vụ, sao lưu file, khôi phục từ bản sao lưu đáng tin |
 | `model MISSING` | `ollama pull qwen3:1.7b` rồi `hg model use qwen3:1.7b` |
