@@ -28,13 +28,20 @@ Model-server bytes are read with one meaning or refused as INVALID_RESPONSE (mod
 read oracle, hg/tests/test_model_response_oracle.py): bounded reads, UTF-8 only, no repeated
 JSON keys, JSON objects where objects are expected, string text, non-negative integer token
 counts, nothing after a stream's final message.
+
+Router accounting reconciles with its calls (router budget reconciliation oracle,
+hg/tests/test_router_budget_reconciliation_oracle.py): an answer's usage must be an object
+of non-negative integer token counts or the answer is INVALID_RESPONSE; prices are checked
+when the router is built; cost_usd is the exact sum of call costs, rounded once.
 """
 import hashlib
 import ipaddress
 import json
+import math
 import os
 import re
 import time
+from fractions import Fraction
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -501,6 +508,21 @@ class OllamaProvider(ModelProvider):
                 for m in data["models"] if isinstance(m, dict)]
 
 
+def _price(value):
+    """A provider price: (input, output) USD per million tokens, finite and non-negative."""
+    if not isinstance(value, tuple) or len(value) != 2 or not all(
+            not isinstance(v, bool) and isinstance(v, (int, float)) and math.isfinite(v) and v >= 0 for v in value):
+        raise MAEPError(f"cost_per_mtok must be a pair of finite non-negative numbers, got {value!r}")
+    return (value[0], value[1])
+
+
+def _usage_tokens(usage):
+    """(input, output) tokens of one answer. Usage must be an object; an absent count is 0."""
+    if not isinstance(usage, dict):
+        raise ProviderError("INVALID_RESPONSE", "usage must be an object of token counts")
+    return token_count(usage.get("input_tokens", 0)), token_count(usage.get("output_tokens", 0))
+
+
 class ModelRouter:
     """Route a request to providers by task kind, with bounded retry and ordered fallback."""
 
@@ -518,6 +540,8 @@ class ModelRouter:
                 raise MAEPError("route names unknown providers: " + ", ".join(unknown))
         if isinstance(max_retries, bool) or not isinstance(max_retries, int) or not 0 <= max_retries <= 3:
             raise MAEPError("max_retries must be 0..3")
+        self._prices = {name: _price(p.cost_per_mtok) for name, p in self._providers.items()}
+        self._spend = {}    # (cin, cout) -> [input_tokens, output_tokens], summed exactly
         self.offline = offline is True
         self._max_retries = max_retries
         self._log = event_log
@@ -562,6 +586,7 @@ class ModelRouter:
                         response = provider.complete(request)
                     if not isinstance(response, dict) or not isinstance(response.get("text"), str):
                         raise ProviderError("INVALID_RESPONSE", "provider returned no text")
+                    tokens = _usage_tokens(response.get("usage"))
                     if on_delta is not None and not getattr(provider, "supports_stream", False):
                         on_delta(response["text"])
                 except ProviderError as exc:
@@ -582,21 +607,27 @@ class ModelRouter:
                         raise ProviderError("UNAVAILABLE", "the answer stopped part-way: provider error "
                                             + type(exc).__name__)
                     break
-                self._account(provider, response)
+                self._account(provider, tokens)
                 self._record(task_id, kind, provider, "OK", response, started, digest, None)
                 return dict(response, attempts=attempts + [{"provider": provider.name, "attempt": attempt + 1,
                                                             "error": None}], request_digest=digest)
         raise ProviderError("UNAVAILABLE", "every provider failed: "
                             + ", ".join(f"{a['provider']}#{a['attempt']}={a['error']}" for a in attempts))
 
-    def _account(self, provider, response):
-        usage = response.get("usage") or {}
-        tin, tout = int(usage.get("input_tokens", 0)), int(usage.get("output_tokens", 0))
-        cin, cout = provider.cost_per_mtok
+    def _account(self, provider, tokens):
+        """Add one successful call. Tokens are summed as integers per price, and cost_usd is
+        computed from those sums exactly, then rounded once: it equals the sum of the call
+        costs however many small calls there are (router budget reconciliation oracle)."""
+        tin, tout = tokens
+        spent = self._spend.setdefault(self._prices[provider.name], [0, 0])
+        spent[0] += tin
+        spent[1] += tout
         self.usage["calls"] += 1
         self.usage["input_tokens"] += tin
         self.usage["output_tokens"] += tout
-        self.usage["cost_usd"] = round(self.usage["cost_usd"] + (tin * cin + tout * cout) / 1e6, 6)
+        exact = sum((Fraction(cin) * i + Fraction(cout) * o for (cin, cout), (i, o) in self._spend.items()),
+                    Fraction(0))
+        self.usage["cost_usd"] = round(float(exact / 1_000_000), 6)
 
     def _record(self, task_id, kind, provider, status, response, started, digest, error):
         if self._log is None:
