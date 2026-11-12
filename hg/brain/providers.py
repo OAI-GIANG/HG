@@ -33,6 +33,11 @@ Router accounting reconciles with its calls (router budget reconciliation oracle
 hg/tests/test_router_budget_reconciliation_oracle.py): an answer's usage must be an object
 of non-negative integer token counts or the answer is INVALID_RESPONSE; prices are checked
 when the router is built; cost_usd is the exact sum of call costs, rounded once.
+
+A failure of the caller's on_delta is the caller's (router consumer failure oracle,
+hg/tests/test_router_consumer_failure_oracle.py): its exception reaches the caller unchanged
+and no provider is asked again; a whole answer already received is accounted and recorded
+OK, a stream cut off by the reader is recorded ERROR `CONSUMER_FAILED:<type>`, usage unknown.
 """
 import hashlib
 import ipaddress
@@ -523,6 +528,14 @@ def _usage_tokens(usage):
     return token_count(usage.get("input_tokens", 0)), token_count(usage.get("output_tokens", 0))
 
 
+class _ReaderFailed(BaseException):
+    """Carries the caller's on_delta exception past the router's provider-error handling."""
+
+    def __init__(self, original):
+        super().__init__(original)
+        self.original = original
+
+
 class ModelRouter:
     """Route a request to providers by task kind, with bounded retry and ordered fallback."""
 
@@ -571,24 +584,49 @@ class ModelRouter:
         if not providers:
             raise ProviderError("UNAVAILABLE", "no provider configured for this kind"
                                 + (" in offline mode" if self.offline else ""))
+        try:
+            return self._complete(request, providers, kind, task_id, on_delta, digest, attempts)
+        except _ReaderFailed as failed:
+            raise failed.original from None
+
+    def _complete(self, request, providers, kind, task_id, on_delta, digest, attempts):
         for provider in providers:
             for attempt in range(self._max_retries + 1):
                 started = self._monotonic()
                 shown = []
 
-                def relay(text, _shown=shown):
+                reader_failed = []      # what the caller's on_delta raised, if it did
+
+                def relay(text, _shown=shown, _failed=reader_failed):
                     _shown.append(text)
-                    on_delta(text)
+                    try:
+                        on_delta(text)
+                    except BaseException as exc:
+                        _failed.append(exc)
+                        raise
+                streams = on_delta is not None and getattr(provider, "supports_stream", False)
+                answered = False
                 try:
-                    if on_delta is not None and getattr(provider, "supports_stream", False):
-                        response = provider.complete(request, on_delta=relay)
-                    else:
-                        response = provider.complete(request)
-                    if not isinstance(response, dict) or not isinstance(response.get("text"), str):
-                        raise ProviderError("INVALID_RESPONSE", "provider returned no text")
-                    tokens = _usage_tokens(response.get("usage"))
-                    if on_delta is not None and not getattr(provider, "supports_stream", False):
-                        on_delta(response["text"])
+                    try:
+                        if streams:
+                            response = provider.complete(request, on_delta=relay)
+                        else:
+                            response = provider.complete(request)
+                        if not isinstance(response, dict) or not isinstance(response.get("text"), str):
+                            raise ProviderError("INVALID_RESPONSE", "provider returned no text")
+                        tokens = _usage_tokens(response.get("usage"))
+                        answered = True
+                    finally:
+                        if reader_failed:
+                            # The reader stopped the stream (even if the provider swallowed or
+                            # wrapped its exception): the caller's failure, never retried or handed
+                            # to another provider. Usage is added only if the provider still
+                            # returned a valid answer with its counts.
+                            if answered:
+                                self._account(provider, tokens)
+                            self._record(task_id, kind, provider, "ERROR", response if answered else None,
+                                         started, digest, "CONSUMER_FAILED:" + type(reader_failed[0]).__name__)
+                            raise _ReaderFailed(reader_failed[0])
                 except ProviderError as exc:
                     attempts.append({"provider": provider.name, "attempt": attempt + 1, "error": exc.kind})
                     self._record(task_id, kind, provider, "ERROR", None, started, digest, exc.kind)
@@ -609,6 +647,8 @@ class ModelRouter:
                     break
                 self._account(provider, tokens)
                 self._record(task_id, kind, provider, "OK", response, started, digest, None)
+                if on_delta is not None and not streams:
+                    on_delta(response["text"])   # accounted first; a reader failure here is the caller's
                 return dict(response, attempts=attempts + [{"provider": provider.name, "attempt": attempt + 1,
                                                             "error": None}], request_digest=digest)
         raise ProviderError("UNAVAILABLE", "every provider failed: "
