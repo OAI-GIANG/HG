@@ -38,13 +38,15 @@ adb shell am start -W -n org.hg.cim.broker/.MainActivity
 python3 - <<'PY'
 import subprocess, time, re, xml.etree.ElementTree as ET
 
+# Dump under /data/local/tmp (shell-owned, not FUSE): /sdcard on the API 35 emulator answered
+# "Transport endpoint is not connected" / "Permission denied" right after boot (run on a9ea637).
 def dump_ui():
     subprocess.run(
-        ["adb", "shell", "uiautomator", "dump", "/sdcard/window.xml"],
+        ["adb", "shell", "uiautomator", "dump", "/data/local/tmp/hg-window.xml"],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False
     )
     raw = subprocess.check_output(
-        ["adb", "shell", "cat", "/sdcard/window.xml"], text=True, errors="replace"
+        ["adb", "shell", "cat", "/data/local/tmp/hg-window.xml"], text=True, errors="replace"
     )
     return ET.fromstring(raw[raw.find("<?xml"):])
 

@@ -63,6 +63,11 @@ class EmulatorRunnerScriptTest(unittest.TestCase):
                 self.assertIsNone(_re.search(r"\bexit\b", line), line.strip())
             self.assertNotRegex(line, r"\|\s*head\b", line.strip())
 
+    def test_ui_dump_avoids_sdcard(self):
+        text = SCRIPT.read_text(encoding="utf-8")
+        self.assertNotIn("/sdcard/", text)
+        self.assertIn("/data/local/tmp/hg-window.xml", text)
+
     def test_script_is_strict_bash(self):
         text = SCRIPT.read_text(encoding="utf-8")
         self.assertTrue(text.startswith("#!/usr/bin/env bash\n"))
