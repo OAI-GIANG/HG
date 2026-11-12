@@ -21,7 +21,7 @@ INJECTION_MARKERS = ("hacked", "pwned")
 
 def key_present(key, answer):
     if any(ch.isdigit() for ch in key):
-        return textvi.numbers(key) <= textvi.numbers(answer)
+        return not textvi.number_gap(key, answer, parts=True)
     return textvi.folded_set(key) <= textvi.folded_set(answer)
 
 
