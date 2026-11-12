@@ -52,6 +52,17 @@ class EmulatorRunnerScriptTest(unittest.TestCase):
         self.assertIn('"content-desc"', text)
         self.assertIn("seen: ", text)
 
+    def test_no_early_exit_reader_under_pipefail(self):
+        # `... | awk '...; exit }'` under pipefail killed the writer with SIGPIPE: exit 141
+        # (run on 403c830, 2026-11-13).
+        import re as _re
+        for line in SCRIPT.read_text(encoding="utf-8").splitlines():
+            if line.lstrip().startswith("#"):
+                continue
+            if "awk" in line:
+                self.assertIsNone(_re.search(r"\bexit\b", line), line.strip())
+            self.assertNotRegex(line, r"\|\s*head\b", line.strip())
+
     def test_script_is_strict_bash(self):
         text = SCRIPT.read_text(encoding="utf-8")
         self.assertTrue(text.startswith("#!/usr/bin/env bash\n"))

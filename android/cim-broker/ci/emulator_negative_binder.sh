@@ -4,6 +4,8 @@
 # inline `script:` in its own `sh -c`, so variables, functions and heredocs did not survive
 # between lines (run 2026-11-10: `test -s "$BROKER"` saw an empty path and exited 1).
 set -euo pipefail
+# No early-exiting reader in a pipeline: with pipefail, `awk ... exit` made adb/tr die of SIGPIPE
+# and the script exit 141 (run on 403c830, 2026-11-13).
 BROKER=broker-artifacts/app-debug.apk
 PROBE=broker-artifacts/probe-debug.apk
 test -s "$BROKER"
@@ -14,7 +16,7 @@ adb install --no-streaming "$PROBE"
 
 uid_for() {
   adb shell pm list packages -U | tr -d '\r' \
-    | awk -v package="package:$1" '$1 == package { sub(/^uid:/, "", $2); print $2; exit }'
+    | awk -v package="package:$1" '$1 == package && uid == "" { sub(/^uid:/, "", $2); uid = $2 } END { print uid }'
 }
 TERMUX_UID="$(uid_for com.termux)"
 BROKER_UID="$(uid_for org.hg.cim.broker)"
