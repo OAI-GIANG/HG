@@ -13,7 +13,7 @@ from pathlib import Path
 
 from hg.assistant import textvi
 from hg.assistant.ask import ask
-from hg.assistant.notes import Notebook
+from hg.assistant.notes import NoteError, Notebook, clean_text, normalize_subject
 from hg.brain.providers import parse_model_json
 
 INJECTION_MARKERS = ("hacked", "pwned")
@@ -82,15 +82,97 @@ class EvalSpecError(ValueError):
     """The evaluation file cannot be read with one meaning; nothing is asked."""
 
 
+RATE_THRESHOLDS = ("fact_rate", "grounded_rate", "abstain_rate")
+SECONDS_THRESHOLDS = ("notes_shown_s_max", "first_sentence_p50_s_max")
+
+
+def _text(value):
+    return isinstance(value, str) and value.strip() != ""
+
+
+def _number(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def validate_spec(spec):
+    """Refuse a spec that `run`/`score` could not score as written (raises EvalSpecError naming the field)."""
+    if not isinstance(spec, dict):
+        raise EvalSpecError("evaluation file must be a JSON object")
+    scoring = spec.get("scoring")
+    thresholds = scoring.get("thresholds") if isinstance(scoring, dict) else None
+    if not isinstance(thresholds, dict):
+        raise EvalSpecError("scoring.thresholds must be an object")
+    for name in RATE_THRESHOLDS:
+        if not _number(thresholds.get(name)) or not 0 <= thresholds[name] <= 1:
+            raise EvalSpecError(f"scoring.thresholds.{name} must be a number from 0 to 1")
+    for name in SECONDS_THRESHOLDS:
+        if not _number(thresholds.get(name)) or not thresholds[name] > 0:
+            raise EvalSpecError(f"scoring.thresholds.{name} must be a number of seconds above 0")
+    notes = spec.get("notes")
+    if not isinstance(notes, list) or not notes:
+        raise EvalSpecError("notes must be a non-empty list")
+    keys, subjects = set(), {}
+    for i, note in enumerate(notes):
+        if not isinstance(note, dict):
+            raise EvalSpecError(f"notes[{i}] must be an object")
+        key = note.get("key")
+        if not _text(key):
+            raise EvalSpecError(f"notes[{i}].key must be a non-empty string")
+        if key in keys:
+            raise EvalSpecError(f"note key {key!r} is repeated")
+        keys.add(key)
+        if not isinstance(note.get("subject"), str):
+            raise EvalSpecError(f"note {key!r}: subject must be a string")
+        if not isinstance(note.get("content"), str):
+            raise EvalSpecError(f"note {key!r}: content must be a string")
+        try:
+            subject = normalize_subject(note["subject"])
+            clean_text(note["content"])
+        except NoteError as exc:
+            raise EvalSpecError(f"note {key!r}: {exc}") from None
+        if subject in subjects:
+            # Notebook.add refuses a second note on one subject, or returns the first one for the
+            # same text, so both keys would name one note.
+            raise EvalSpecError(f"notes {subjects[subject]!r} and {key!r} share the subject {subject!r}")
+        subjects[subject] = key
+    questions = spec.get("questions")
+    if not isinstance(questions, list) or not questions:
+        raise EvalSpecError("questions must be a non-empty list")
+    ids = set()
+    for i, q in enumerate(questions):
+        if not isinstance(q, dict):
+            raise EvalSpecError(f"questions[{i}] must be an object")
+        qid = q.get("id")
+        if not _text(qid):
+            raise EvalSpecError(f"questions[{i}].id must be a non-empty string")
+        if qid in ids:
+            raise EvalSpecError(f"question id {qid!r} is repeated")
+        ids.add(qid)
+        if not _text(q.get("question")):
+            raise EvalSpecError(f"question {qid!r}: question must be a non-empty string")
+        if "expect" not in q:
+            raise EvalSpecError(f"question {qid!r}: expect is required (a note key, or null if unanswerable)")
+        expect, key = q["expect"], q.get("key")
+        if expect is None:
+            if key is not None and not isinstance(key, list):
+                raise EvalSpecError(f"question {qid!r}: key must be a list or null")
+            continue
+        if not isinstance(expect, str) or expect not in keys:
+            raise EvalSpecError(f"question {qid!r}: expect must name a note key")
+        # An empty key list would count any answer as a correct fact.
+        if not isinstance(key, list) or not key or not all(_text(k) for k in key):
+            raise EvalSpecError(f"question {qid!r}: key must be a non-empty list of non-empty strings")
+    return spec
+
+
 def load_spec(path):
-    """Read the evaluation file: UTF-8, one JSON object, no repeated key, no NaN/Infinity."""
+    """Read the evaluation file: UTF-8, one JSON object, no repeated key, no NaN/Infinity, and
+    every field `run`/`score` reads holds a value they can use (validate_spec)."""
     try:
         spec = parse_model_json(Path(path).read_bytes().decode("utf-8"))
     except (OSError, UnicodeDecodeError, ValueError) as exc:
         raise EvalSpecError(f"{type(exc).__name__}: {exc}") from None
-    if not isinstance(spec, dict):
-        raise EvalSpecError("evaluation file must be a JSON object")
-    return spec
+    return validate_spec(spec)
 
 
 def run(spec_path, *, router_factory, listener=None, model_check=None, release="dev", keep_home=False,
