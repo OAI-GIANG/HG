@@ -149,16 +149,22 @@ class HealthTests(FailingRuntime):
         (self.workdir / "actions.jsonl").write_text("{not json\n", encoding="utf-8")
         self.assertEqual(health(self.workdir)["status"], "FAILING")
 
+    def fresh_workdir(self):
+        """A runtime work directory before its first task: the directory exists, no ledgers."""
+        path = Path(self.tmp) / "empty"
+        path.mkdir(exist_ok=True)
+        return path
+
     def test_offline_router_without_local_model_degrades(self):
         router = ModelRouter([ScriptedProvider("remote", offline=False)], offline=True)
-        report = health(Path(self.tmp) / "empty", router=router)
+        report = health(self.fresh_workdir(), router=router)
         self.assertEqual(report["status"], "DEGRADED")
         self.assertIn("no provider available in offline mode", json.dumps(report))
 
     def test_trust_root_failure_degrades(self):
         def broken():
             raise RuntimeError("404")
-        self.assertEqual(health(Path(self.tmp) / "empty", trust_loader=broken)["status"], "DEGRADED")
+        self.assertEqual(health(self.fresh_workdir(), trust_loader=broken)["status"], "DEGRADED")
 
 
 class CliTests(FailingRuntime):
