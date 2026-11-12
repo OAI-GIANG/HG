@@ -538,3 +538,15 @@ Fix: `Notebook.forget` applies `clean_text(reason, limit=MAX_REASON_CHARS=500)`;
 FACT: PR #188 squash-merged as `d45e0dcf8a63e1fd6fd69ae483b5813a4af1c71d` (tree identical to head `11db41e`); PR CI on `11db41e` success (runs 43268308349, 43268354498 unittest 3.13/3.14; 43268354817 rt06-anchor 3.13/3.14). Local (Linux, Python 3.13.18, uid 0): oracle 5 OK, MAEP 385 OK, HG 968 OK (skip 6), hooks 32 OK, selfcheck 0, bench 0. Recovery branch `recovery/main-pre-forget-reason-20261113` = `96d8ac1` (pushed from `origin/main`, verified with `git ls-remote`).
 
 Deploy: NOT_EXECUTED. Affects only the owner's `hg note forget` CLI (and any `Notebook.add` caller passing surrogates); `hg serve` chat does not forget notes. Joins the refreshed candidate from main (#154…#188) that waits for the owner's production approval. Production stays release `030a88d5` (`4eaac81`). WS-04 stays IN_PROGRESS (deploy pending). Assistant-layer write inputs now covered: note text, subject, replaces, reason, ask, check, config, eval spec.
+
+## 51. Addendum 2026-11-13 +07 (owner session, stabilization RECONCILE) — WS-03 agent guard hardening ported from PR #11, `python -m hg` allowlisted
+
+Owner decision 2026-11-13 under the HG PR Expansion Control & Stabilization Directive V1.0: port only the guard part of draft PR #11 in one PR, with `python -m hg` and `hg.*` added to the allowlist. The audit-only execution host part of #11 (`hg/runtime.py`, `hg/tools/gateway.py`, `maep/core.py`) is not ported. It would need a manual merge onto a main that has diverged, so it stays on #11.
+
+FACT (finding): main `6035359` did not contain #11's guard hardening. The diff from #11 head `0f25cb5c` to main for `.claude/hooks/maep_guard.py` was +84/−21, and main had not changed the guard since the merge base `37e30b1`.
+
+Change: `.claude/hooks/maep_guard.py` and `.claude/hooks/test_maep_guard.py` are taken from `0f25cb5c`. Then `python -m hg` and `python -m hg.*` are allowed. Every other `-m` module stays blocked, except `unittest discover` in the three test roots. `HgModuleAllowlistTests` failed on the #11 version (1 failure) and passes now. Look-alike modules (`hgx`, `hg_evil`), `pip`, `http.server`, `-c` and `$(...)` stay blocked. `CLAUDE.md` now describes the guard as it is.
+
+Effect on agents: Bash calls in sessions that load this hook can no longer use `$(...)`, backticks, `eval`, `xargs`, `find -exec`, `python -c` or script files (`bash x.sh`, `python x.py`). The guard's own files become owner-only. CI is not affected. Deploys that run on the phone through Desktop Commander are not affected either, because the hook does not run there.
+
+FACT: local (Linux, Python 3.13.18): hooks 42 OK, MAEP 385 OK, HG 968 OK (6 skipped), selfcheck 0, bench 0. Deploy: NOT_APPLICABLE. The hook is agent tooling and is not part of the release. Production stays on release `030a88d5` (`4eaac81`).
