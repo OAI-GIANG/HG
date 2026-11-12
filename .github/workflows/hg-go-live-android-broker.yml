@@ -111,7 +111,7 @@ jobs:
           # Stable channel for the emulator stack: on the canary channel (3) sdkmanager resolves
           # platform-tools to a preview build whose licence is not accepted on the runner, and the
           # install stops at "Accept? (y/N)" (run 2026-11-13). Only build-tools 37 needs channel 3.
-          "$SDKMANAGER" "platform-tools" "emulator" "system-images;android-35;google_apis;x86_64"
+          "$SDKMANAGER" "platform-tools" "emulator" "system-images;android-35;default;x86_64"
           "$SDKMANAGER" --channel=3 "build-tools;37.0.0"
           "$SDKMANAGER" --list_installed
           echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
@@ -144,7 +144,9 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
-          target: google_apis
+          # AOSP image: the google_apis image showed "Google Play services isn't responding" over the
+          # Broker activity on the hosted emulator (run on 67be038); the test needs no Google APIs.
+          target: default
           arch: x86_64
           profile: pixel_6
           script: bash android/cim-broker/ci/emulator_negative_binder.sh

@@ -68,6 +68,13 @@ class EmulatorRunnerScriptTest(unittest.TestCase):
         self.assertNotIn("/sdcard/", text)
         self.assertIn("/data/local/tmp/hg-window.xml", text)
 
+    def test_emulator_uses_aosp_image(self):
+        # google_apis image: Play services ANR dialog covered the Broker UI (run on 67be038).
+        text = WORKFLOW.read_text(encoding="utf-8")
+        self.assertNotIn("google_apis", text.replace("# AOSP image: the google_apis", ""))
+        self.assertIn("target: default", text)
+        self.assertIn('"system-images;android-35;default;x86_64"', text)
+
     def test_script_is_strict_bash(self):
         text = SCRIPT.read_text(encoding="utf-8")
         self.assertTrue(text.startswith("#!/usr/bin/env bash\n"))
