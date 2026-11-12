@@ -462,3 +462,17 @@ Fix: `notes.jsonl` is replayed with the `MemoryStore` reader from a private copy
 FACT: PR #176 squash-merged as `7e57d02aa6e438d258481b9df5d804be05db2ddc` (tree identical to head `1719c80`); PR CI on `1719c80` success (runs 43190400837, 43190393985 unittest 3.13/3.14; 43190400743 rt06-anchor 3.13/3.14). Local on `4b17a8b` (Linux, Python 3.13.18, uid 0): oracle 7 OK, MAEP 385 OK, HG 920 OK (skip 6), hooks 32 OK, selfcheck 0, bench 0; `1719c80` adds only the guide row. Recovery branch `recovery/main-pre-repair-history-20261112` = `50e0117`.
 
 Deploy: NOT_EXECUTED. Runtime-relevant only through the owner's `hg repair` command (same release symlink). Joins the refreshed candidate from main (with #154, #158, #160, #162, #164, #170, #172, #174) that waits for the owner's production approval; the §43 pre-switch check (open production `notes.jsonl`/`memory.jsonl` read-only with the candidate) can now be done with the candidate's `hg repair` for `notes.jsonl`. Production stays release `030a88d5` (`4eaac81`). WS-04 stays IN_PROGRESS (deploy pending).
+
+## 45. Addendum 2026-11-12 17:13–17:35 +07 (hourly run, cloud only) — WS-04 config.json values are checked (#178); deploy pending
+
+FACT (defect, reproduced on main `a4fdd5e` with the code unchanged: 154 failing subcases, controls passing): `hg/assistant/config.py` `load()` checked only key names, so a wrong value was accepted and failed later, differently per path. `model_digest`/`ollama_service_dir` not a string: traceback (CLI exit 1, chat uncaught `TypeError`). `max_tokens` not an integer: chat 503 `notes_ledger_damaged` ("run hg repair"), a wrong diagnosis. `think: "no"`, `keep_alive: []`, `num_ctx: "4096"`, `timeout_s: NaN` were passed on; the model was contacted in 32 of 46 chat cases. `model_digest: ""` turned the digest pin off silently.
+
+FACT: `hg/tests/test_assistant_config_value_oracle.py` (10 tests; oracle = the value types each consumer needs): 48 unusable values across 11 keys refused by `load` naming the key and by `save` (nothing written); `hg serve` chat → 503 `assistant_unavailable`, model never called, no receipt; CLI `hg ask` and `hg model status` → exit 78, no traceback. Controls: absent file, explicit defaults, 22 usable values, `HG_MODEL` override, save/load round trip, a valid config answers.
+
+Fix: `validate()` on load and on save (non-empty printable strings; integers in range for `num_ctx`, `num_thread`, `max_tokens` 1..64000; finite `timeout_s` > 0; `think` bool/null; `keep_alive` duration string, integer or null).
+
+FACT: PR #178 squash-merged as `890c178180e554b94973f95e85565132c64d4c80` (tree identical to head `b0cb88d`); PR CI on `b0cb88d` success (runs 43199974250, 43200012906 unittest 3.13/3.14; 43200012887 rt06-anchor 3.13/3.14). Local (Linux, Python 3.13.18, uid 0): oracle 10 OK, MAEP 385 OK, HG 930 OK (skip 6), hooks 32 OK, selfcheck 0, bench 0. Recovery branch `recovery/main-pre-config-values-20261112` = `a4fdd5e`.
+
+RISK (UNVERIFIED): a production `config.json` holding a value now refused would make chat 503 and the CLI exit 78 after the switch. Before switching, run the candidate's `hg model status` against the production home.
+
+Deploy: NOT_EXECUTED. Runtime-relevant (`hg serve` chat and the owner's `hg` read `config.json`). Joins the refreshed candidate from main (with #154, #158, #160, #162, #164, #170, #172, #174, #176) that waits for the owner's production approval. Production stays release `030a88d5` (`4eaac81`). WS-04 stays IN_PROGRESS (deploy pending).
