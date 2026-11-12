@@ -476,3 +476,15 @@ FACT: PR #178 squash-merged as `890c178180e554b94973f95e85565132c64d4c80` (tree 
 RISK (UNVERIFIED): a production `config.json` holding a value now refused would make chat 503 and the CLI exit 78 after the switch. Before switching, run the candidate's `hg model status` against the production home.
 
 Deploy: NOT_EXECUTED. Runtime-relevant (`hg serve` chat and the owner's `hg` read `config.json`). Joins the refreshed candidate from main (with #154, #158, #160, #162, #164, #170, #172, #174, #176) that waits for the owner's production approval. Production stays release `030a88d5` (`4eaac81`). WS-04 stays IN_PROGRESS (deploy pending).
+
+## 46. Addendum 2026-11-12 18:15–18:35 +07 (hourly run, cloud only) — WS-04 evaluation file values are checked (#180); deploy pending
+
+FACT (defect, reproduced on main `8bf957a` with the code unchanged: 145 failing subcases/tests, controls passing): `hg/assistant/evaluate.py` `load_spec` checked only that the file is one JSON object. A missing threshold or an `expect` naming no note raised `KeyError` after every question had been asked (model contacted); a string threshold raised `TypeError` at the verdict; an answerable question with `key: []` counted any answer as a correct fact (`all([])`, a false PASS); two notes on one subject stopped the run (`NoteConflict`) or, with the same text, mapped two keys to one note; thresholds `true`, `1.5` or `0` seconds decided the verdict. `deploy/termux/eval_resumable.py` read the file with plain `json.loads`.
+
+FACT: `hg/tests/test_eval_spec_value_oracle.py` (9 tests; oracle = the fields `run`/`score` read and what `Notebook.add` accepts): 57 unusable variants refused by `load_spec` and by `run()` with zero router calls; the refusal names the field; `hg eval --set` exits 2 without traceback; the harness exits without creating notes. Controls: the four shipped specs (`eval_vi*.json`), extra fields, usable variants.
+
+Fix: `validate_spec()` in `load_spec`; the harness uses `load_spec` when the release has it (releases `7698097`, `5476315`, `4eaac81` have none: unchanged behaviour plus a warning).
+
+FACT: PR #180 squash-merged as `3d65557ead7bf91b219c438bdfa99a9ff11315e9` (tree identical to head `f30da11`); PR CI on `f30da11` success (runs 43209079162, 43209109224 unittest 3.13/3.14; 43209109178 rt06-anchor 3.13/3.14). Local (Linux, Python 3.13.18, uid 0): oracle 9 OK, MAEP 385 OK, HG 939 OK (skip 6), hooks 32 OK, selfcheck 0, bench 0. Recovery branch `recovery/main-pre-eval-spec-20261112` = `8bf957a`.
+
+Deploy: NOT_EXECUTED. Affects only the owner's `hg eval` command and the on-device eval harness; joins the refreshed candidate from main (with #154, #158, #160, #162, #164, #170, #172, #174, #176, #178) that waits for the owner's production approval. Production stays release `030a88d5` (`4eaac81`). WS-04 stays IN_PROGRESS (deploy pending). Remaining WS-04 readers without a value oracle: `hg check` inputs (DISCOVERED); `asks-*.jsonl` receipts are written and format-checked by `hg repair` but read by no command (NOT_APPLICABLE for a semantic oracle).
