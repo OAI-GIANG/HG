@@ -136,10 +136,12 @@ def compare(sentence, note_text):
     note_words = textvi.folded_set(note_text)
     overlap = len(claim & note_keys) / len(claim)
     problems = []
-    missing_numbers = textvi.numbers(sentence) - textvi.numbers(note_text)
+    missing_numbers = textvi.number_gap(sentence, note_text)
     if missing_numbers:
         problems.append("số/ngày không có trong ghi chú: " + ", ".join(sorted(missing_numbers)))
     note_all = {textvi.fold(t) for t in textvi.words(note_text)}     # names may be function words ("tiếng Anh")
+    if any(":" in v for v in textvi.numbers(note_text)):           # '8:00' states the hour and minutes
+        note_all |= {"gio", "phut"}
     missing_units = _units(sentence) - note_all
     if missing_units:
         problems.append("đơn vị không có trong ghi chú: " + ", ".join(sorted(missing_units)))
@@ -193,7 +195,9 @@ def new_information_gap(sentence, question, note_text):
     if not question:
         return []
     asked = {textvi.fold(k.lstrip("~")) for k in textvi.query_keys(question)}
-    new = [k for k in _claim_words(sentence) if textvi.fold(k.lstrip("~")) not in asked]
+    # Numbers are compared by value in compare() ('05/09/2026' is '5/9'), not as words here.
+    new = [k for k in _claim_words(sentence)
+           if textvi.fold(k.lstrip("~")) not in asked and not k.lstrip("~").isdigit()]
     if not new:
         return []
     note_keys = set(textvi.document_keys(note_text))
