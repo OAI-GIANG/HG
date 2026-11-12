@@ -539,7 +539,19 @@ FACT: PR #188 squash-merged as `d45e0dcf8a63e1fd6fd69ae483b5813a4af1c71d` (tree 
 
 Deploy: NOT_EXECUTED. Affects only the owner's `hg note forget` CLI (and any `Notebook.add` caller passing surrogates); `hg serve` chat does not forget notes. Joins the refreshed candidate from main (#154…#188) that waits for the owner's production approval. Production stays release `030a88d5` (`4eaac81`). WS-04 stays IN_PROGRESS (deploy pending). Assistant-layer write inputs now covered: note text, subject, replaces, reason, ask, check, config, eval spec.
 
-## 51. Addendum 2026-11-13 +07 (owner session, stabilization RECONCILE) — WS-03 agent guard hardening ported from PR #11, `python -m hg` allowlisted
+## 51. Addendum 2026-11-13 01:13–01:35 +07 (hourly run, cloud only) — WS-04 assistant counts and search query rules (#190); deploy pending
+
+FACT (defect, reproduced on main `6035359` with the code unchanged: 12 failing subcases + 3 errors, controls passing): `hg note list --limit 0`/`-1` printed "Chưa có ghi chú nào" (exit 0) with notes present, and `-1` silently dropped the oldest note (slice `[:-1]`); `hg note search wifi --limit 0`/`-3` reported "Không tìm thấy" (exit 5) for a matching note; `hg summarize --max-sentences 0` reported "too short" (exit 5) and `-1` silently dropped a sentence; a blank search query reported "not found" (exit 5) and a non-UTF-8 query was searched mangled (exit 0 with a hit).
+
+FACT: `hg/tests/test_cli_count_query_oracle.py` (4 tests; oracle = exit-code table, the notebook's own contents, the `_read_text` input rules): 7 unusable counts × 5 commands and 6 unusable queries → exit 2, no false "no notes"/"not found"/"too short" message, no ledger byte changed; `Notebook.search` and `summarize.extractive` refuse counts 0, -1, 1.5, True, "2", None. Controls: limits 1/2/3/50, newest first, usable query with no match → 5, max-sentences 1/2/3.
+
+Fix: argparse type `_count` (whole number ≥ 1) for `--limit` (list, search) and `--max-sentences`; library guards in `Notebook.search` (NoteError) and `summarize.extractive`/`with_model` (ValueError); `note search` query through `_read_text`. `docs/HG_V1_GUIDE.md` §4 states the rule.
+
+FACT: PR #190 squash-merged as `4783241b5fbba36023a97d990c965ec8a67cb705` (tree identical to head `2fb973d`); PR CI on `2fb973d` success (runs 43279365726, 43279401012 unittest 3.13/3.14; 43279400618 rt06-anchor 3.13/3.14). Local (Linux, Python 3.13.18, uid 0): oracle 4 OK, MAEP 385 OK, HG 972 OK (skip 6), hooks 32 OK, selfcheck 0, bench 0. Recovery branch `recovery/main-pre-cli-counts-20261113` = `6035359` (verified with `git ls-remote`).
+
+Deploy: NOT_EXECUTED. Affects only the owner's `hg note list/search`, `hg summarize` CLI and `/tìm` in the prompt (blank `/tìm` now exit 2); `hg serve` chat uses fixed limits and is unchanged. Joins the refreshed candidate from main (#154…#190) that waits for the owner's production approval. Production stays release `030a88d5` (`4eaac81`). WS-04 stays IN_PROGRESS (deploy pending).
+
+## 52. Addendum 2026-11-13 +07 (owner session, stabilization RECONCILE) — WS-03 agent guard hardening ported from PR #11, `python -m hg` allowlisted
 
 Owner decision 2026-11-13 under the HG PR Expansion Control & Stabilization Directive V1.0: port only the guard part of draft PR #11 in one PR, with `python -m hg` and `hg.*` added to the allowlist. The audit-only execution host part of #11 (`hg/runtime.py`, `hg/tools/gateway.py`, `maep/core.py`) is not ported. It would need a manual merge onto a main that has diverged, so it stays on #11.
 
