@@ -538,3 +538,85 @@ Fix: `Notebook.forget` applies `clean_text(reason, limit=MAX_REASON_CHARS=500)`;
 FACT: PR #188 squash-merged as `d45e0dcf8a63e1fd6fd69ae483b5813a4af1c71d` (tree identical to head `11db41e`); PR CI on `11db41e` success (runs 43268308349, 43268354498 unittest 3.13/3.14; 43268354817 rt06-anchor 3.13/3.14). Local (Linux, Python 3.13.18, uid 0): oracle 5 OK, MAEP 385 OK, HG 968 OK (skip 6), hooks 32 OK, selfcheck 0, bench 0. Recovery branch `recovery/main-pre-forget-reason-20261113` = `96d8ac1` (pushed from `origin/main`, verified with `git ls-remote`).
 
 Deploy: NOT_EXECUTED. Affects only the owner's `hg note forget` CLI (and any `Notebook.add` caller passing surrogates); `hg serve` chat does not forget notes. Joins the refreshed candidate from main (#154…#188) that waits for the owner's production approval. Production stays release `030a88d5` (`4eaac81`). WS-04 stays IN_PROGRESS (deploy pending). Assistant-layer write inputs now covered: note text, subject, replaces, reason, ask, check, config, eval spec.
+
+## 51. Addendum 2026-11-13 01:13–01:35 +07 (hourly run, cloud only) — WS-04 assistant counts and search query rules (#190); deploy pending
+
+FACT (defect, reproduced on main `6035359` with the code unchanged: 12 failing subcases + 3 errors, controls passing): `hg note list --limit 0`/`-1` printed "Chưa có ghi chú nào" (exit 0) with notes present, and `-1` silently dropped the oldest note (slice `[:-1]`); `hg note search wifi --limit 0`/`-3` reported "Không tìm thấy" (exit 5) for a matching note; `hg summarize --max-sentences 0` reported "too short" (exit 5) and `-1` silently dropped a sentence; a blank search query reported "not found" (exit 5) and a non-UTF-8 query was searched mangled (exit 0 with a hit).
+
+FACT: `hg/tests/test_cli_count_query_oracle.py` (4 tests; oracle = exit-code table, the notebook's own contents, the `_read_text` input rules): 7 unusable counts × 5 commands and 6 unusable queries → exit 2, no false "no notes"/"not found"/"too short" message, no ledger byte changed; `Notebook.search` and `summarize.extractive` refuse counts 0, -1, 1.5, True, "2", None. Controls: limits 1/2/3/50, newest first, usable query with no match → 5, max-sentences 1/2/3.
+
+Fix: argparse type `_count` (whole number ≥ 1) for `--limit` (list, search) and `--max-sentences`; library guards in `Notebook.search` (NoteError) and `summarize.extractive`/`with_model` (ValueError); `note search` query through `_read_text`. `docs/HG_V1_GUIDE.md` §4 states the rule.
+
+FACT: PR #190 squash-merged as `4783241b5fbba36023a97d990c965ec8a67cb705` (tree identical to head `2fb973d`); PR CI on `2fb973d` success (runs 43279365726, 43279401012 unittest 3.13/3.14; 43279400618 rt06-anchor 3.13/3.14). Local (Linux, Python 3.13.18, uid 0): oracle 4 OK, MAEP 385 OK, HG 972 OK (skip 6), hooks 32 OK, selfcheck 0, bench 0. Recovery branch `recovery/main-pre-cli-counts-20261113` = `6035359` (verified with `git ls-remote`).
+
+Deploy: NOT_EXECUTED. Affects only the owner's `hg note list/search`, `hg summarize` CLI and `/tìm` in the prompt (blank `/tìm` now exit 2); `hg serve` chat uses fixed limits and is unchanged. Joins the refreshed candidate from main (#154…#190) that waits for the owner's production approval. Production stays release `030a88d5` (`4eaac81`). WS-04 stays IN_PROGRESS (deploy pending).
+
+## 52. Addendum 2026-11-13 +07 (owner session, stabilization RECONCILE) — WS-03 agent guard hardening ported from PR #11, `python -m hg` allowlisted
+
+Owner decision 2026-11-13 under the HG PR Expansion Control & Stabilization Directive V1.0: port only the guard part of draft PR #11 in one PR, with `python -m hg` and `hg.*` added to the allowlist. The audit-only execution host part of #11 (`hg/runtime.py`, `hg/tools/gateway.py`, `maep/core.py`) is not ported. It would need a manual merge onto a main that has diverged, so it stays on #11.
+
+FACT (finding): main `6035359` did not contain #11's guard hardening. The diff from #11 head `0f25cb5c` to main for `.claude/hooks/maep_guard.py` was +84/−21, and main had not changed the guard since the merge base `37e30b1`.
+
+Change: `.claude/hooks/maep_guard.py` and `.claude/hooks/test_maep_guard.py` are taken from `0f25cb5c`. Then `python -m hg` and `python -m hg.*` are allowed. Every other `-m` module stays blocked, except `unittest discover` in the three test roots. `HgModuleAllowlistTests` failed on the #11 version (1 failure) and passes now. Look-alike modules (`hgx`, `hg_evil`), `pip`, `http.server`, `-c` and `$(...)` stay blocked. `CLAUDE.md` now describes the guard as it is.
+
+Effect on agents: Bash calls in sessions that load this hook can no longer use `$(...)`, backticks, `eval`, `xargs`, `find -exec`, `python -c` or script files (`bash x.sh`, `python x.py`). The guard's own files become owner-only. CI is not affected. Deploys that run on the phone through Desktop Commander are not affected either, because the hook does not run there.
+
+FACT: local (Linux, Python 3.13.18): hooks 42 OK, MAEP 385 OK, HG 968 OK (6 skipped), selfcheck 0, bench 0. Deploy: NOT_APPLICABLE. The hook is agent tooling and is not part of the release. Production stays on release `030a88d5` (`4eaac81`).
+
+## 53. Addendum 2026-11-13 01:00–02:10 +07 (owner session) — Stabilization Directive V1.0: AUDIT and RECONCILE record
+
+Directive: on 2026-11-13 the owner issued the *HG — PR Expansion Control & Stabilization Directive V1.0*. HG moves from PR expansion to AUDIT → RECONCILE → INTEGRATE → VERIFY → ACCEPT. Priorities are P0 (safety, integrity, security) through P4 (features, deferred). There is a temporary expansion freeze. A new PR needs an admission record. GO-LIVE is decided by the owner.
+
+**PR backlog. VERIFIED through the GitHub REST API, 192/192 classified:**
+
+| Class | PRs | Count |
+|---|---|---|
+| Merged to `main` | #1–#5, #7–#10, #12–#15, #22, #29, #34, #36, #56–#60, #62, #65–#76, #78–#118, #120–#192 except #119 | 148 |
+| Merged to the frozen v2 line `stt/maep-v1-20261022` | #16–#21, #23–#28, #30–#33, #35, #37–#54, #61, #63 | 38 |
+| Closed, not merged | #6 (deliberately failing CI probe); #55 (agent tooling config: closed by owner decision 2026-11-13, branch kept) | 2 |
+| Open | #11 draft (guard part ported in #191; execution-host part stays, divergent); #64 draft, base v2, labelled `DEFERRED_V2`; #77 HOLD (admission record posted; waits for the listener-path choice and G2/G5); #119 draft (G7-CI, see below) | 4 |
+
+**Owner decisions (OD-STAB-20261113):**
+- A. The hourly scheduled task "HG phiên làm việc tự chủ" is paused (disabled 01:20). Its prompt asked for new workstreams, which conflicts with the freeze. The run already in flight at 01:12 still produced #190 (fix) and #192 (separate ledger addendum) after the pause. They are recorded here and were not reverted.
+- B. PR #55 is closed and its branch kept.
+- C. For the 27 `UNRESOLVED_OWNER_CHOICE` paths, **main is canonical**. All 27 are uncommitted variants in phone worktrees, and none byte-matches main. The 15 paths in MEMORY_CONTINUITY / RCME / LLAMA_CPP / H1.3.1 / BATCH1 are deferred (P4, frozen features). The 6 LISTENER_ATTESTATION paths are reviewed with #77. The 6 CIM_ANDROID_BROKER paths are reviewed with #119. The worktrees are preserved untouched. Source matrix: phone `~/HG-GO-LIVE-CANDIDATE/docs/evidence/HG-GO-LIVE-20261111/reconciliation/OVERLAP_SOURCE_OWNERSHIP_MATRIX.json`, untracked, sha256 `88b8c98c9d01af0f1a1dc68fa6ae8f4b2cf7f179c7b8caebbd54fae90750a66b`.
+- D. The guard part of #11 is ported with `python -m hg` allowlisted (#191, §52).
+
+**Rules from now on (directive §2, step 7):**
+- A fix PR carries its own ledger line. Separate "ledger addendum" PRs are not opened. Since 2026-11-10, 46 of the 99 commits on main had been such PRs.
+- A new PR needs an admission record: finding/blocker, workstream, root cause, why no existing PR fits, files/interfaces, dependencies, tests/acceptance, production impact.
+
+**Production. VERIFIED on the phone, read-only, 2026-11-13:**
+- The runit service `hg-runtime` is up.
+- `run` and the `hg` shim both point to release `030a88d5…`, whose manifest commit is `4eaac81` (#113, 2026-11-10).
+- Main `62ab167` is ahead of production by #116–#191. Production was not changed.
+
+**Branch and worktree provenance:**
+- Remote: 70 `recovery/*` branches. 65 are ancestors of `main`, 3 are ancestors of `stt/maep-v1`, 1 is an ancestor of the #119 branch (its pre-sync point), and `main-pre-ask-note-input-20261112` has the same patch as #186.
+- New recovery branches: `recovery/stt-hg-android-broker-ci-pre-sync-20261113` (`aba365f`), `recovery/main-pre-guard-port-20261113` (`6035359`), `recovery/main-pre-guard-port-d7b0db5-20261113` (`d7b0db5`).
+- Phone: 22 HG worktrees. 16 are on branches that exist only on the phone. Their heads are on the remote, except 4 commits that exist only on the phone: `1709af6f` and `ff77455a` (capability-convergence integration), `64e4c088` (`stt/b3-r05-exception-unknown-20261109`) and `3d13e36d` (`stt/b4-ledger-append-admission-20261109`). UNVERIFIED whether their content is already on main. Pushing them to the public repository is an owner decision.
+- There are about 120 uncommitted files across the worktrees. They are preserved and not moved.
+
+**Go-live v3 gate record (branch `stt/hg-master-go-live-v3-execution-20261111`, commit `272300a`, 2026-11-11), carried here:**
+
+| Gate | Status | Reason |
+|---|---|---|
+| G1 | PARTIAL → owner decision C recorded | Integration still follows the groups in decision C. |
+| G2 | BLOCKED | No Android L1/L5 PID-namespace/listener evidence on the real device. |
+| G3 | PARTIAL | Mandatory security tests are skipped on Android. |
+| G4 | BLOCKED | No single gateway for every model call across all providers and entrypoints. |
+| G5 | BLOCKED | Ollama provenance trust anchor is empty. |
+| G6 | BLOCKED | No staging recovery or rollback qualification. |
+| G7 | BLOCKED | No signed APK and no real separate-UID Binder test. |
+| G8 | BLOCKED | No end-to-end inference → agent → tool → evidence journey. |
+
+The record's wording that makes "independent review" a GO-LIVE condition is superseded by OD-IR-20261109. The technical gates are unchanged. **GO-LIVE: NO-GO.**
+
+**G7-CI (#119):**
+- Branch synced with main without rewriting history (`ebe9112`).
+- `15a723d`: the emulator checks run as one bash script. Root cause: emulator-runner runs each inline line in its own `sh -c`.
+- `528d678`: the emulator stack installs from the stable SDK channel. Root cause: canary platform-tools needs a preview licence that is not accepted on the runner.
+- A regression test fails on each previous workflow.
+- Emulator result at the time of this record: see the PR. #119 stays a draft until the job passes. G7 stays BLOCKED until a real device passes.
+
+**Status:** RECONCILE PARTIALLY VERIFIED. Exit conditions still open: G2–G8, Android real-device verification, the provenance of the 4 phone-only commits, and owner acceptance of GO-LIVE.

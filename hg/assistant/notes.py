@@ -183,6 +183,8 @@ class Notebook:
 
     def search(self, query, *, limit=5, records=None):
         """Active notes ranked by Vietnamese-aware BM25; only notes sharing a content word."""
+        if type(limit) is not int or limit < 1:
+            raise NoteError(f"limit must be a whole number >= 1, not {limit!r}")
         records = self.active() if records is None else records
         unigrams = set(textvi.query_keys(query))
         if not unigrams:

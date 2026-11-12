@@ -106,8 +106,15 @@ def sentences_with_lines(text):
     return out
 
 
+def _check_count(max_sentences):
+    """max_sentences is a whole number >= 1; 0 or a negative slice would drop sentences silently."""
+    if type(max_sentences) is not int or max_sentences < 1:
+        raise ValueError(f"max_sentences must be a whole number >= 1, not {max_sentences!r}")
+
+
 def extractive(text, *, max_sentences=5):
     """Pick sentences whose content words are most typical of the whole text (TF over sqrt length)."""
+    _check_count(max_sentences)
     cands = sentences_with_lines(text)
     if not cands:
         return []
@@ -143,6 +150,7 @@ class DirectiveInput(Exception):
 
 
 def with_model(text, router, *, max_sentences=5, max_tokens=500, strict=False):
+    _check_count(max_sentences)
     found = guard.directives(text)
     if found:
         raise DirectiveInput(", ".join(found))
