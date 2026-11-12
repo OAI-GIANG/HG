@@ -27,6 +27,7 @@ CONFDIR="$HOME/.config/hg"
 OLDCONF="$CONFDIR/runtime-service.json"
 SMOKE="$HERE/deploy_smoke.py"
 PRECHECK="$HERE/state_precheck.py"
+ASSISTANT_PRECHECK="$HERE/assistant_precheck.py"
 FINISH_SRC="$HERE/hg-runtime.finish"
 RUN_TEMPLATE="$HERE/hg-runtime.run.in"
 FINISH_STATE="${HG_FINISH_STATE_DIR:-$HOME/.local/state/hg}"
@@ -327,6 +328,12 @@ run_config() {   # run_config <run script>: the --config file a rendered hg-runt
 finish_ok() {
   [ -f "$S/finish" ] && cmp -s "$S/finish" "$FINISH_SRC" \
     || { say "hg-runtime/finish is not the reviewed version: run --install-finish first"; return 1; }
+}
+
+assistant_ok() {   # assistant_ok <release root>: the new release's readers accept a copy of the owner's
+  # assistant home (notes, config, receipts), the files chat opens; the live home is only read.
+  python3 -I -B "$ASSISTANT_PRECHECK" "$1" > "$BK/assistant-precheck.json" 7<&- 8<&- 9<&- \
+    || { cat "$BK/assistant-precheck.json"; say "the new release refuses the assistant home: see above"; return 1; }
 }
 
 # State writer locks (PR #87 review F-01). The flock is taken on an open file description of THIS
@@ -646,7 +653,7 @@ test -f "$ROOT/hg/__main__.py"
 test -f "$RUN_TEMPLATE"
 mkdir -m 700 "$E/switch-$TS"
 BK="$E/switch-$TS"                                      # only once this run owns the directory
-cp "$0" "$SMOKE" "$PRECHECK" "$FINISH_SRC" "$RUN_TEMPLATE" "$BK/"
+cp "$0" "$SMOKE" "$PRECHECK" "$ASSISTANT_PRECHECK" "$FINISH_SRC" "$RUN_TEMPLATE" "$BK/"
 
 # 1. recovery point (the shared config is never modified by this script)
 cp -p "$S/run" "$BK/run.old"
@@ -679,6 +686,7 @@ fi
 # 3. every check that can fail, while the old release keeps serving
 quota_ok
 release_ok "$NEWCONF" "$NEW"
+assistant_ok "$ROOT"
 finish_ok
 space_ok
 sed -e "s#@ROOT@#$ROOT#g" -e "s#@CONF@#$NEWCONF#g" "$RUN_TEMPLATE" > "$BK/run.new"

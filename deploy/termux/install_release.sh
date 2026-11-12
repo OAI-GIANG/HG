@@ -23,6 +23,11 @@ python3 -I -B -c 'import sys, json; sys.path.insert(0, sys.argv[1]); from hg.rel
 python3 -I -B -c 'import sys, json; sys.path.insert(0, sys.argv[1]); from hg.release import seal_root; print(json.dumps(seal_root(sys.argv[1]), sort_keys=True))' "$ROOT"
 python3 -I -B -c 'import sys, json; sys.path.insert(0, sys.argv[1]); from hg.release import verify_root; print(json.dumps(verify_root(sys.argv[1], sys.argv[2], sys.argv[3]), sort_keys=True))' "$ROOT" "$MAN" "$RID"
 
+# The release's own readers must accept a copy of the owner's assistant home (notes, config,
+# receipts) before `hg` points at it; the live home is only read (exit 1 names the refused file).
+HERE="$(cd "$(dirname "$0")" && pwd)"
+python3 -I -B "$HERE/assistant_precheck.py" "$ROOT"
+
 # `hg` command: pointer file + shim (the shim never imports from the current directory).
 POINTER="$HOME/.config/hg/assistant-release"
 if [ -e "$POINTER" ]; then cp -p "$POINTER" "$POINTER.prev"; fi
