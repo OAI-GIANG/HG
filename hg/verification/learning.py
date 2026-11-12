@@ -45,12 +45,12 @@ def normalise(reason):
 
 
 def _ledger(path):
-    path = Path(path)
-    return read_events(path) if path.exists() else []
+    return read_events(Path(path))   # an absent ledger reads as []; a symlink is refused
 
 
 def collect_failures(workdir):
-    workdir = Path(workdir)
+    from hg.ops import require_workdir
+    workdir = require_workdir(workdir)
     tasks = _ledger(workdir / "tasks.jsonl")
     actions = _ledger(workdir / "actions.jsonl")
     plans, task_records = {}, {}

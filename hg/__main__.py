@@ -30,7 +30,7 @@ import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from maep.core import POLICY_VERSION
+from maep.core import POLICY_VERSION, MAEPError
 from maep.ledger import read_events
 from maep.authority.canonical_source import load_canonical_manifest
 from maep.authority.trust_anchor import TrustAnchorError
@@ -109,6 +109,8 @@ def selfcheck(workdir):
 
 def status(workdir):
     """Read-only: replays both ledgers without writing to either."""
+    from hg.ops import require_workdir
+    require_workdir(workdir)
     tasks_path, actions_path = workdir / "tasks.jsonl", workdir / "actions.jsonl"
     store = TaskStore.restore(tasks_path, read_only=True)
     pending = pending_from_events(EventLog(actions_path, read_only=True).events())
@@ -188,7 +190,11 @@ def main(argv=None):
         return 1 if problems else 0
     if args.command == "learn":
         from hg.verification.learning import analyze, proposed_cases_json
-        report = analyze(args.workdir, threshold=args.threshold)
+        try:
+            report = analyze(args.workdir, threshold=args.threshold)
+        except MAEPError as exc:
+            print(json.dumps({"result": "FAILING", "reason": str(exc)}, ensure_ascii=False))
+            return 2
         if args.cases_out:
             Path(args.cases_out).write_text(proposed_cases_json(report), encoding="utf-8")
         print(json.dumps(report, indent=2, ensure_ascii=False))
@@ -213,7 +219,12 @@ def main(argv=None):
         report = selfcheck(workdir)
         print(json.dumps(report, indent=2, ensure_ascii=False))
         return 0 if report["result"] == "PASS" else 1
-    print(json.dumps(status(Path(args.workdir)), indent=2, ensure_ascii=False))
+    try:
+        report = status(Path(args.workdir))
+    except MAEPError as exc:
+        print(json.dumps({"result": "FAILING", "reason": str(exc)}, ensure_ascii=False))
+        return 2
+    print(json.dumps(report, indent=2, ensure_ascii=False))
     return 0
 
 

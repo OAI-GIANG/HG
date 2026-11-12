@@ -145,9 +145,26 @@ def _check_line(line, line_number, events, seen):
     events.append(event)
 
 
+def _absent(path):
+    """True only when nothing at all is at ``path`` (no file, no symlink; ENOENT).
+
+    ``Path.exists()`` follows symlinks and swallows ENOTDIR/ELOOP, so a dangling symlink, a
+    symlink loop or a path under a regular file looked like a ledger that was never written
+    and read as empty. Only a plain ENOENT is absence; anything else present at the path is
+    left to the opener, which refuses non-regular files and symlinks (O_NOFOLLOW).
+    """
+    try:
+        os.lstat(path)
+    except FileNotFoundError:
+        return True
+    except OSError as exc:
+        raise MAEPError(f"cannot inspect ledger path ({type(exc).__name__})") from exc
+    return False
+
+
 def _read_events_unlocked(path, fd=None):
     path = Path(path)
-    if fd is None and not path.exists():
+    if fd is None and _absent(path):
         return []
     events = []
     seen = set()
@@ -171,7 +188,7 @@ def _read_events_unlocked(path, fd=None):
 def read_events(path):
     """Read a consistent ledger view; missing ledgers remain absent."""
     path = Path(path)
-    if not path.exists():
+    if _absent(path):
         return []
     with ledger_lock(path, exclusive=False, create=False) as fd:
         return _read_events_unlocked(path, fd)
