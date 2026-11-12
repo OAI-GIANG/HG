@@ -140,6 +140,14 @@ jobs:
           aapt dump badging termux-fdroid-0.118.3.apk | tee termux-apk-badging.txt | grep -F "package: name='com.termux'"
           sha256sum termux-fdroid-0.118.3.apk | tee termux-apk-sha256.txt
           printf 'TERMUX_SIGNER_SHA256=%s\n' "$TERMUX_SIGNER" | tee -a termux-apk-sha256.txt
+      # Root cause of the 8-13 min boots and system ANR dialogs (runs 2026-11-13): the runner user
+      # could not open /dev/kvm ("ProbeKVM: This user doesn't have permissions"), so the emulator
+      # ran with -accel off. The emulator-runner README requires this step on Linux runners.
+      - name: Enable KVM group perms
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
       - name: Install distinct-UID Android emulator and test actual Binder caller denial
         uses: reactivecircus/android-emulator-runner@v2
         with:

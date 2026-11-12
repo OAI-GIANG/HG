@@ -75,6 +75,15 @@ class EmulatorRunnerScriptTest(unittest.TestCase):
         self.assertIn("target: default", text)
         self.assertIn('"system-images;android-35;default;x86_64"', text)
 
+    def test_kvm_enabled_before_emulator(self):
+        # Without /dev/kvm access the emulator runs -accel off: 8-13 min boots, system ANRs.
+        text = WORKFLOW.read_text(encoding="utf-8")
+        kvm = text.find("99-kvm4all.rules")
+        runner = text.find("reactivecircus/android-emulator-runner")
+        self.assertGreater(kvm, 0)
+        self.assertLess(kvm, runner)
+        self.assertIn("udevadm trigger --name-match=kvm", text)
+
     def test_script_is_strict_bash(self):
         text = SCRIPT.read_text(encoding="utf-8")
         self.assertTrue(text.startswith("#!/usr/bin/env bash\n"))
