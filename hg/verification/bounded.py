@@ -18,10 +18,21 @@ _ERROR = re.compile(
     re.IGNORECASE,
 )
 _ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+_LINE_BREAK = re.compile(r"\r\n|\r|\n")
 
 
 class EvidenceWindowError(ValueError):
     pass
+
+
+def source_lines(text):
+    """Lines as editors, `less -N` and `grep -n` number them: only LF, CRLF and CR end a line.
+    (str.splitlines also splits on VT, FF, FS/GS/RS, NEL, U+2028/U+2029, which would shift
+    every later [L#] anchor and line range away from the raw line it names.)"""
+    parts = _LINE_BREAK.split(text)
+    if parts and parts[-1] == "":
+        parts.pop()
+    return parts
 
 
 def extract_log_window(payload, *, max_source_bytes=4 * 1024 * 1024, max_output_bytes=8192,
@@ -44,7 +55,7 @@ def extract_log_window(payload, *, max_source_bytes=4 * 1024 * 1024, max_output_
     if len(raw) > max_source_bytes:
         raise EvidenceWindowError("raw evidence exceeds the extraction input limit")
     text = raw.decode("utf-8", errors="replace")
-    lines = text.splitlines()
+    lines = source_lines(text)
     if not lines:
         lines = [""]
     matches = [i for i, line in enumerate(lines) if _ERROR.search(line)][:max_matches]
