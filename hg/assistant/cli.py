@@ -6,6 +6,7 @@ Exit codes, shared by every assistant command:
     5   nothing found (NO_DATA)   75  another HG process holds HG_HOME (try again)
     78  unsafe home, bad config, damaged ledger or untrusted local model
 """
+import argparse
 import json
 import os
 import sys
@@ -21,6 +22,21 @@ HELP_VI = ('HG — gõ câu hỏi rồi Enter.  "+ nội dung" để lưu ghi ch
            '"/kiem văn bản" để đối chiếu,  "/q" để thoát.')
 
 
+def _count(value):
+    """argparse type for --limit / --max-sentences: a whole number of at least 1.
+
+    0 or a negative number is refused (exit 2), never read as "no notes" / "nothing found" or,
+    through a Python slice, as "all but the last N".
+    """
+    try:
+        n = int(value, 10)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"phải là số nguyên ≥ 1, không phải {value!r}") from None
+    if n < 1:
+        raise argparse.ArgumentTypeError(f"phải là số nguyên ≥ 1, không phải {value!r}")
+    return n
+
+
 def add_parsers(sub):
     note = sub.add_parser("note", help="the owner's notes (add, search, list, show, forget)")
     nsub = note.add_subparsers(dest="note_command", required=True)
@@ -30,10 +46,10 @@ def add_parsers(sub):
     add.add_argument("--replaces", metavar="ID", help="the active note this one replaces")
     search = nsub.add_parser("search", help="find notes (works without diacritics)")
     search.add_argument("query", nargs="+")
-    search.add_argument("--limit", type=int, default=5)
+    search.add_argument("--limit", type=_count, default=5)
     lst = nsub.add_parser("list", help="newest notes first")
     lst.add_argument("--all", action="store_true", help="include replaced and forgotten notes")
-    lst.add_argument("--limit", type=int, default=20)
+    lst.add_argument("--limit", type=_count, default=20)
     show = nsub.add_parser("show", help="a note and every version of its subject")
     show.add_argument("id")
     trust = nsub.add_parser("trust", help="lift the AI-directive quarantine for one note you have read")
@@ -61,7 +77,7 @@ def add_parsers(sub):
     summ.add_argument("path", help="a UTF-8 text file, or - for stdin")
     summ.add_argument("--model", action="store_true", help="let the local model write it; HG checks each line anchor")
     summ.add_argument("--strict", action="store_true", help="drop sentences HG cannot anchor")
-    summ.add_argument("--max-sentences", type=int, default=5)
+    summ.add_argument("--max-sentences", type=_count, default=5)
     summ.add_argument("--json", action="store_true")
 
     model = sub.add_parser("model", help="local model status and selection")
@@ -91,7 +107,7 @@ class InputError(ValueError):
 
 
 def _read_text(words, stdin, out, prompt):
-    """Owner text for `hg check`, `hg ask` and `hg note add`, from argv or stdin, under the rules
+    """Owner text for `hg check`, `hg ask`, `hg note add` and `hg note search`, from argv or stdin, under the rules
     `hg summarize` applies to its input (UTF-8, no NUL, 1 MB, not blank).
 
     Bytes are decoded strictly: text in another encoding is refused (exit 2), never answered,
@@ -197,7 +213,12 @@ def _dispatch(args, stdin, out):
                     + (f" (thay {args.replaces})" if args.replaces else "") + f": {safe(record['content'])[:100]}")
             return EXIT_OK
         if sub == "search":
-            hits = nb.search(" ".join(args.query), limit=args.limit)
+            try:
+                query = _read_text(args.query, stdin, out, "")
+            except InputError as exc:
+                out(f"Không tìm được: {exc}")
+                return EXIT_INPUT
+            hits = nb.search(query, limit=args.limit)
             if args.json:
                 _print_json(hits, out)
             for h in hits if not args.json else []:
