@@ -58,7 +58,7 @@ hg note trust M-000003-7292b0                              # gỡ cách ly cho m
 
 Cùng một `--subject` mà nội dung khác, HG từ chối (mã 4) và chỉ ra ghi chú cũ. Muốn thay, ghi rõ: `hg note add --subject xe --replaces M-000002-5f4a22 "Thay dầu ngày 2026-10-01"`.
 
-`forget` **không xoá**: HG giữ lịch sử để biết ghi chú đã đổi thế nào. Ghi chú nằm trong `~/.local/share/hg/assistant/notes.jsonl` (chỉ Chủ Nhân đọc được, quyền 600).
+`forget` **không xoá**: HG giữ lịch sử để biết ghi chú đã đổi thế nào. Lý do `--reason` (mặc định "owner asked to forget") theo cùng quy tắc với nội dung ghi chú: UTF-8, không trống, không ký tự điều khiển, tối đa 500 ký tự; lý do không dùng được → mã thoát 2, sổ cái không đổi. Ghi chú nằm trong `~/.local/share/hg/assistant/notes.jsonl` (chỉ Chủ Nhân đọc được, quyền 600).
 
 ## 4. Hỏi, đối chiếu, tóm tắt
 

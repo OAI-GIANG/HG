@@ -29,6 +29,7 @@ from hg.memory.store import MemoryStore
 from hg.verification.evidence import EventLog
 
 MAX_NOTE_CHARS = 4000
+MAX_REASON_CHARS = 500
 ORIGINS = {"tty", "pipe", "prompt", "test"}
 _SUBJECT = re.compile(r"^[\w][\w.\-:]{0,79}$", re.UNICODE)
 
@@ -52,20 +53,26 @@ BIDI_CONTROLS = frozenset("\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u206
 INVISIBLE = dict.fromkeys(map(ord, "\u200b\u2060\ufeff\u00ad\u180e"), None)
 
 
-def clean_text(text, *, limit=MAX_NOTE_CHARS):
-    """NFC, no control or bidi characters, invisible characters removed, trimmed, bounded."""
+def clean_text(text, *, limit=MAX_NOTE_CHARS, what="note text"):
+    """NFC, no control or bidi characters, invisible characters removed, trimmed, bounded.
+
+    Lone surrogates (argv bytes that were not UTF-8) are refused here, as input, instead of
+    failing later at the ledger writer, which the CLI would report as a damaged ledger.
+    """
     if not isinstance(text, str):
-        raise NoteError("note text must be a string")
+        raise NoteError(f"{what} must be a string")
+    if any(unicodedata.category(c) == "Cs" for c in text):
+        raise NoteError(f"{what} is not valid UTF-8 text")
     text = unicodedata.normalize("NFC", text).replace("\r\n", "\n").translate(INVISIBLE)
     if any(unicodedata.category(c) == "Cc" and c not in "\n\t" for c in text):
-        raise NoteError("note text contains control characters")
+        raise NoteError(f"{what} contains control characters")
     if any(c in BIDI_CONTROLS for c in text):
-        raise NoteError("note text contains bidirectional control characters")
+        raise NoteError(f"{what} contains bidirectional control characters")
     text = text.strip()
     if not text:
-        raise NoteError("note text is empty")
+        raise NoteError(f"{what} is empty")
     if len(text) > limit:
-        raise NoteError(f"note text is longer than {limit} characters")
+        raise NoteError(f"{what} is longer than {limit} characters")
     return text
 
 
@@ -143,6 +150,7 @@ class Notebook:
             return {e["payload"]["memory_id"] for e in EventLog(self.path).events("NOTE_TRUST")}
 
     def forget(self, memory_id, *, reason="owner asked to forget"):
+        reason = clean_text(reason, limit=MAX_REASON_CHARS, what="lý do (reason)")
         with locked(self.home, exclusive=True, wait_s=self._wait):
             store = self._store()
             record = next((r for r in store.active(kind="NOTE") if r["memory_id"] == memory_id), None)
