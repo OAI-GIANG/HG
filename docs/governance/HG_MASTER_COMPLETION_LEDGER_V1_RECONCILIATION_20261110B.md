@@ -512,3 +512,17 @@ FACT: `hg/tests/test_assistant_home_precheck.py` (14 tests; oracle = the release
 FACT: PR #184 squash-merged as `4188703031cda80813aa8cecabd04693c18a246c` (tree identical to head `f57e221`); PR CI on `f57e221` success (runs 43236671901, 43236727649 unittest 3.13/3.14; 43236727700 rt06-anchor 3.13/3.14). Local (Linux, Python 3.13.18, uid 0): oracle 14 OK, MAEP 385 OK, HG 957 OK (skip 6), hooks 32 OK, selfcheck 0, bench 0. Recovery branch `recovery/main-pre-assistant-precheck-20261112` = `8d48048`.
 
 UNVERIFIED: not run on the phone (Termux flock on a read-only descriptor, Android paths); the first on-device run is the next install. Deploy: NOT_EXECUTED; the refreshed candidate from main now carries its own pre-switch home check. Production stays release `030a88d5` (`4eaac81`). WS-12 stays IN_PROGRESS (owner production approval).
+
+## 49. Addendum 2026-11-12 23:14–23:35 +07 (hourly run, cloud only) — WS-04 `hg ask` / `hg note add` input rules (#186); deploy pending
+
+FACT (defect, reproduced on main `ffcd038` with the code unchanged: 19 failing subcases, controls passing): the §47 rules covered only `hg check`. `hg ask` with bytes that are not UTF-8 (stdin or argv) answered the mangled question, then failed writing the ASK receipt and printed "Sổ cái hỏng … Chạy: hg repair" (exit 78) although every ledger was intact; a NUL byte was silently dropped (stdin `\x00` alone: `ValueError` traceback); `hg note add` with non-UTF-8 input ended in a `UnicodeEncodeError` traceback (exit 1); stdin was unbounded.
+
+FACT: `hg/tests/test_ask_note_input_oracle.py` (6 tests; oracle = `summarize.read_input` rules, the exit-code table, ledger bytes): 6 unreadable stdin inputs and 3 non-UTF-8 argv values → exit 2 with a reason, no traceback, no "hg repair", no answer, no ledger byte changed; blank input → exit 2. Controls: genuine stdin/argv question and note, CRLF, exactly 1 MB passes the input rule (then the 4000-character note limit, exit 2).
+
+Fix: `_check_input` generalised to `_read_text` in `hg/assistant/cli.py`, used by `check`, `ask` and `note add`. `docs/HG_V1_GUIDE.md` §4 states the rule.
+
+FACT: PR #186 squash-merged as `bbcf553eb7e623fc0727f98cc5e8314aafab13c0` (tree identical to head `803e3e7`); PR CI on `803e3e7` success (runs 43258052704 unittest 3.13/3.14; 43258052693 rt06-anchor 3.13/3.14). Local (Linux, Python 3.13.18, uid 0): oracle 6 OK, MAEP 385 OK, HG 963 OK (skip 6), hooks 32 OK, selfcheck 0, bench 0.
+
+Recovery: branch `recovery/main-pre-ask-note-input-20261112` was pushed from the work branch by mistake and points at `803e3e7`, not at main; its parent `ffcd038` is the pre-merge main (restore with `803e3e7^`). The guard forbids moving or deleting `recovery/*`, so it stays as recorded here.
+
+Deploy: NOT_EXECUTED. Affects only the owner's `hg ask` / `hg note add` CLI and the prompt; `hg serve` chat validates its own JSON body and is unchanged. Joins the refreshed candidate from main (#154…#186) that waits for the owner's production approval. Production stays release `030a88d5` (`4eaac81`). WS-04 stays IN_PROGRESS (deploy pending).
