@@ -1,0 +1,24 @@
+Repository: OAI-GIANG/HG
+Candidate source: ~/HG-GO-LIVE-CANDIDATE
+Candidate branch: stt/hg-go-live-certification-20261111
+Candidate HEAD: e465db2ef8143d013d6195abfa077f5010b3fd1c
+Isolated worktree: ~/HG-ANDROID-BROKER-CI
+Isolated branch: stt/hg-android-broker-ci-v1-20261111
+Isolated base HEAD: e465db2ef8143d013d6195abfa077f5010b3fd1c
+Imported source records: 23
+Byte-identical paths: 14
+Intentionally modified paths: 9
+Missing paths: 0
+
+The original candidate was read-only during this work. Its imported source manifest continues to verify all 23 origin files. The isolated port intentionally modifies 9 imported paths:
+- android/cim-broker/app/build.gradle.kts
+- android/cim-broker/app/src/main/AndroidManifest.xml
+- android/cim-broker/app/src/main/java/org/hg/cim/broker/BrokerOllamaProcessLiveness.java
+- android/cim-broker/app/src/main/java/org/hg/cim/broker/BrokerOllamaSupervisor.java
+- android/cim-broker/app/src/main/java/org/hg/cim/broker/BrokerRuntimeAnchor.java
+- android/cim-broker/app/src/main/java/org/hg/cim/broker/BrokerStore.java
+- android/cim-broker/settings.gradle.kts
+- .github/workflows/hg-go-live-android-broker.yml
+- docs/architecture/HG_ANDROID_LISTENER_ATTESTATION_BROKER_V1.md
+
+New files, including the probe app, new JVM tests and evidence logs, exist only in the isolated worktree and are not overwrites of original candidate paths.

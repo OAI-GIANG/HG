@@ -620,3 +620,30 @@ The record's wording that makes "independent review" a GO-LIVE condition is supe
 - Emulator result at the time of this record: see the PR. #119 stays a draft until the job passes. G7 stays BLOCKED until a real device passes.
 
 **Status:** RECONCILE PARTIALLY VERIFIED. Exit conditions still open: G2–G8, Android real-device verification, the provenance of the 4 phone-only commits, and owner acceptance of GO-LIVE.
+
+## 54. Addendum 2026-11-13 02:05–03:50 +07 (owner session, stabilization RECONCILE step 3) — G7-CI: Android Broker emulator negative-Binder qualification passes (#119)
+
+**Scope.** PR #119, Android CIM Broker with cross-UID Binder qualification in CI. Recovery point `recovery/stt-hg-android-broker-ci-pre-sync-20261113` = `aba365f`. The branch was synced with main by merge commits (`ebe9112`, `0842b2d`). History was not rewritten.
+
+**Root causes found and fixed in sequence.** Each fix has a test in `hg/tests/test_android_broker_workflow.py` that fails on the previous version:
+1. `15a723d`: emulator-runner runs each line of an inline `script:` in its own `sh -c`. `BROKER=…` was lost, and `test -s ""` exited 1. Fix: the checks move into `android/cim-broker/ci/emulator_negative_binder.sh`.
+2. `528d678`: `sdkmanager --channel=3` pulled canary platform-tools, whose preview licence is not accepted on the runner. Fix: the emulator stack installs from the stable channel. No licence is accepted on anyone's behalf.
+3. `403c830`: Button labels render with `textAllCaps`. Fix: labels match case-insensitively, also through `content-desc`, and a timeout names the labels it saw.
+4. `a9ea637`: `awk … exit` under `pipefail` ended in SIGPIPE, exit 141. Reproduced locally (old pipeline 141, new 0). Fix: awk reads all input.
+5. `67be038`: `/sdcard` (FUSE) was not ready right after boot. Fix: the UI dump goes to `/data/local/tmp`.
+6. `523c6cc`: switched to the AOSP `default` image after a Play services ANR.
+7. `f6f5589`, **the root cause behind 5 and 6:** the runner user could not open `/dev/kvm`, so the emulator ran with `-accel off`. Boots took 490–771 s and system apps raised ANR dialogs. Fix: the udev rule that the emulator-runner README requires.
+
+**FACT (CI on `f6f5589`, run 43303330208, job 131480841429, success):**
+- Boot completed in 26.9 s.
+- `TERMUX_UID=10148`, `BROKER_UID=10149`, `PROBE_UID=10150`, `UIDS_DISTINCT=PASS`.
+- Owner pairing is stored (`owner_paired=true`, `termux_uid=10148`).
+- `NEGATIVE_BINDER_PASS_DENY_UID caller_uid=10150`.
+- broker-build-unit, unittest 3.13/3.14 and rt06-anchor are green.
+- Artifacts: `hg-cim-broker-emulator-evidence-02dddb07…` (sha256 `4bd4719d…`) and `hg-cim-broker-build-02dddb07…` (sha256 `67571554…`).
+
+**Status.**
+- G7-CI (emulator) VERIFIED.
+- **G7 stays BLOCKED** until there is a signed APK, an install on the owner's real phone, and a positive plus negative separate-UID Binder test there. Emulator results do not satisfy physical-device requirements.
+- Trust anchors stay empty (fail-closed).
+- Deploy: NOT_APPLICABLE. The Android source is not part of the `hg` release, and production is unchanged (`030a88d5` / `4eaac81`).

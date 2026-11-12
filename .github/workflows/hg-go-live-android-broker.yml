@@ -1,0 +1,171 @@
+name: HG GO-LIVE Android Broker Qualification
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - stt/hg-go-live-certification-20261111
+      - stt/hg-android-broker-ci-v1-20261111
+    paths:
+      - "android/cim-broker/**"
+      - ".github/workflows/hg-go-live-android-broker.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "android/cim-broker/**"
+      - ".github/workflows/hg-go-live-android-broker.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hg-go-live-android-broker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  broker-build-unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.9.1"
+      - name: Install pinned Android SDK components from hosted runner
+        run: |
+          set -euo pipefail
+          : "${ANDROID_HOME:=${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          export ANDROID_HOME
+          export ANDROID_SDK_ROOT="$ANDROID_HOME"
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager 2>/dev/null | sort -V | tail -n 1)"
+          fi
+          test -x "$SDKMANAGER"
+          "$SDKMANAGER" --channel=3 "platforms;android-37.0" "build-tools;37.0.0"
+          "$SDKMANAGER" --list_installed
+          test -d "$ANDROID_HOME/platforms/android-37.0"
+          if [ ! -e "$ANDROID_HOME/platforms/android-37" ]; then
+            ln -s "$ANDROID_HOME/platforms/android-37.0" "$ANDROID_HOME/platforms/android-37"
+          fi
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+          echo "$ANDROID_HOME/build-tools/37.0.0" >> "$GITHUB_PATH"
+      - name: Run JVM policy tests and build Broker + negative-caller APKs
+        run: |
+          set -euo pipefail
+          gradle --no-daemon --stacktrace -p android/cim-broker \
+            :app:testDebugUnitTest :app:assembleDebug :probe:assembleDebug
+      - name: Verify package identities, signer and build digests
+        run: |
+          set -euo pipefail
+          BROKER=android/cim-broker/app/build/outputs/apk/debug/app-debug.apk
+          PROBE=android/cim-broker/probe/build/outputs/apk/debug/probe-debug.apk
+          test -s "$BROKER"
+          test -s "$PROBE"
+          apksigner verify --verbose --print-certs "$BROKER"
+          apksigner verify --verbose --print-certs "$PROBE"
+          aapt dump badging "$BROKER" | grep -F "package: name='org.hg.cim.broker'"
+          aapt dump badging "$PROBE" | grep -F "package: name='org.hg.cim.broker.probe'"
+          mkdir -p android-broker-dist
+          cp "$BROKER" android-broker-dist/app-debug.apk
+          cp "$PROBE" android-broker-dist/probe-debug.apk
+          sha256sum "$BROKER" "$PROBE" | tee android-broker-dist/android-broker-apk-sha256.txt
+          cp -a android/cim-broker/app/build/test-results android-broker-dist/ || true
+          cp -a android/cim-broker/app/build/reports android-broker-dist/ || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hg-cim-broker-build-${{ github.sha }}
+          if-no-files-found: error
+          path: android-broker-dist/*
+
+  emulator-negative-binder:
+    needs: broker-build-unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: hg-cim-broker-build-${{ github.sha }}
+          path: broker-artifacts
+      - name: Install emulator and verification tools from hosted runner
+        run: |
+          set -euo pipefail
+          : "${ANDROID_HOME:=${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          export ANDROID_HOME
+          export ANDROID_SDK_ROOT="$ANDROID_HOME"
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager 2>/dev/null | sort -V | tail -n 1)"
+          fi
+          test -x "$SDKMANAGER"
+          # Stable channel for the emulator stack: on the canary channel (3) sdkmanager resolves
+          # platform-tools to a preview build whose licence is not accepted on the runner, and the
+          # install stops at "Accept? (y/N)" (run 2026-11-13). Only build-tools 37 needs channel 3.
+          "$SDKMANAGER" "platform-tools" "emulator" "system-images;android-35;default;x86_64"
+          "$SDKMANAGER" --channel=3 "build-tools;37.0.0"
+          "$SDKMANAGER" --list_installed
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+          echo "$ANDROID_HOME/emulator" >> "$GITHUB_PATH"
+          echo "$ANDROID_HOME/build-tools/37.0.0" >> "$GITHUB_PATH"
+      - name: Download and verify the pinned F-Droid Termux caller package
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            https://f-droid.org/repo/com.termux_1002.apk \
+            --output termux-fdroid-0.118.3.apk
+          set +e
+          apksigner verify --verbose --print-certs termux-fdroid-0.118.3.apk \
+            > termux-apksigner-output.txt 2>&1
+          APKSIGNER_EXIT=$?
+          set -e
+          cat termux-apksigner-output.txt
+          test "$APKSIGNER_EXIT" -eq 0
+          TERMUX_SIGNER="$(sed -nE 's/.*certificate SHA-256 digest:[[:space:]]*([0-9A-Fa-f:]+).*/\1/p' \
+            termux-apksigner-output.txt | head -n 1 | tr -d ':' | tr 'A-F' 'a-f')"
+          test -n "$TERMUX_SIGNER"
+          EXPECTED_TERMUX_SIGNER="228fb2cfe90831c1499ec3ccaf61e96e8e1ce70766b9474672ce427334d41c42"
+          printf 'EXPECTED_TERMUX_SIGNER_SHA256=%s\n' "$EXPECTED_TERMUX_SIGNER"
+          printf 'OBSERVED_TERMUX_SIGNER_SHA256=%s\n' "$TERMUX_SIGNER"
+          test "$TERMUX_SIGNER" = "$EXPECTED_TERMUX_SIGNER"
+          aapt dump badging termux-fdroid-0.118.3.apk | tee termux-apk-badging.txt | grep -F "package: name='com.termux'"
+          sha256sum termux-fdroid-0.118.3.apk | tee termux-apk-sha256.txt
+          printf 'TERMUX_SIGNER_SHA256=%s\n' "$TERMUX_SIGNER" | tee -a termux-apk-sha256.txt
+      # Root cause of the 8-13 min boots and system ANR dialogs (runs 2026-11-13): the runner user
+      # could not open /dev/kvm ("ProbeKVM: This user doesn't have permissions"), so the emulator
+      # ran with -accel off. The emulator-runner README requires this step on Linux runners.
+      - name: Enable KVM group perms
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Install distinct-UID Android emulator and test actual Binder caller denial
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          # AOSP image: the google_apis image showed "Google Play services isn't responding" over the
+          # Broker activity on the hosted emulator (run on 67be038); the test needs no Google APIs.
+          target: default
+          arch: x86_64
+          profile: pixel_6
+          script: bash android/cim-broker/ci/emulator_negative_binder.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hg-cim-broker-emulator-evidence-${{ github.sha }}
+          if-no-files-found: warn
+          path: |
+            termux-apk-sha256.txt
+            termux-apksigner-output.txt
+            termux-apk-badging.txt
+            android-emulator-uid-evidence.txt
+            android-emulator-binder-negative.log
