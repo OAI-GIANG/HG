@@ -44,6 +44,14 @@ class EmulatorRunnerScriptTest(unittest.TestCase):
                 for package in ('"platform-tools"', '"emulator"', '"system-images;'):
                     self.assertNotIn(package, line, f"canary channel for {package}: {line.strip()}")
 
+    def test_owner_controls_matched_case_insensitively(self):
+        # Buttons use textAllCaps; uiautomator can report the label upper-cased (run 2026-11-13:
+        # "could not tap owner confirmation control 'Trust this installed Termux'").
+        text = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn(".casefold()", text)
+        self.assertIn('"content-desc"', text)
+        self.assertIn("seen: ", text)
+
     def test_script_is_strict_bash(self):
         text = SCRIPT.read_text(encoding="utf-8")
         self.assertTrue(text.startswith("#!/usr/bin/env bash\n"))

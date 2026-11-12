@@ -46,14 +46,21 @@ def dump_ui():
     )
     return ET.fromstring(raw[raw.find("<?xml"):])
 
+def norm(text):
+    return " ".join(text.split()).casefold()
+
 def tap_label(label, timeout=75):
     deadline = time.time() + timeout
     last = ""
     while time.time() < deadline:
         try:
             root = dump_ui()
+            seen = []
             for node in root.iter("node"):
-                if node.attrib.get("text", "").strip() == label:
+                names = [node.attrib.get("text", ""), node.attrib.get("content-desc", "")]
+                seen.extend(n.strip() for n in names if n.strip())
+                # Buttons render with textAllCaps, so uiautomator may report "TRUST THIS ...".
+                if any(norm(n) == norm(label) for n in names):
                     bounds = node.attrib.get("bounds", "")
                     match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", bounds)
                     if match:
@@ -66,7 +73,7 @@ def tap_label(label, timeout=75):
                             )
                             time.sleep(2)
                             return
-            last = "label not visible"
+            last = "label not visible; seen: " + " | ".join(seen[:25])
             subprocess.run(
                 ["adb", "shell", "input", "swipe", "540", "1800", "540", "700", "400"],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False
