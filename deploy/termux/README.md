@@ -40,7 +40,8 @@ remote session cannot cut them short:
    tears staging down. Production is only read (absolute-path `sv status`, file hashes, GET ready) and
    must be equal before and after. `<staging dir>/rehearsal-<UTC>/rehearsal.log` ends with
    `REHEARSAL_RESULT …` and `REHEARSAL_PASS` (exit 0) or `REHEARSAL_FAIL`; evidence has `SHA256SUMS`.
-   Each start reads the trust root from GitHub (2 calls): with the quota under ~25, wait for the reset.
+   A full rehearsal used 16 of the phone's 60 GitHub calls per hour on 2026-11-13 (each start and each
+   decision after 5 minutes reads the trust root): start it with the quota at 30 or more, or wait for the reset.
 4. `sh switch_service.sh <release_id>` — while the old release keeps serving: recovery point (run
    script, shared config, finish, status, hashes), one config file per release (fields checked if it
    already exists), GitHub quota ≥ 20, `verify-root`, read-only `serve --check`, the new release reads

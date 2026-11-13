@@ -772,3 +772,103 @@ Local results: 10/10 OK. The full suite is in the PR.
 - **Status:** ADMITTED, definition only.
 
 **G3-1 (WS-04), deferred as P3:** the root-only oracle `test_sqlite_nofollow.test_rejects_directory_owned_by_another_user` has no CI coverage (it passed in the root cloud run, §55). A root CI job is deferred unless the owner raises its priority.
+
+## 57. Addendum 2026-11-13 14:42 +07 onward (owner session, Master Autonomous Engineering & Practical Go-Live V1.0) — G6 and G8-A verified on staging; staging rehearsal tracked; G7 needs a new APK
+
+**Directive.** The owner's mission *HG — Master Autonomous Engineering, Cleanup & Practical Go-Live V1.0* (14:42) delegates engineering, staging and qualified production deployment. The owner decision of 14:19 (G8-A approved, G8-B rejected, original G8 DEFERRED TO P4) and the stabilization rules stay in force. Production deploys only when the GO-LIVE gates pass.
+
+**Baseline. FACT, 14:43:**
+- `main` = `21c42a8`, with CI unittest 3.13/3.14 green. The only open PRs are #77 (`HOLD_BLOCKED_V1`) and #64 (`DEFERRED_V2`).
+- Production on the phone runs `hg-runtime` pid 16625 on release `030a88d5` (`4eaac81`). It is READY, with integrity VERIFIED and trust LOADED.
+- Production hashes:
+  - run script `50a162a7…`
+  - shim `d17b5c0c…`
+  - pointer `6739742c…`
+  - config `349c8d0a…`
+- The whole Termux runit tree (runsvdir 16608, `hg-runtime`, `ollama`) started together at about 14:18, while the phone was coming back online. That restart was not an HG action. Pid 16625 replaces pid 8414 of §55.
+
+**G6 (WS-12). VERIFIED on staging.** The runit drill ran 14:49–14:50 in `~/hg-staging-g6-20261113`, with its own runsvdir on port 18867. `HOME`, `PREFIX` and `SVDIR` were asserted to be staging before any `sv` call.
+- **Candidate build:** built on the phone from `main` `21c42a8` → release `a293dc7a…`: 380 files, files_digest `b0bf7376…`, tree `0fc70ca8…`. A cloud rebuild gives the same tree and files_digest; the release id differs only by platform zlib.
+- **Old release:** staging started production's release `030a88d5` → READY. Traffic task `CLOSED_VERIFIED`.
+- **Switch:** `switch_service.sh a293dc7a…` → `SWITCH_OK`.
+- **Restore:** `--restore` → `RESTORED`, over the state the candidate's J1/J2 traffic had written. Traffic afterwards `CLOSED_VERIFIED`.
+- **Interruption:** a switch to the candidate was sent TERM after the locked state backup.
+  - It exited 143 with layout ORIGINAL and run script ORIGINAL.
+  - It printed `ROLLBACK_READY_VERIFIED release=030a88d5…`.
+  - Traffic afterwards `CLOSED_VERIFIED`.
+- **Teardown:** staging was taken down, with 0 staging processes left.
+- **Production:** identical before and after (pid, 5 hashes, READY) → `PRODUCTION_UNCHANGED`.
+- **Restart cycles (soak start, 14:53):** 3 controlled restarts of the candidate. Each gave a new pid, READY, a stable pid and a task `CLOSED_VERIFIED`.
+- **Evidence:** on the phone, `~/hg-staging-g6-20261113/runit-drill-20261113T074911Z/`, `SHA256SUMS` sha256 `5bef6908…`.
+
+**G8-A (WS-13). J1 and J2 VERIFIED** on the real staging service, release `a293dc7a…`, with the real local model. This shows no model planning, and the original G8 (§56 AC1–AC3) stays DEFERRED TO P4.
+
+*J1: inference through `/v1/chat`.*
+- `POST /v1/chat` returned 200, outcome ANSWERED, one MODEL sentence.
+- Router `hg.brain.providers.ModelRouter`, provider `ollama`, model `qwen3:1.7b`. The pinned digest `8f68893c…` checked READY.
+- The listener was VERIFIED_PROCESS (supervised ollama, pid 16623).
+- Receipts:
+  - MODEL_CALL `1e5778c6…`, status OK, 10.5 s.
+  - ASK receipt `5eaf19e7…`, release `a293dc7a…`.
+  - Both ids are in staging `asks-2026-11.jsonl`, which holds exactly these 2 events, with the same request digest `85d4f13b…`.
+- The tasks, actions and memory ledgers and `out/` were unchanged before and after, so no action was taken.
+
+*J2: controlled execution through `/v1/tasks`.*
+- One pre-authored step, `fs.write` to `out/deploy-smoke-G8AJ2-…txt`.
+- Lifecycle: DRAFT → READY → ASSESSED → PLANNED → AUTHORIZED → RUNNING → VERIFYING → ACCEPTED → CLOSED_VERIFIED.
+- The grant was issued from `owner-manifest:21c42a8` (`EV-41d853bb618a`).
+- Action `…:S-1:3` SUCCEEDED. The intent sha256, the observed sha256 and the sha256 of the file on disk all equal `081505f1…` (41 bytes).
+- AC-READBACK PASS (`EV-fbbfbfacabc6`), `GATE-AC-READBACK` PASS, candidate_ref `sha256:fcddcd62…`, closure recorded.
+- Replay returned 200 with the same result; a changed body returned 409.
+
+*Safety of the J2 path.* The `deploy_smoke submit` path was read in full first. It only talks to 127.0.0.1 on the port of `HG_SERVICE_CONFIG`, only on `/v1/health/ready` and `/v1/tasks`, and has no deploy code.
+
+**Tracked staging rehearsal (this PR, P2 / WS-10 and WS-12).**
+- **Admission:**
+  - *Finding:* the G6/G8-A evidence came from ad-hoc scripts on the phone, so the rehearsal that the mission's production protection requires before a production switch cannot be repeated from the repository.
+  - *Root cause:* `deploy/termux` holds only production scripts. `switch_service.sh` derives `SVDIR` from `PREFIX`, and the owner's Termux shell exports a production `SVDIR`, so a staging run depends on undocumented overrides.
+  - *Why no existing PR fits:* only #77 and #64 are open, and both are on hold.
+  - *Files:* `deploy/termux/staging_rehearsal.sh`, `deploy/termux/staging_probe.py`, README step 3b, `hg/tests/test_staging_rehearsal.py`.
+  - *Dependencies:* none.
+  - *Production impact:* none; production is only read.
+- **Tests:** 12 new tests. The module fails without the change.
+- **Local suites:** HG 1001 OK (6 skipped), MAEP 385 OK, hooks 42 OK, selfcheck PASS, bench 0.
+- **On the phone, from commit `2d49dca`**, 5 refusals exited 2 and created nothing: the production port, an existing dir without the marker, a dir inside `~/.config/hg`, a port in use, and `$HOME` itself.
+- **First full run (`2d49dca`): REHEARSAL_FAIL**, which the rehearsal is built to report.
+  - *Root cause:* a fresh staging dir had no `state_dir`, and `hg serve` refuses to start without it (`hg/service.py`: it must exist with mode 700). `./finish` then held the staging service down after 5 short runs.
+  - *Side effect:* that hold-down calls the real `termux-notification` ("HG đã dừng"), so the owner's phone may have shown a notification at about 15:13. It came from staging.
+  - Teardown left 0 processes, and production was UNCHANGED.
+  - *Fix (`bffea5f`):* the rehearsal creates `state_dir` 0700 and clears the staging finish counter. No-op stubs for `termux-notification` and `termux-wake-lock` go first on the staging PATH and log to `device-calls.log`.
+- **Second fix (`07b07d6`):** the J2 check now proves that the gateway's observed sha256 equals the file on disk, as README step 3b states.
+- **Final run (`07b07d6`, scripts sha256 `cfb530bd…` / `b11120a7…`, `~/hg-staging-rehearsal-20261113`, port 18868): REHEARSAL_PASS.**
+  - The production release was rebuilt in staging and reproduced `030a88d5`.
+  - Results: `SWITCH_OK`; J2 `CLOSED_VERIFIED` with `observed_matches_file=true` (`6725f47b…`); J1 ANSWERED with no task or action (MODEL_CALL `f8cf6a65…` OK, ASK `8883b0ba…`, release `a293dc7a`); `RESTORED`; `ROLLBACK_READY_VERIFIED`; production UNCHANGED.
+  - `device-calls.log` holds only the 4 wake-lock calls, caught by the stub. No notification was sent.
+  - Evidence: `rehearsal-20261113T081922Z/`, `SHA256SUMS` sha256 `5f70498d…`. The failed run is kept as `rehearsal-20261113T081219Z/` (`602caefb…`).
+  - A full rehearsal used 16 of the phone's 60 GitHub calls per hour.
+
+**G7 (WS-09). O4 feasibility with existing code: BLOCKED (owner).**
+- The Broker has an AF_UNIX *client* only (`BrokerUnixSocketClient`, used to reach its Ollama socket). No existing APK accepts a Termux connection.
+- The Broker and probe APKs are not installed (packages present: `com.termux`, `com.termux.boot`, `com.termux.api`).
+- On Android 17 as `untrusted_app_27`, a same-UID abstract socket reads `SO_PEERCRED` on both sides (uid 10460).
+- Cross-UID `connectto`: UNVERIFIED. It needs a new probe APK, which needs its own owner admission (§56), and the owner's install and pairing on the device.
+
+**Gates:**
+
+| Gate | Status |
+|---|---|
+| G1 | VERIFIED (§53, decision C) |
+| G2, G5 | BLOCKED, accepted for v1 (D2) |
+| G3 | VERIFIED; G3-1 deferred (P3) |
+| G4 | VERIFIED (#195) |
+| G6 | VERIFIED (staging; repeatable with `staging_rehearsal.sh`) |
+| G7 | BLOCKED: owner admission of a probe APK, install and pairing, release signing key |
+| G8-A | VERIFIED (J1 + J2, staging) |
+| G8 (original) | DEFERRED TO P4 |
+
+**Soak.** A 24 h target runs on staging (`~/hg-staging-g6-20261113/soak-*`, candidate `a293dc7a`, port 18867).
+- Every 30 minutes it runs a traffic task, and every 3 hours a J1.
+- A tick is skipped while the phone's GitHub quota is below 30, to keep quota for production.
+- Its observed duration is recorded when it ends. No long-term stability is claimed before then.
+
+**Production:** unchanged on `030a88d5`, VERIFIED. Candidate `a293dc7a` is NOT deployed. G7 is open, and GO-LIVE acceptance is the owner's.
