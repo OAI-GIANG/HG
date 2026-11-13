@@ -106,6 +106,29 @@ def counts(conf):
             "memory_lines": _lines(state / "memory.jsonl"), "root_files": files}
 
 
+def j2_check(state_dir, task_id, rel):
+    """The task's fs.write: the file on disk, its sha256, and the observed sha256 the gateway recorded."""
+    state = Path(state_dir)
+    target = state / "root" / rel
+    if not _inside(target, state / "root"):
+        raise Refused("task file is outside the staging root")
+    raw = target.read_bytes() if target.is_file() else None
+    file_sha = hashlib.sha256(raw).hexdigest() if raw is not None else None
+    observed = []
+    actions = state / "actions.jsonl"
+    for line in (actions.read_text(encoding="utf-8").splitlines() if actions.is_file() else []):
+        event = json.loads(line)
+        payload = event.get("payload") or {}
+        if (event.get("kind") == "ACTION_COMPLETED" and str(payload.get("action_id", "")).startswith(task_id + ":")
+                and payload.get("tool") in (None, "fs.write")):
+            observed.append({"action_id": payload.get("action_id"), "status": payload.get("status"),
+                             "observed_sha256": (payload.get("observed") or {}).get("sha256")})
+    match = (file_sha is not None and len(observed) == 1 and observed[0]["status"] == "SUCCEEDED"
+             and observed[0]["observed_sha256"] == file_sha)
+    return {"task_id": task_id, "file_sha256": file_sha, "file_bytes": None if raw is None else len(raw),
+            "actions": observed, "observed_matches_file": match}
+
+
 def mkconf(config, release_id, staging_home, port, token_file):
     doc = {"schema": "hg-runtime-service-config-v1", "host": "127.0.0.1", "port": port, "max_body_bytes": 262144,
            "state_dir": f"{staging_home}/.local/share/hg/runtime-service-state-staging", "token_file": token_file,
@@ -170,17 +193,12 @@ def main(argv):
             src = state / name
             picked = [ln for ln in src.read_text(encoding="utf-8").splitlines() if task_id in ln] if src.is_file() else []
             (out / f"j2-{name}").write_text("".join(ln + "\n" for ln in picked), encoding="utf-8")
-        target = state / "root" / rel
-        if not _inside(target, state / "root"):
-            raise Refused("task file is outside the staging root")
-        raw = target.read_bytes() if target.is_file() else None
+        record = j2_check(state, task_id, rel)
         status, body = call(conf, "GET", f"/v1/tasks/{task_id}")
-        record = {"task_id": task_id, "file_sha256": hashlib.sha256(raw).hexdigest() if raw is not None else None,
-                  "file_bytes": None if raw is None else len(raw), "get_http": status,
-                  "state": (body.get("task") or {}).get("state") if isinstance(body, dict) else None}
+        record.update(get_http=status, state=(body.get("task") or {}).get("state") if isinstance(body, dict) else None)
         (out / "j2-file.json").write_text(json.dumps(record, indent=1, sort_keys=True), encoding="utf-8")
         print(json.dumps(record))
-        return 0 if record["state"] == "CLOSED_VERIFIED" and raw is not None else 1
+        return 0 if record["state"] == "CLOSED_VERIFIED" and record["observed_matches_file"] else 1
     raise Refused(f"unknown command {cmd}")
 
 

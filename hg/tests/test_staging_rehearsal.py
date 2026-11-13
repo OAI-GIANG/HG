@@ -103,6 +103,32 @@ class ProbeTests(unittest.TestCase):
         with unittest.mock.patch.dict(os.environ, {"HG_STAGING_DIR": str(stg)}):
             self.assertEqual(self.probe.staging_conf(str(conf))["port"], 18867)
 
+    def test_j2_check_requires_the_observed_hash_to_equal_the_file_on_disk(self):
+        state = self.tmp / "state"
+        (state / "root" / "out").mkdir(parents=True)
+        body = b"HG v1 deploy smoke J2"
+        (state / "root" / "out" / "f.txt").write_bytes(body)
+        digest = __import__("hashlib").sha256(body).hexdigest()
+
+        def ledger(observed, status="SUCCEEDED"):
+            events = [{"kind": "ACTION_STARTED", "payload": {"action_id": "T-1:S-1:3", "tool": "fs.write"}},
+                      {"kind": "ACTION_COMPLETED", "payload": {"action_id": "T-1:S-1:3", "status": status,
+                                                               "observed": {"sha256": observed}}},
+                      {"kind": "ACTION_COMPLETED", "payload": {"action_id": "T-10:S-1:1", "status": "SUCCEEDED",
+                                                               "observed": {"sha256": "0" * 64}}}]
+            (state / "actions.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events))
+
+        ledger(digest)
+        record = self.probe.j2_check(state, "T-1", "out/f.txt")
+        self.assertTrue(record["observed_matches_file"], record)
+        self.assertEqual([a["action_id"] for a in record["actions"]], ["T-1:S-1:3"])     # T-10 is another task
+        ledger("f" * 64)
+        self.assertFalse(self.probe.j2_check(state, "T-1", "out/f.txt")["observed_matches_file"])
+        ledger(digest, status="UNKNOWN")
+        self.assertFalse(self.probe.j2_check(state, "T-1", "out/f.txt")["observed_matches_file"])
+        with self.assertRaises(self.probe.Refused):
+            self.probe.j2_check(state, "T-1", "../../etc/passwd")
+
     def test_cli_refusal_is_exit_2_and_names_the_reason(self):
         proc = subprocess.run(["python3", "-I", "-B", str(PROBE), "guard", str(self.fake.conf),
                                str(self.fake.home / "x"), "18766"], capture_output=True, text=True, timeout=60)
