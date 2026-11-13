@@ -24,7 +24,7 @@ The workflow pins:
 - Gradle 9.9.0;
 - JDK 17;
 - compileSdk 37;
-- SDK Build Tools 36.0.0.
+- SDK Build Tools 37.0.0 (installed from SDK channel 3 by the workflow).
 
 Run from this directory with a compatible Android SDK installation:
 
@@ -38,12 +38,11 @@ The GitHub Actions workflow builds the debug APK and uploads it as an artifact. 
 2. Launch HG CIM Broker.
 3. Inspect Termux package version, UID and full signer SHA-256.
 4. Explicitly select "Trust this installed Termux".
-5. From Termux run:
-
-       content call --uri content://org.hg.cim.broker.ipc --method status
-
-6. Confirm the response has authenticated=true, caller UID equal to Termux UID, and broker UID different from Termux UID.
+5. Call the provider **from a process running as the Termux app UID**. Plain `content call` typed in Termux does not work: `/system/bin/content` asks the activity manager for `getContentProviderExternal()`, which needs `android.permission.ACCESS_CONTENT_PROVIDERS_EXTERNALLY` (granted to the shell, not to apps). On the owner's phone (Android 17, Termux UID 10460, 2026-11-13) it fails with `SecurityException ... requires android.permission.ACCESS_CONTENT_PROVIDERS_EXTERNALLY`. Run over `adb shell`, the call comes from the shell UID, not from Termux, so it does not test the Termux pairing either. **The repository has no Termux-side client yet, so the positive real-device check (G7) is BLOCKED.**
+6. Once such a client exists: confirm the response has authenticated=true, caller UID equal to Termux UID, and broker UID different from Termux UID.
 7. Revoke pairing in the app and repeat the call; the provider must deny it.
+
+The negative check (another app UID is denied) uses the `probe` APK. CI runs it on an emulator (`android/cim-broker/ci/emulator_negative_binder.sh`).
 
 The broker must not be paired automatically on first launch.
 

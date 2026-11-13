@@ -647,3 +647,59 @@ The record's wording that makes "independent review" a GO-LIVE condition is supe
 - **G7 stays BLOCKED** until there is a signed APK, an install on the owner's real phone, and a positive plus negative separate-UID Binder test there. Emulator results do not satisfy physical-device requirements.
 - Trust anchors stay empty (fail-closed).
 - Deploy: NOT_APPLICABLE. The Android source is not part of the `hg` release, and production is unchanged (`030a88d5` / `4eaac81`).
+
+## 55. Addendum 2026-11-13 08:05–10:25 +07 (owner session, stabilization INTEGRATE → VERIFY) — owner decisions D1–D3, G3/G4/G6/G7 evidence, §53 correction
+
+**Owner decisions:**
+- **D1. Phone-only commits are kept offline and not pushed.**
+  - Bundles are in `~/HG-OFFLINE-BACKUP-20261113/` (mode 0700) with `SHA256SUMS`:
+    - `HG-CONVERGENCE-INTEGRATION-20261110.bundle` `6734660a…`
+    - `…20261110B.bundle` `a3dcbd06…`
+    - `HG-IR-PR88.bundle` `565fd277…`
+    - `HG-IR-REMEDIATION-20261109.bundle` `e4374e92…`
+  - Each bundle verified with `git bundle verify`. No original commit was amended, rebased or deleted.
+  - Secret scan of the unpublished patches: no token, key or private-key pattern. The only email-pattern hit is `@api.example.test` in a test, a reserved test domain.
+  - **Correction to §53:** only `1709af6f` and `ff77455a` are missing from GitHub. `64e4c088` (head of #88) and `3d13e36d` are retrievable through the GitHub API; the earlier check used a shallow clone. Both phone-only commits have the same stable patch-id `870d8337c3ea62e6` as `0feca8a`, which is on GitHub (`stt/hg-capability-convergence-v1-20261110`), only on different parents. No unique content exists only on the phone.
+- **D2. G2 and G5 are recorded as BLOCKED for v1.**
+  - #77 stays on HOLD (label `HOLD_BLOCKED_V1`). The L5 gate needs PID-namespace support, which the real kernel lacks.
+  - No listener variant is integrated. All 3 variants stay preserved.
+  - Listener attestation is not implemented in the runtime and does not meet operating conditions.
+- **D3. #11 is closed and deferred to P4 (label `DEFERRED_P4`); its branch is kept at `0f25cb5c`.**
+  - Verified first: main's guard equals #11's guard plus the 5-line `python -m hg` allowlist, and main's guard tests equal #11's plus 30 lines.
+  - What was not ported is the audit-only execution host (+1001/−8 against `37e30b1`).
+
+**G3 (WS-04), security tests skipped on Android.** Run on the owner's phone (Android 17, SDK 37, Termux 0.118.3, Python 3.14.8, UID 10460) from a fresh clone of `cfe376c`:
+- Results: HG 980 OK (3 skipped), MAEP 385 OK (3 skipped), hooks 42 OK, `hg selfcheck` PASS, `hg bench` 0.
+- All 6 skips are classified. They stay SKIP and are not counted as PASS:
+  - **5 hard-link oracles** (`test_chat_receipt_oracle` ×2, `test_evidence_store_false_accept_oracle` ×1, `test_sqlite_nofollow` ×2) are SKIP_JUSTIFIED. Android's SELinux policy does not grant apps hard links, and Termux's Python ships without `os.link`. The attack primitive is therefore unavailable to any app UID on this platform. The same tests run and pass on Linux CI (unittest 3.13/3.14 on `cfe376c`).
+  - **1 root-only oracle** (`test_sqlite_nofollow.test_rejects_directory_owned_by_another_user`) is SKIP on Android and on the non-root CI runner. It ran and passed in the root cloud session of 2026-11-13: MAEP 385 OK, 0 skipped. Finding G3-1 (P3): it has no CI coverage.
+- **G3 status:** the criterion "no security test skipped without a reason" is VERIFIED. Coverage gap G3-1 remains open.
+
+**G4 (WS-08), ModelCallGateway admission record.**
+- **Finding:** G4 BLOCKED, "no single gateway for every model call".
+- **Current main:** model calls go through `hg.brain.providers.ModelRouter` in `hg/assistant/ask.py`, `hg/chat.py`, `hg/brain/planner.py` and `hg/research/research.py`. The only model HTTP transport is in `hg/brain/providers.py`.
+- **Root cause of the gap:** nothing proves this property. There is no conformance test that fails when an entrypoint calls a model outside `ModelRouter`.
+- **Not admitted:** `0feca8a` (`feat(brain): wire compatible provider into ModelPlanner`, +523, 8 files). It adds a new OpenAI-compatible HTTPS provider, which is a P4 capability under the freeze and conflicts with the v1 local-first decision.
+- **Admitted for the next step (P1, verification only):** ONE PR adding a conformance test. Static: no model-endpoint HTTP outside `providers.py`. Runtime: each entrypoint builds its calls through `ModelRouter`, including a negative case where a direct call fails the test.
+- **Dependencies:** none. **Production impact:** none.
+
+**G6 (WS-12), staging recovery and rollback on the phone. Isolated:** `HOME` and `PREFIX` point to `~/hg-staging-g6-20261113`, port 18867, a new token and state. The production pointer, shim and service were not touched (sha256 `6739742c…` and `d17b5c0c…` unchanged; `hg-runtime` pid 8414 ran throughout).
+- **Reproducible build:** `build_release.sh 4eaac81` rebuilt release `030a88d534bd…`, identical to production (files 303, tree `e2144894…`).
+- **Candidate:** `cfe376c` → release `5fb5f2e549f6…` (files 379, tree `5f26e6b0…`).
+- **Install:** both installed with `install_release.sh`, each verified and sealed.
+- **Pointer rollback:** `hg selfcheck` PASS on the candidate, and PASS again after restoring the pointer from `.prev`.
+- **Service level:**
+  - `hg serve --check` on the candidate: `PREFLIGHT_PASS` (release VERIFIED; trust LOADED, MAEP-1.1.0).
+  - Candidate started: authenticated `/v1/health/ready` returned `READY`, then a graceful stop.
+  - **Release `030a88d5` then started on the same state directory and returned `READY`**, then a graceful stop.
+- **G6 status: PARTIALLY VERIFIED.** Not yet exercised: the runit cutover and restore through `switch_service.sh` (needs a staging runsvdir), and a rollback over state written by real traffic.
+
+**G7 (WS-09), real device.**
+- VERIFIED prerequisites:
+  - The phone's Termux signer certificate SHA-256 is `228fb2cf…41c42`, equal to the Broker's pinned F-Droid signer.
+  - CI APKs from run 43304974120 were downloaded to `~/hg-g7-realdevice-20261113` and match the CI digests (`app-debug.apk` `8eb3b9a9…`, `probe-debug.apk` `13254672…`).
+- **BLOCKED:**
+  - The README's positive step `content call` cannot run as the Termux UID. It needs `ACCESS_CONTENT_PROVIDERS_EXTERNALLY`; observed `SecurityException` on the phone. No Termux-side client exists.
+  - Installing the APKs and tapping "Trust" need the owner on the device.
+  - The APKs carry a CI debug signing identity, not a release key.
+- `android/cim-broker/README.md` is corrected in this PR: it no longer describes an impossible step, and the build-tools version now matches the workflow (37.0.0).
