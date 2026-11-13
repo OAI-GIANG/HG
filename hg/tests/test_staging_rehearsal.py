@@ -162,6 +162,10 @@ class RehearsalRefusalTests(unittest.TestCase):
         export = body.index('export HOME="$STG/home" PREFIX="$STG/prefix" SVDIR="$STG/prefix/var/service"')
         for later in ('sh "$HERE/build_release.sh"', 'nohup runsvdir', 'RSVPID=$!', 'sh "$SCR/switch_service.sh"'):
             self.assertLess(export, body.index(later), later)
+        start = body.index("nohup runsvdir")
+        for before in ('mkdir -m 700 "$STATE"', 'export PATH="$PREFIX/bin:$PATH"', "termux-notification termux-wake-lock",
+                       'rm -f "$HOME/.local/state/hg/hg-runtime-finish.count"'):
+            self.assertLess(body.index(before), start, before)
         # teardown is defined earlier but stops a service only once RSVPID was set after the export
         teardown = body[body.index("teardown() {"):body.index("finish() {")]
         self.assertTrue(teardown.splitlines()[1].strip().startswith('if [ -n "$RSVPID" ]'))

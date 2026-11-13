@@ -109,6 +109,8 @@ TOKEN="$CONFDIR/runtime-service-staging.token"
 python3 -I -B "$HERE/staging_probe.py" token "$TOKEN" || stop "token"
 OLDCONF="$CONFDIR/runtime-service-staging-$OLD.json"
 python3 -I -B "$HERE/staging_probe.py" mkconf "$OLDCONF" "$OLD" "$HOME" "$PORT" "$TOKEN" || stop "staging config"
+STATE="$(python3 -I -B "$HERE/staging_probe.py" field "$OLDCONF" state_dir)"
+[ -d "$STATE" ] || mkdir -m 700 "$STATE" || stop "staging state dir"   # hg serve requires it (service.py)
 [ -e "$CONFDIR/runtime-service.json" ] || cp -p "$OLDCONF" "$CONFDIR/runtime-service.json"
 python3 -I -B "$HERE/staging_probe.py" staging-conf "$CONFDIR/runtime-service.json" || stop "shared staging config is not staging"
 # J1 needs the model settings; the owner's notes and receipts are never copied.
@@ -134,6 +136,15 @@ install -m 700 "$SCR/hg-runtime.finish" "$S/finish"
 sed -e "s#@ROOT@#$HOME/hg-releases/$OLD#g" -e "s#@CONF@#$OLDCONF#g" "$SCR/hg-runtime.run.in" > "$S/run.tmp"
 chmod 700 "$S/run.tmp" && mv "$S/run.tmp" "$S/run"
 grep -qF "cd \"$HOME/hg-releases/$OLD\"" "$S/run" || stop "rendered run script is not staging"
+# Device-level calls of ./run and ./finish (wake lock, the "HG đã dừng" notification) must not come
+# from staging: no-op stubs first on the staging PATH record them in device-calls.log instead.
+for tool in termux-notification termux-wake-lock termux-wake-unlock; do
+  printf '#!%s\necho "%s $*" >> "%s/device-calls.log"\n' "$REALPREFIX/bin/sh" "$tool" "$EV" > "$PREFIX/bin/$tool"
+  chmod 700 "$PREFIX/bin/$tool"
+done
+export PATH="$PREFIX/bin:$PATH"
+[ "$(command -v termux-notification)" = "$PREFIX/bin/termux-notification" ] || stop "notification stub is not first on PATH"
+rm -f "$HOME/.local/state/hg/hg-runtime-finish.count" "$HOME/.local/state/hg/hg-runtime.HELD"
 nohup runsvdir -P "$SVDIR" > "$EV/runsvdir.log" 2>&1 &
 RSVPID=$!
 HG_SERVICE_CONFIG="$OLDCONF" python3 -I -B "$SCR/deploy_smoke.py" ready-wait "$OLD" 240 || stop "production release not READY in staging"
