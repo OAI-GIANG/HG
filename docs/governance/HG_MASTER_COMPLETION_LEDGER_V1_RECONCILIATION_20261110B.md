@@ -703,3 +703,72 @@ The record's wording that makes "independent review" a GO-LIVE condition is supe
   - Installing the APKs and tapping "Trust" need the owner on the device.
   - The APKs carry a CI debug signing identity, not a release key.
 - `android/cim-broker/README.md` is corrected in this PR: it no longer describes an impossible step, and the build-tools version now matches the workflow (37.0.0).
+
+## 56. Addendum 2026-11-13 13:26 +07 onward (owner session, stabilization VERIFY) — G4 conformance test; G6 runit drill blocked (device offline); G7/G8 admission records; G3-1 deferred
+
+**G4 (WS-08). This PR adds `hg/tests/test_model_call_gateway.py`, under the admission recorded in §55. It adds no capability.**
+
+Static layer, over `hg/` and `maep/` with tests excluded:
+- **S1:** network imports appear only in 3 allowlisted modules, each with its reason: the transport `hg/brain/providers.py`, the `url.read` adapter `hg/tools/code.py`, and the trust-anchor reader `maep/authority/canonical_source.py`.
+- **S2:** model endpoint literals appear only in `providers.py`.
+- **S3:** every `.complete()` call outside `providers.py` is made on a router object.
+- The 5 inference call sites are pinned: `ask`, `summarize`, `planner`, `research/options`, `research/research`.
+
+Runtime layer, `GatewayProbe`:
+- The probe counts `ModelRouter.complete` calls and makes every `ModelProvider.complete` raise unless it runs inside one.
+- ask, chat (the real `ChatService` with a real `OllamaProvider` against a loopback fake), `ModelPlanner` and `Researcher` each reach the model only through the router.
+
+Negative cases:
+- A synthetic module calling `urlopen(.../api/chat)` is flagged by S1 and S2.
+- A synthetic `OllamaProvider(...).complete()` is flagged by S3.
+- A provider called outside the router raises before any transport call.
+- **Mutation check:** making `research.py` call a provider directly fails S3 (static) and "no model call went through ModelRouter" (runtime), i.e. both layers catch it for the right reason.
+
+Local results: 10/10 OK. The full suite is in the PR.
+
+**G6 (WS-12): the runit drill is BLOCKED because the phone (Desktop Commander device `localhost`) was offline for this whole session (last seen about 1 h before 13:30 +07).**
+- Prepared but NOT EXECUTED: the drill script, which runs entirely inside `~/hg-staging-g6-20261113`. Its steps:
+  1. A staging `runsvdir` runs release `030a88d5` on port 18867, with real `deploy_smoke submit` traffic.
+  2. `switch_service.sh 5fb5f2e5` (expects SWITCH_OK), then real traffic on the new release.
+  3. `--restore` (expects RESTORED).
+  4. Interruption drill: SIGTERM after the stop, which must produce `ROLLBACK_READY_VERIFIED`.
+  5. A production snapshot before and after.
+- The drill aborts if `HOME`, `PREFIX` or `SVDIR` falls outside the staging directory.
+- G6 stays PARTIALLY VERIFIED on the §55 evidence.
+
+**G7 (WS-09), admission record for a client that runs as the Termux UID:**
+- **Finding:** the positive real-device call is impossible today. `content call` lacks `ACCESS_CONTENT_PROVIDERS_EXTERNALLY` (§55).
+- **Root cause:** the Broker authenticates callers only through its exported ContentProvider, and Termux shell processes have no app context. They cannot open a provider client as the Termux UID.
+- **Options evaluated:**
+  - O1 `content`/`adb shell`: rejected. Wrong UID, or the permission is denied.
+  - O2 PendingIntent creator UID: rejected. Android's security guidance says authentication must not rely on `PendingIntent.getCreator*()`, because the presenter may not be the creator. It recommends a Service or ContentProvider with `Binder.getCallingUid()`.
+  - O3 termux-am / termux-am-socket: termux-app runs `am` commands in its own process, so the Binder transaction does carry the Termux UID. But broadcasts, started services and activities do not give the receiver a reliable caller UID unless the sender opts in (API 34 `getSentFromUid` with `setShareIdentityEnabled`). termux-app does not opt in; UNVERIFIED. Rejected unless a provider `call` path exists.
+  - **O4 AF_UNIX socket authenticated by kernel `SO_PEERCRED`:** a Termux-side client (Python, UID 10460) talks to a Broker socket, and the Broker checks the peer UID and PID against the pairing record. The repo already has the primitive (`BrokerPeerCredentialPolicy`, and `BrokerUnixSocketClient` using `LocalSocket.getPeerCredentials()`).
+    - Risks: abstract-namespace sockets have no filesystem access control, so authentication must rest on peer credentials and pairing. SELinux may deny `connectto` between two untrusted apps on Android 17; UNVERIFIED.
+- **Admission decision:**
+  - ADMITTED: an **on-device feasibility probe only**. It checks whether an untrusted app on this phone can accept a Termux connection and read `SO_PEERCRED`. Product code waits for a positive result.
+  - If the probe needs a new APK, that comes back as its own admission to the owner.
+- **Files and interfaces, if O4 later proceeds:** `android/cim-broker/app/src/main/java/org/hg/cim/broker/*` (a socket server reusing `BrokerPeerCredentialPolicy`) and a Termux-side client under `deploy/termux/`.
+- **Dependencies:** the phone online; the owner installs and pairs the APKs.
+- **Tests:** a positive case (the Termux UID is authenticated) and negatives (the probe UID is denied; a revoked pairing is denied), on the real device.
+- **Production impact:** none.
+
+**G8 (WS-13), admission record for the end-to-end inference → agent → tool → evidence journey (definition only):**
+- **Finding:** G8 is BLOCKED and has no defined acceptance.
+- **Components on main:**
+  - Inference: `ModelRouter` → local `OllamaProvider`, proven to be the only model path by G4.
+  - Agent: `BrainOrchestrator` + `ModelPlanner` with `check_plan` and validate-and-revise (MAEP-014), with grants issued per task.
+  - Tool: `ActionGateway` → `fs.write` in `out/`.
+  - Evidence: `AcceptanceGate`, the task/action ledgers and the MODEL_CALL receipts.
+- **Acceptance criteria:**
+  - AC1: on the staging release on the owner's phone, one objective is planned by the local model through `ModelRouter`, validated, executed by the gateway (`fs.write` in `out/`), and closed by `AcceptanceGate` with evidence. The file's sha256 must equal the evidence hash.
+  - AC2: a model proposal outside scope is rejected (`PlanRejected`), with no effect and no closure.
+  - AC3: the task ledger links the MODEL_CALL receipt, the action id and the evidence hash, and `hg status` reads them back.
+  - AC4: offline, with no paid API.
+  - AC5: production is untouched.
+- **Files and interfaces:** `hg/runtime.py` (`build_runtime`), `hg/brain/planner.py`, `hg/http_api.py` (`/v1/tasks`), `hg/tools/gateway.py`, `hg/verification/evidence.py`. Which entrypoint drives `ModelPlanner` on the service path is UNVERIFIED and must be established first.
+- **Dependencies:** G4 (this PR), G6 staging, the local model on the phone.
+- **Production impact:** none.
+- **Status:** ADMITTED, definition only.
+
+**G3-1 (WS-04), deferred as P3:** the root-only oracle `test_sqlite_nofollow.test_rejects_directory_owned_by_another_user` has no CI coverage (it passed in the root cloud run, §55). A root CI job is deferred unless the owner raises its priority.
