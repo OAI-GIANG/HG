@@ -25,6 +25,23 @@ remote session cannot cut them short:
    boot, and after 5 holds the service down with a log line, a marker file and an Android notification.
    The wait between attempts is at the top of `./run` (`hg-runtime.run.in`), polls the free
    `/rate_limit` endpoint, and is cut short by `sv down`.
+3b. **Rehearse in staging before every production switch** (G6, G8-A):
+   `nohup sh staging_rehearsal.sh ~/hg-staging-<name> <candidate commit> [port] > /dev/null 2>&1 &`.
+   It refuses (exit 2, `STAGING_REFUSED`, nothing created) a staging dir that is not an absolute plain
+   path inside `$HOME`, overlaps a live HG path or exists without its `.hg-staging` marker, the
+   production port, a port already in use, and a short commit. The staging dir gets its own `HOME`,
+   `PREFIX`, runsvdir, token, state and port (default 18867); the production release is rebuilt there
+   from its manifest commit and must reproduce the same release id; the owner's assistant `config.json`
+   is copied for the model settings, never the notes or receipts. With the candidate's own scripts it
+   runs traffic → `switch_service.sh <candidate>` (`SWITCH_OK`) → G8-A J2 (`/v1/tasks`, pre-authored
+   `fs.write`, `CLOSED_VERIFIED`, file hash = observed hash) and J1 (`/v1/chat` → `ModelRouter` → the
+   local model, no task or action) → `--restore` over the state the candidate wrote (`RESTORED`) →
+   traffic → a switch interrupted with TERM after the stop (`ROLLBACK_READY_VERIFIED`) → traffic, then
+   tears staging down. Production is only read (absolute-path `sv status`, file hashes, GET ready) and
+   must be equal before and after. `<staging dir>/rehearsal-<UTC>/rehearsal.log` ends with
+   `REHEARSAL_RESULT …` and `REHEARSAL_PASS` (exit 0) or `REHEARSAL_FAIL`; evidence has `SHA256SUMS`.
+   A full rehearsal used 16 of the phone's 60 GitHub calls per hour on 2026-11-13 (each start and each
+   decision after 5 minutes reads the trust root): start it with the quota at 30 or more, or wait for the reset.
 4. `sh switch_service.sh <release_id>` — while the old release keeps serving: recovery point (run
    script, shared config, finish, status, hashes), one config file per release (fields checked if it
    already exists), GitHub quota ≥ 20, `verify-root`, read-only `serve --check`, the new release reads
