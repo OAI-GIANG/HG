@@ -179,7 +179,7 @@ def create_service(config, *, token, authority, release_report, assistant_home=N
     state = Path(config["state_dir"])
     runtime = build_runtime(state, [], authority=authority, issue_task_grants=True, memory=True,
                             verifiers={"AC-READBACK": planned_write_readback_verifier(state / "root")},
-                            writer_session=writer_session)
+                            writer_session=writer_session, recover_interrupted=True)
     chat = ChatService(assistant_home or default_home(), release_id=config["release_id"])
     return HGHTTPServer(runtime=runtime, token=token, host=config["host"], port=config["port"],
                         max_body_bytes=config["max_body_bytes"], release_report=release_report,
@@ -249,6 +249,9 @@ def run(config_path: str | Path, *, check=False) -> int:
     for sig in (signal.SIGINT, signal.SIGTERM):
         previous[sig] = signal.signal(sig, stop)
     liveness = _start_liveness(Path(config["state_dir"]), config["release_id"])
+    recovered = list(getattr(getattr(server, "runtime", None), "recovered", None) or [])
+    if recovered:      # RF-2: tasks interrupted while RUNNING, now BLOCKED until reconciled
+        print(f"HG_RECOVERED_INTERRUPTED tasks={len(recovered)} ids={','.join(recovered[:20])}", flush=True)
     print(f"HG_RUNTIME_READY host=127.0.0.1 port={server.address[1]} release_id={config['release_id']}", flush=True)
     ended = "error"
     try:
