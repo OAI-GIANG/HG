@@ -1090,3 +1090,30 @@ Local results: 10/10 OK. The full suite is in the PR.
 - Soak 5 remains IN PROGRESS and must reach its 24-hour target and have all expected/missing/skipped ticks reconciled.
 - PR #77 / RT-06 listener attestation and independent trust provenance remain HOLD/BLOCKED; device reboot/autostart/JobScheduler recurrence remains not fully verified; Flutter native source/E2E remains absent from the canonical repository; sustained battery/performance qualification remains open.
 - Production remains on 030a88d5. No GO-LIVE decision or production deployment is made. Overall system verdict stays INCOMPLETE.
+
+## 63. Addendum 2026-11-18 05:59–06:05 +07 — post-merge web UI E2E and JobScheduler offline probe
+
+**Web UI end-to-end on the post-merge candidate.**
+- Installed jsdom 26.1.0 into the private audit cache at $HOME/.cache/hg-audit-v1/ui-smoke-jsdom (17 MB); no package/dependency was added to OAI-GIANG/HG or any release.
+- Reused the completed isolated staging root from §62, started its own runsvdir/service on port 18869 with the candidate release 6e6f5f288f88f5d03519875ad5fed4da84006f72db56c67c487d65be03c275b8. Production and Soak 5 were untouched.
+- Ran the canonical deploy/termux/ui_smoke.mjs against the live staged /ui/ page:
+  - report result PASS; page title HG — trợ lý trên điện thoại (OAI-GIANG/HG);
+  - service badge SẴN SÀNG; authenticated GET /v1/health/ready returned HTTP 200;
+  - UI Send action posted authenticated /v1/chat and received HTTP 200, outcome ANSWERED, label MODEL;
+  - displayed answer: “Thủ đô của Việt Nam là Hà Nội.”;
+  - provider ollama, model qwen3:1.7b, pinned digest status READY; Ollama listener VERIFIED_PROCESS; ModelRouter model call status OK, input_tokens=329, output_tokens=11;
+  - elapsed 1.636 s, zero jsdom console errors;
+  - report compared against the staging token file; the actual token value was not present.
+- The test created a staging assistant ASK/model-call receipt only. It did not create a TaskStore task or ActionGateway effect. The duplicate temporary token filename used by ui_smoke was removed after the run.
+- Staging service was gracefully stopped; its runsvdir was terminated; process search found no isolated service. Port 18869 has no listener (no /proc/net entry; SO_REUSEADDR bind succeeded). The final rehearsal evidence directory SHA256SUMS was regenerated after all UI/stop logs closed; all 30 evidence files independently verified OK.
+
+**Termux JobScheduler offline probe.**
+- Re-registered job 4211 with script hg-supervisor-guard.sh, period 900000 ms, network=none, persisted=true, battery-not-low=false. CLI scheduling exit code 0.
+- Created a separate harmless one-shot probe job 4212 with network=none, persisted=false, battery-not-low=false. It executed and wrote timestamp 2026-11-18T05:59:50+07 to a private audit result file. This verifies that the on-device JobScheduler can execute a one-shot job with no network requirement.
+- The periodic job 4211's existing guard.log observations show CHECK_OK intervals around 15 minutes through 05:33; after re-registration, a further CHECK_OK was logged at 05:59:59. This is evidence of guard execution but not independent attribution of every periodic tick to job 4211.
+- Pending listing remains blank when network=none, while a temporary network=any registration is visible to --pending. This matches the open Termux:API Android 17 issue #923, which documents a null NetworkRequest formatting bug for network=none; do not change the permanent guard to network=any because that would require connectivity and undermine offline recovery. Keep recurrence status QUALIFIED, not VERIFIED.
+
+**System disposition.**
+- Production remains release 030a88d5, READY; Soak 5 remains release aee6efe4, READY, active on its own runsvdir/port and IN PROGRESS. No production pointer or runtime was changed.
+- New post-merge release 6e6f5f28 has passed build, switch, J1/J2, restore, TERM rollback rehearsal and real web UI E2E on isolated staging.
+- Overall system verdict remains INCOMPLETE until Soak 5 completes and its ticks/liveness are reconciled; RT-06 / PR #77, Android boot/autostart proof, independently attributable periodic JobScheduler recurrence, Flutter native source (not present in available repo refs), and sustained battery/performance qualification remain open.
