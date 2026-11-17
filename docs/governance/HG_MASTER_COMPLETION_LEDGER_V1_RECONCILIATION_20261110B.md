@@ -1055,3 +1055,38 @@ Local results: 10/10 OK. The full suite is in the PR.
 - RT-06 / PR #77, Termux:Boot/JobScheduler device proof, Flutter native source/E2E scope, sustained battery/performance, and a real candidate-to-previous-release rollback rehearsal remain open. No GO-LIVE decision is made.
 
 **Disposition.** Resource-warning cleanup is VERIFIED on the complete HG test suite under strict warning mode. This does not upgrade system-level verdict: overall remains INCOMPLETE until Soak 5, trust, boot/autostart, UI-scope and release gates are satisfied.
+
+## 62. Addendum 2026-11-18 05:54–05:56 +07 — post-PR #202 candidate integration rehearsal
+
+**Candidate and reproducible build.**
+- Main after PR #202: 6f6cb96d3120c4d06a7d6def3b37a1953a448d60.
+- Built candidate release from this exact main commit in a third isolated staging root: 6e6f5f288f88f5d03519875ad5fed4da84006f72db56c67c487d65be03c275b8; 387 files, tree 490bacb70eed9d1315e6b6a1d364f4cf0c712ae7, files_digest f0e6b944b866ca6ace2cf582ea6b40aa2d1ede40ff53d6f86856af1133d79fe0; build repeated twice, archive/manifest matched and release verification passed.
+- Production release 030a88d534bdec086c10b87a4732322d72791260178c1129b0538bb3b42bc7d5 was independently rebuilt in that isolated staging root from manifest commit 4eaac81132ae57028cf2432eec911a01b6ecf1fd; exact release ID reproduced, build verified and installed/sealed.
+
+**Isolated staging environment.**
+- Directory $HOME/hg-staging-postmerge-20261118, its own HOME, PREFIX, SVDIR, runsvdir, token and state; port 18869. staging_probe.py guard returned STAGING_GUARD_PASS; port-free preflight passed; directory was absent before the rehearsal. This directory did not overlap production or the active Soak 5 staging root.
+- The owner's dirty ~/HG worktree was not used or modified.
+
+**Real end-to-end rehearsal (REHEARSAL_PASS).**
+- Authenticated readiness of the staging instance on the old production release succeeded.
+- Traffic R0: HTTP 200, task DEPLOY-SMOKE-R0-20261117T225455Z CLOSED_VERIFIED, readback matched; idempotent replay returned same result, changed payload returned 409 conflict.
+- Switch to post-merge candidate: SWITCH_OK; candidate authenticated READY on the expected release with trust commit 6f6cb96.
+- J2: task DEPLOY-SMOKE-J2-20261117T225455Z, HTTP 200, CLOSED_VERIFIED; ActionGateway observed_sha256 exactly matched the on-disk file SHA256 5dbf1db47c5f140c273133beaa5703edb228a5bc000c11629f9a03e35dfefe37 (38 bytes); replay and changed-payload conflict controls passed.
+- J1: /v1/chat HTTP 200, outcome ANSWERED, no_task_or_action=true.
+- Restore from candidate to old production release: RESTORED; authenticated READY on release 030a88d5; traffic R1 passed.
+- Controlled TERM interruption after stop/backup: switch exited 143, classified state/run script ORIGINAL, restored and restarted the old release, authenticated READY with a stable supervised runtime; ROLLBACK_READY_VERIFIED release=030a88d534bdec086c10b87a4732322d72791260178c1129b0538bb3b42bc7d5.
+- Traffic R2 after interrupted rollback: HTTP 200, CLOSED_VERIFIED, readback/replay/409 controls passed.
+- Final result line: switch=SWITCH_OK j2=CLOSED_VERIFIED j1=ANSWERED_NO_ACTION restore=RESTORED interruption=ROLLBACK_READY_VERIFIED production=UNCHANGED last_step=done; final REHEARSAL_PASS.
+
+**Production and concurrent Soak 5 safety.**
+- Production before/after snapshots contain 8 fields/records excluding label and compare byte-for-byte identical. Release remained 030a88d5, PID 27786; authenticated readiness HTTP 200, integrity VERIFIED, trust LOADED, idempotency USABLE.
+- Active Soak 5 was not switched, stopped or modified: staging release remained aee6efe4, PID 26963; authenticated readiness HTTP 200 and Soak 5 driver remained on its own port/SVDIR.
+- Rehearsal teardown reported staging processes left: 0; independent process search found no process under hg-staging-postmerge-20261118.
+- Rehearsal evidence directory: $HOME/hg-staging-postmerge-20261118/rehearsal-20261117T225455Z/. The script initially computed SHA256SUMS before its final two log lines were appended; checksum list was regenerated only after the run had completely ended, then all 24 files independently verified OK. The production before/after snapshots were also independently compared and identical.
+- This rehearsal is staging qualification of the post-merge code path, not a production deployment and not the 24-hour Soak 5 result.
+
+**Remaining gates and verdict.**
+- The post-merge candidate has a verified staging switch / restore / interrupted-switch recovery / real local model J1 and J2 flow. This closes the outstanding practical post-merge staging rehearsal evidence for this candidate.
+- Soak 5 remains IN PROGRESS and must reach its 24-hour target and have all expected/missing/skipped ticks reconciled.
+- PR #77 / RT-06 listener attestation and independent trust provenance remain HOLD/BLOCKED; device reboot/autostart/JobScheduler recurrence remains not fully verified; Flutter native source/E2E remains absent from the canonical repository; sustained battery/performance qualification remains open.
+- Production remains on 030a88d5. No GO-LIVE decision or production deployment is made. Overall system verdict stays INCOMPLETE.
