@@ -1055,3 +1055,88 @@ Local results: 10/10 OK. The full suite is in the PR.
 - RT-06 / PR #77, Termux:Boot/JobScheduler device proof, Flutter native source/E2E scope, sustained battery/performance, and a real candidate-to-previous-release rollback rehearsal remain open. No GO-LIVE decision is made.
 
 **Disposition.** Resource-warning cleanup is VERIFIED on the complete HG test suite under strict warning mode. This does not upgrade system-level verdict: overall remains INCOMPLETE until Soak 5, trust, boot/autostart, UI-scope and release gates are satisfied.
+
+## 62. Addendum 2026-11-18 05:54–05:56 +07 — post-PR #202 candidate integration rehearsal
+
+**Candidate and reproducible build.**
+- Main after PR #202: 6f6cb96d3120c4d06a7d6def3b37a1953a448d60.
+- Built candidate release from this exact main commit in a third isolated staging root: 6e6f5f288f88f5d03519875ad5fed4da84006f72db56c67c487d65be03c275b8; 387 files, tree 490bacb70eed9d1315e6b6a1d364f4cf0c712ae7, files_digest f0e6b944b866ca6ace2cf582ea6b40aa2d1ede40ff53d6f86856af1133d79fe0; build repeated twice, archive/manifest matched and release verification passed.
+- Production release 030a88d534bdec086c10b87a4732322d72791260178c1129b0538bb3b42bc7d5 was independently rebuilt in that isolated staging root from manifest commit 4eaac81132ae57028cf2432eec911a01b6ecf1fd; exact release ID reproduced, build verified and installed/sealed.
+
+**Isolated staging environment.**
+- Directory $HOME/hg-staging-postmerge-20261118, its own HOME, PREFIX, SVDIR, runsvdir, token and state; port 18869. staging_probe.py guard returned STAGING_GUARD_PASS; port-free preflight passed; directory was absent before the rehearsal. This directory did not overlap production or the active Soak 5 staging root.
+- The owner's dirty ~/HG worktree was not used or modified.
+
+**Real end-to-end rehearsal (REHEARSAL_PASS).**
+- Authenticated readiness of the staging instance on the old production release succeeded.
+- Traffic R0: HTTP 200, task DEPLOY-SMOKE-R0-20261117T225455Z CLOSED_VERIFIED, readback matched; idempotent replay returned same result, changed payload returned 409 conflict.
+- Switch to post-merge candidate: SWITCH_OK; candidate authenticated READY on the expected release with trust commit 6f6cb96.
+- J2: task DEPLOY-SMOKE-J2-20261117T225455Z, HTTP 200, CLOSED_VERIFIED; ActionGateway observed_sha256 exactly matched the on-disk file SHA256 5dbf1db47c5f140c273133beaa5703edb228a5bc000c11629f9a03e35dfefe37 (38 bytes); replay and changed-payload conflict controls passed.
+- J1: /v1/chat HTTP 200, outcome ANSWERED, no_task_or_action=true.
+- Restore from candidate to old production release: RESTORED; authenticated READY on release 030a88d5; traffic R1 passed.
+- Controlled TERM interruption after stop/backup: switch exited 143, classified state/run script ORIGINAL, restored and restarted the old release, authenticated READY with a stable supervised runtime; ROLLBACK_READY_VERIFIED release=030a88d534bdec086c10b87a4732322d72791260178c1129b0538bb3b42bc7d5.
+- Traffic R2 after interrupted rollback: HTTP 200, CLOSED_VERIFIED, readback/replay/409 controls passed.
+- Final result line: switch=SWITCH_OK j2=CLOSED_VERIFIED j1=ANSWERED_NO_ACTION restore=RESTORED interruption=ROLLBACK_READY_VERIFIED production=UNCHANGED last_step=done; final REHEARSAL_PASS.
+
+**Production and concurrent Soak 5 safety.**
+- Production before/after snapshots contain 8 fields/records excluding label and compare byte-for-byte identical. Release remained 030a88d5, PID 27786; authenticated readiness HTTP 200, integrity VERIFIED, trust LOADED, idempotency USABLE.
+- Active Soak 5 was not switched, stopped or modified: staging release remained aee6efe4, PID 26963; authenticated readiness HTTP 200 and Soak 5 driver remained on its own port/SVDIR.
+- Rehearsal teardown reported staging processes left: 0; independent process search found no process under hg-staging-postmerge-20261118.
+- Rehearsal evidence directory: $HOME/hg-staging-postmerge-20261118/rehearsal-20261117T225455Z/. The script initially computed SHA256SUMS before its final two log lines were appended; checksum list was regenerated only after the run had completely ended, then all 24 files independently verified OK. The production before/after snapshots were also independently compared and identical.
+- This rehearsal is staging qualification of the post-merge code path, not a production deployment and not the 24-hour Soak 5 result.
+
+**Remaining gates and verdict.**
+- The post-merge candidate has a verified staging switch / restore / interrupted-switch recovery / real local model J1 and J2 flow. This closes the outstanding practical post-merge staging rehearsal evidence for this candidate.
+- Soak 5 remains IN PROGRESS and must reach its 24-hour target and have all expected/missing/skipped ticks reconciled.
+- PR #77 / RT-06 listener attestation and independent trust provenance remain HOLD/BLOCKED; device reboot/autostart/JobScheduler recurrence remains not fully verified; Flutter native source/E2E remains absent from the canonical repository; sustained battery/performance qualification remains open.
+- Production remains on 030a88d5. No GO-LIVE decision or production deployment is made. Overall system verdict stays INCOMPLETE.
+
+## 63. Addendum 2026-11-18 05:59–06:05 +07 — post-merge web UI E2E and JobScheduler offline probe
+
+**Web UI end-to-end on the post-merge candidate.**
+- Installed jsdom 26.1.0 into the private audit cache at $HOME/.cache/hg-audit-v1/ui-smoke-jsdom (17 MB); no package/dependency was added to OAI-GIANG/HG or any release.
+- Reused the completed isolated staging root from §62, started its own runsvdir/service on port 18869 with the candidate release 6e6f5f288f88f5d03519875ad5fed4da84006f72db56c67c487d65be03c275b8. Production and Soak 5 were untouched.
+- Ran the canonical deploy/termux/ui_smoke.mjs against the live staged /ui/ page:
+  - report result PASS; page title HG — trợ lý trên điện thoại (OAI-GIANG/HG);
+  - service badge SẴN SÀNG; authenticated GET /v1/health/ready returned HTTP 200;
+  - UI Send action posted authenticated /v1/chat and received HTTP 200, outcome ANSWERED, label MODEL;
+  - displayed answer: “Thủ đô của Việt Nam là Hà Nội.”;
+  - provider ollama, model qwen3:1.7b, pinned digest status READY; Ollama listener VERIFIED_PROCESS; ModelRouter model call status OK, input_tokens=329, output_tokens=11;
+  - elapsed 1.636 s, zero jsdom console errors;
+  - report compared against the staging token file; the actual token value was not present.
+- The test created a staging assistant ASK/model-call receipt only. It did not create a TaskStore task or ActionGateway effect. The duplicate temporary token filename used by ui_smoke was removed after the run.
+- Staging service was gracefully stopped; its runsvdir was terminated; process search found no isolated service. Port 18869 has no listener (no /proc/net entry; SO_REUSEADDR bind succeeded). The final rehearsal evidence directory SHA256SUMS was regenerated after all UI/stop logs closed; all 30 evidence files independently verified OK.
+
+**Termux JobScheduler offline probe.**
+- Re-registered job 4211 with script hg-supervisor-guard.sh, period 900000 ms, network=none, persisted=true, battery-not-low=false. CLI scheduling exit code 0.
+- Created a separate harmless one-shot probe job 4212 with network=none, persisted=false, battery-not-low=false. It executed and wrote timestamp 2026-11-18T05:59:50+07 to a private audit result file. This verifies that the on-device JobScheduler can execute a one-shot job with no network requirement.
+- The periodic job 4211's existing guard.log observations show CHECK_OK intervals around 15 minutes through 05:33; after re-registration, a further CHECK_OK was logged at 05:59:59. This is evidence of guard execution but not independent attribution of every periodic tick to job 4211.
+- Pending listing remains blank when network=none, while a temporary network=any registration is visible to --pending. This matches the open Termux:API Android 17 issue #923, which documents a null NetworkRequest formatting bug for network=none; do not change the permanent guard to network=any because that would require connectivity and undermine offline recovery. Keep recurrence status QUALIFIED, not VERIFIED.
+
+**System disposition.**
+- Production remains release 030a88d5, READY; Soak 5 remains release aee6efe4, READY, active on its own runsvdir/port and IN PROGRESS. No production pointer or runtime was changed.
+- New post-merge release 6e6f5f28 has passed build, switch, J1/J2, restore, TERM rollback rehearsal and real web UI E2E on isolated staging.
+- Overall system verdict remains INCOMPLETE until Soak 5 completes and its ticks/liveness are reconciled; RT-06 / PR #77, Android boot/autostart proof, independently attributable periodic JobScheduler recurrence, Flutter native source (not present in available repo refs), and sustained battery/performance qualification remain open.
+
+## 64. Addendum 2026-11-18 06:10–06:12 +07 — PR #77 real-device L5 capability and partial-scope result
+
+**Exact source under test.**
+- PR #77 HEAD was fetched as refs/remotes/origin/pr/77 and verified to equal 73a45f059d51d91c6063580e1a4a86268d377611. The similarly named remote feature branch is stale at c096cbf and was not used for probe evidence.
+- The probe was run from a detached worktree at the exact PR HEAD using python3 -I -S deploy/termux/l5_probe.py, without importing HG or changing the running Ollama service.
+
+**Android 17 / Termux real-device probe.**
+- Device environment: Android 17 / SDK 37 / arm64-v8a / Python 3.14.8 / uid 10460 / SELinux untrusted_app_27 / seccomp mode 2.
+- The safe disposable-child syscall check reports pidfd syscalls AVAILABLE. The probe does not deliver signals to the Ollama process.
+- Self-test JSON SHA256 7c97a7a85db6993e8f4b9469a8cb4cf4e07643bef2393b786cf1586109647c74; result BLOCKED / SELF_TEST_OBSERVATION_INCOMPLETE.
+- Real target JSON SHA256 a9a07c378ef1578241638eff524aedf28de9df82215ed8912453fde05e114beb; target PID 27784, executable /data/data/com.termux/files/usr/bin/ollama, expected listener 127.0.0.1:11434 was identified and matched by duplicated descriptor/inode, but result BLOCKED / SHARING_SCAN_INCOMPLETE.
+- Both reports record /proc/net/tcp and tcp6 unreadable with EACCES, proc hidepid invisible, sharing scope PARTIAL, gaps PROC_HIDEPID_RESTRICTED_OR_UNKNOWN and SCOPE_PARTIAL. Thus the probe can identify the target socket but cannot prove no unobservable process also holds it. This is a real on-device BLOCKED result, not PASS.
+
+**Source-level acceptance issue identified (PR #77 remains HOLD).**
+- In hg/assistant/attest.py around lines 694–709, _listener() refuses when visible holders are present, but does not require sharing.scope == ALL_PROCESSES_INSPECTED before returning PASS / LISTENER_OWNED. If the scan is PARTIAL and no visible holder is found, current code can still return PASS. This must be fail-closed: PARTIAL/UNKNOWN observation scope must block L5.
+- hg/tests/test_attest.py AttestHappyPathTests.test_verified_listener_and_reverify around lines 487–502 explicitly accepts either ALL_PROCESSES_INSPECTED or PARTIAL while expecting VERIFIED_LISTENER. That test does not enforce exclusivity under an incomplete scan and must be corrected in any future re-admission patch.
+- hg/assistant/trusted_runtimes.json remains empty (runtimes: []), so L3 is UNVERIFIED / NO_TRUST_ANCHOR.
+- Runtime wiring is also absent: hg/assistant/config.py::attest_listener() returns VERIFIED_PROCESS with listener=UNVERIFIED; hg/chat.py::_model_parts() calls only this process-level check, not full hg.assistant.attest.attest() L1–L5. No VERIFIED_LISTENER gate is in the /v1/chat model-call path.
+
+**Disposition.**
+- This evidence confirms the v1 owner HOLD/BLOCKED state. No code, trust registry, caller wiring, permission, or policy was changed. PR #77 was not merged or modified.
+- Re-admission requires, at minimum: a fail-closed PARTIAL scope gate plus mutation tests; a real environment with complete process/descriptor observation (or an explicit versioned owner residual-risk decision); non-empty provenance-backed L3 runtime trust anchor; and integration of a VERIFIED_LISTENER gate in the actual model-call path with tests. Until then the existing VERIFIED_PROCESS label must not be described as listener ownership.
