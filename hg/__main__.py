@@ -6,6 +6,7 @@
     python -m hg bench [--json P] [--baseline P]   fixed benchmark suite; exit 1 on invariant/regression
     python -m hg learn --workdir DIR [--threshold N] [--cases-out P]   failures -> lessons
     python -m hg health --workdir DIR [--trust]    health report from a runtime's ledgers
+    python -m hg availability --state-dir DIR [--since EPOCH]   restart forensics of `hg serve` (RF-1)
 
 Assistant (runs as the owner in their own shell, outside the governed runtime path; see
 hg/assistant/cli.py for exit codes):
@@ -155,6 +156,9 @@ def main(argv=None):
     hl = sub.add_parser("health", help="health report from a runtime's ledgers")
     hl.add_argument("--workdir", required=True)
     hl.add_argument("--trust", action="store_true", help="also read the trust root on main (network)")
+    av = sub.add_parser("availability", help="read-only restart forensics of an hg serve state dir (RF-1)")
+    av.add_argument("--state-dir", required=True)
+    av.add_argument("--since", type=float, help="only records at or after this Unix time")
     serve = sub.add_parser("serve", help="run authenticated loopback HTTP service")
     serve.add_argument("--config", required=True)
     serve.add_argument("--check", action="store_true", help="run read-only preflight without binding a port")
@@ -204,6 +208,12 @@ def main(argv=None):
         report = health(Path(args.workdir), trust_loader=load_canonical_manifest if args.trust else None)
         print(json.dumps(report, indent=2, ensure_ascii=False))
         return {"OK": 0, "DEGRADED": 1}.get(report["status"], 2)
+
+    if args.command == "availability":
+        from hg.liveness import summarize
+        report = summarize(Path(args.state_dir), since=args.since)
+        print(json.dumps(report, indent=2, ensure_ascii=False))
+        return 0 if report["current"].get("state") == "ALIVE" else 1
 
     if args.command == "authority-check":
         code, report = authority_check()
