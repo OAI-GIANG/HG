@@ -31,6 +31,7 @@ _MISSING_PREREQUISITE = {
     "INVALID_INPUT": "valid parameters for the planned step",
     "FAILED": "a working approach (retry limit reached)",
     "BLOCKED": "the gateway precondition named in the reason",
+    "INTERRUPTED": "a decision on the interrupted run, from the step outcomes in the action ledger",
 }
 
 
@@ -322,11 +323,44 @@ class BrainOrchestrator:
 
     # ---------- recovery ----------
 
+    def recover_interrupted(self, task_ids):
+        """RF-2: block every task in `task_ids` found RUNNING when this coordinator starts. Returns their ids.
+
+        Only one coordinator writes a runtime's ledgers (MAEP-006; `hg serve` also holds the state
+        directory's writer lock), so a RUNNING task at start was interrupted by a process death.
+        Nothing can continue a RUNNING task, and an unknown state stays BLOCKED (state table), so it
+        moves RUNNING -> BLOCKED: with a pending action as UNKNOWN (reconcile it first; the gateway
+        refuses every further effect meanwhile), without one as INTERRUPTED (every started action
+        has a recorded outcome). Nothing is executed, reconciled or replayed here. Tasks of an
+        earlier policy are read-only history (MAEP-012) and are left as they are; the gateway
+        already refuses their effects.
+        """
+        recovered = []
+        for task_id in task_ids:
+            snap = self._store.snapshot(task_id)
+            if snap["task"]["state"] != "RUNNING" or snap.get("policy_status", "CURRENT") != "CURRENT":
+                continue
+            pending = self._gateway.pending_actions(task_id)
+            if pending:
+                outcome = {"status": "UNKNOWN", "action_id": pending[0]["action_id"],
+                           "reason": "the process ended during this action's effect window (restart recovery)"}
+                step_id = pending[0]["step_id"]
+            else:
+                outcome = {"status": "INTERRUPTED", "action_id": None,
+                           "reason": "the process ended while the task was RUNNING; no action was in flight"}
+                step_id = "RESTART"
+            self._block(task_id, step_id, outcome)
+            recovered.append(task_id)
+        return recovered
+
     def reconcile_and_reopen(self, task_id, action_id, *, risk_reassessment):
         """Inspect live state for an uncertain action; reopen the task only if the outcome is now known."""
         pending = {p["action_id"]: p for p in self._gateway.pending_actions(task_id)}
         if action_id not in pending:
             raise MAEPError("no pending action with that id on this task")
+        state = self._store.snapshot(task_id)["task"]["state"]
+        if state != "BLOCKED":       # refuse before reconciling: never a recorded half-recovery
+            raise MAEPError(f"reconcile_and_reopen requires a BLOCKED task, task is {state}")
         finding = self._gateway.reconcile(action_id)
         evidence_id = self.record_observation(
             task_id, source_ref=f"reconcile:{action_id}", method="adapter.reconcile",
@@ -337,7 +371,21 @@ class BrainOrchestrator:
         return {"state": "ASSESSED", "finding": finding}
 
     def reopen(self, task_id, *, evidence_refs, risk_reassessment):
-        """BLOCKED -> ASSESSED. The store requires a fresh reassessment and re-checks authority."""
+        """BLOCKED -> ASSESSED. The store requires a fresh reassessment and re-checks authority.
+
+        With per-task grants (issuer), the grants live only in this process: after a restart, or
+        once they expire, the store's authority check has nothing to allow. They are re-issued
+        here from the live owner manifest, as authorize() does (RF-2); if the manifest no longer
+        permits every step, nothing is issued, the check denies and the task stays BLOCKED.
+        """
+        snap = self._store.snapshot(task_id)
+        if self._issuer is not None and snap["task"]["state"] == "BLOCKED" and snap["plan"]:
+            grants, provenance = self._issuer.issue_for_plan(task_id, snap["plan"])
+            self.record_observation(task_id, source_ref=f"owner-manifest:{provenance.get('commit')}",
+                                    method="TaskGrantIssuer.issue_for_plan (reopen)",
+                                    result=f"ISSUED {len(grants)} grant(s) expiring "
+                                           f"{min(g['expires_at'] for g in grants)}",
+                                    limitations=["derived from the canonical manifest on main; re-checked at each effect"])
         self._writer.record_reassessment(task_id, resolution_evidence_refs=list(evidence_refs),
                                          risk_assessment=risk_reassessment,
                                          expected_version=self._version(task_id))

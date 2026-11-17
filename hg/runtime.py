@@ -46,7 +46,7 @@ def open_task_store(path, evaluator, clock, history_versions=(), writer_session=
 def build_runtime(workdir, grants, *, principal=DEFAULT_PRINCIPAL, mode="AUTHORIZED_EXECUTION",
                   verifiers=None, clock=None, extra_adapters=(), condition_provider=None, authority=None,
                   allow_fixture_grants=False, issue_task_grants=False, memory=None, grant_ttl_s=3600,
-                  history_versions=(), writer_session=None):
+                  history_versions=(), writer_session=None, recover_interrupted=False):
     if authority is not None and allow_fixture_grants:
         raise MAEPError("pass either authority or allow_fixture_grants, not both")
     if issue_task_grants and (authority is None or list(grants)):
@@ -86,6 +86,12 @@ def build_runtime(workdir, grants, *, principal=DEFAULT_PRINCIPAL, mode="AUTHORI
     gate = AcceptanceGate(clock=clock)
     orchestrator = BrainOrchestrator(store, gateway, gate, principal=principal, verifiers=verifiers,
                                      issuer=issuer, memory=memory, evidence_artifacts=evidence_artifacts)
+    recovered = []
+    if recover_interrupted:     # RF-2 (the service passes True): interrupted RUNNING tasks -> BLOCKED
+        tasks_path = workdir / "tasks.jsonl"
+        ids = sorted({e["task_id"] for e in read_events(tasks_path) if e.get("type") == "TASK_CREATED"}) \
+            if tasks_path.exists() else []
+        recovered = orchestrator.recover_interrupted(ids)
     return SimpleNamespace(workdir=workdir, root=root, clock=clock, evaluator=evaluator, trust=trust, memory=memory,
                            store=store, evidence_artifacts=evidence_artifacts,
-                           actions=actions, gateway=gateway, gate=gate, orch=orchestrator)
+                           actions=actions, gateway=gateway, gate=gate, orch=orchestrator, recovered=recovered)

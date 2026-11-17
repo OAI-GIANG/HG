@@ -907,3 +907,58 @@ Local results: 10/10 OK. The full suite is in the PR.
 - **Tests:** `hg/tests/test_liveness.py`, 18 tests, including `hg serve` itself under SIGTERM. Before the `hg/service.py` change the serve test failed for the expected reason (no `HG_RESTART_FORENSICS` line).
 
 **Not done here:** the soak driver's verdict formula lives in the staging directory, not in the repository; the next soak bounds expected ticks by its target and takes unobserved time from `hg availability`. Production stays on `030a88d5`.
+
+## 59. Addendum 2026-11-18 00:20 +07 onward (owner session, same mission) — RF-1 verified on the phone, soak 4 started, §58 correction, RF-2 restart recovery
+
+**Correction to §58.** The owner stated on 2026-11-18 01:13 that the owner closed the app before the 2026-11-16 restart. The 31.5 h outage that began with the reboot at 16:08:44 is therefore an owner action, not an Android kill. HG still did not come back without Termux being opened by hand, because Termux:Boot did not run. The 23.8 h outage from 2026-11-15 16:13 stays UNKNOWN. The owner's screenshot also shows Termux on "Cho phép hoạt động dưới nền" (unrestricted background), so that setting is not the cause. Auto-launch for Termux:Boot remains UNVERIFIED.
+
+**RF-1 (#198, `main` `804bcb5`, CI green) — evidence on the phone:**
+- **Build:** release `7c9aa9de…`, built twice on the phone with an identical result: 385 files, files_digest `e86d3882…`, tree `76b3df45`. Both equal the cloud build; the cloud release id `b106c9d5…` differs only by platform zlib.
+- **Rehearsal — `REHEARSAL_PASS`.** `staging_rehearsal.sh` from the candidate's own checkout, port 18868, `rehearsal-20261117T171936Z`, SHA256SUMS `0475a0db…`:
+  - production release `030a88d5` rebuilt in staging → `SWITCH_OK` → J2 `CLOSED_VERIFIED` (`observed_matches_file`) → J1 `ANSWERED_NO_ACTION` → `RESTORED` → `ROLLBACK_READY_VERIFIED`;
+  - production UNCHANGED.
+- **Kill drill on staging (`rf1-drill-20261117T172259Z`, SHA256SUMS `3bc754a9…`):**
+  - SIGKILL → the next start recorded `UNCLEAN_END_SAME_BOOT` SUSPECTED, `downtime_max_s` 27.5, `suspended_s` 0.
+  - SIGTERM → `CLEAN_STOP` CONFIRMED.
+  - `since_boot_s` matches the boot of 2026-11-16 16:08:44.
+- **Soak 4 (`soak4-20261117T172516Z`, driver `g_soak4.sh` sha256 `07d7e025…`):**
+  - It switched staging from `2961f50d` to `7c9aa9de`, a real upgrade between two different releases.
+  - 3/3 restart cycles OK; forensics `{FIRST_START: 1, CLEAN_STOP: 3}`.
+  - Tick 2 OK and J1 OK.
+  - It runs until about 2026-11-19 00:25 +07; verdict NOT YET (in progress).
+  - The previous service run and boot script are backed up in `backup-20261118/`.
+- **Production:** `030a88d5` pid 27786, READY. Its 4 hashes equal §57. Not deployed.
+- **Not done:** a JobScheduler guard (job 4211; start the existing boot script only when the production runsvdir is absent) was refused by the session's permission system. It is left to the owner.
+
+**RF-2 restart recovery (this PR, P1 / WS-03).**
+- **Admission:**
+  - *Finding (reproduced with real `os._exit` in a child process):*
+    - **D1:** a death after the task became RUNNING (before ACTION_STARTED, inside the effect window, or after ACTION_COMPLETED) leaves it RUNNING for good, because no method continues a RUNNING task.
+    - **D2:** `reconcile_and_reopen` on such a task recorded `ACTION_RECONCILED`, cleared the pending marker, and then failed because reopen needs BLOCKED. The result was a half-recovery with no marker left.
+    - **D3:** with `issue_task_grants=True` (the `hg serve` configuration) per-task grants live only in memory, so after a restart no BLOCKED task could be reopened: the authority check had nothing to allow. This includes tasks blocked before a restart.
+  - *Root cause:* restart rebuilt the pending actions but not the task state; the state table rule "if state is unknown, remain BLOCKED" was not applied at start.
+  - *Why no existing PR fits:* only #77 and #64 are open, both on hold. The WS-04 cross-store contract stays BLOCKED_SOURCE (§53).
+  - *Files:* `hg/brain/orchestrator.py` (`recover_interrupted(task_ids)`, state check before reconcile, re-issue at reopen), `hg/runtime.py` (`build_runtime(recover_interrupted=False)`, `recovered`), `hg/service.py` (the service passes `recover_interrupted=True`; `HG_RECOVERED_INTERRUPTED` start line), `hg/tests/restart_crash_child.py`, `hg/tests/test_restart_recovery.py`, `CLAUDE.md`. No `maep/` change.
+  - *Dependencies:* none.
+  - *Production impact:* none until deployed. The production state holds 7 tasks, all CLOSED_VERIFIED, 0 RUNNING, 0 pending, so recovery changes nothing there.
+- **Behaviour:**
+  - When `hg serve` starts (`recover_interrupted=True`; off by default for other callers, e.g. tests that drive a RUNNING task across rebuilt runtimes), each RUNNING task of the current policy moves RUNNING → BLOCKED (an allowed edge). Tasks of an earlier policy stay read-only history (MAEP-012). With a pending action it is blocked as UNKNOWN, with next action "reconcile action X"; without one it is blocked as INTERRUPTED.
+  - Nothing is executed, reconciled or replayed at start, and the gateway still refuses every effect while an action is pending.
+  - Reopening re-issues grants from the live owner manifest, as `authorize()` does. If the manifest is unavailable or no longer permits the plan, nothing is issued and the task stays BLOCKED.
+- **Crash-point matrix (mission VIII.4):**
+
+| Crash point | Covering test(s) |
+|---|---|
+| Before the start record | `before-start` (new) |
+| After the start record, before the effect | `before-effect` (new) |
+| After the effect, before the completion record | `after-effect` (new) |
+| After the completion record | `after-completion` (new) |
+| HTTP receipt before finish / at commit | `test_http_idempotency_lifecycle` CrashWindowTests (existing) |
+| Torn final task event | `test_task_store_restore` (existing) |
+
+- **Tests:** `hg/tests/test_restart_recovery.py`, 10 tests, including `hg serve` itself.
+  - Against unchanged `main` code, the first 8 failed for the expected reasons: RUNNING ≠ BLOCKED; `ACTION_RECONCILED` recorded before the refusal; no `recovered` attribute; no start line.
+  - `before-start` and the opt-in test were added after the fix.
+  - The first full run of the fix broke three existing tests: the exact public API of TaskStore, a STALE (MAEP-012) RUNNING task, and a control test that executes a RUNNING task through a rebuilt runtime. The change was narrowed (no TaskStore API, STALE skipped, opt-in flag) instead of editing those tests.
+- **Resources (production, read-only, ≈01:25):** state 219 KB (tasks 52 KB, idempotency SQLite 37 KB + WAL 37 KB); runit logs 192 KB (hg-runtime) and 460 KB (ollama), bounded by svlogd; `hg serve` RSS 9.8 MB and Ollama 16.7 MB idle, CPU 0 %; disk 293 GB free.
+- **Network (VII.E), by design:** without GitHub the trust root is unavailable. Start and task authority fail closed (RT-06), and the earlier `test_unavailable_trust_root_blocks_preflight` stays. This is not relaxed.
