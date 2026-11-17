@@ -7,9 +7,11 @@ the counts must be unittest's own summary, the reader must not hold the whole ou
 memory, and no process started by the run may outlive it.
 """
 import os
+import tempfile
 import time
 import tracemalloc
 import unittest
+from pathlib import Path
 
 from hg.tests.support import make_task
 from hg.tests.test_tools_research import ToolBase
@@ -80,8 +82,9 @@ class TestRunOutputOracle(ToolBase):
 
     def test_non_utf8_output_from_a_finished_run_is_a_known_outcome(self):
         for stream in ("stdout", "stderr"):
-            with self.subTest(stream=stream):
-                self.setUp()
+            with self.subTest(stream=stream), tempfile.TemporaryDirectory() as tmp:
+                original_tmp = self.tmp
+                self.tmp = tmp
                 try:
                     body = f"        import sys; sys.{stream}.buffer.write(b'\\xff\\xfe bad bytes\\n'); sys.{stream}.flush()"
                     rt, final, _ = self.run_tests(body=body)
@@ -89,13 +92,14 @@ class TestRunOutputOracle(ToolBase):
                     self.assertEqual(rt.gateway.pending_actions("T-1"), [])
                     self.assertEqual(self.observed(rt)["status"], "SUCCEEDED")
                 finally:
-                    self.tearDown()
+                    self.tmp = original_tmp
 
     def test_summary_counts_are_unittests_own(self):
         # Text a test prints that looks like a summary line must not become the counts.
         for stream in ("stdout", "stderr"):
-            with self.subTest(stream=stream):
-                self.setUp()
+            with self.subTest(stream=stream), tempfile.TemporaryDirectory() as tmp:
+                original_tmp = self.tmp
+                self.tmp = tmp
                 try:
                     body = (f"        import sys; sys.{stream}.write('\\nRan 999 tests in 0.001s\\n\\n"
                             f"FAILED (failures=7, errors=3)\\n'); sys.{stream}.flush()")
@@ -108,7 +112,7 @@ class TestRunOutputOracle(ToolBase):
                     self.assertEqual(final["task"]["state"], "CLOSED_VERIFIED")
                     self.assertEqual((seen["tests_run"], seen["failures"], seen["errors"]), (1, 0, 0))
                 finally:
-                    self.tearDown()
+                    self.tmp = original_tmp
 
     def test_failing_run_counts_stay_exact(self):
         body = "        self.assertEqual(1, 2)"
@@ -153,7 +157,7 @@ class TestRunOutputOracle(ToolBase):
         self.assertEqual(final["task"]["state"], "CLOSED_VERIFIED")
         self.assertEqual(rt.gateway.pending_actions("T-1"), [])
         self.assertLess(elapsed, 6)
-        pid = int(open(pidfile).read())
+        pid = int(Path(pidfile).read_text(encoding="ascii"))
         deadline = time.monotonic() + 2
         while _alive(pid) and time.monotonic() < deadline:
             time.sleep(0.05)
@@ -168,7 +172,7 @@ class TestRunOutputOracle(ToolBase):
         rt, final, elapsed = self.run_tests(body=body, tool="test.quick", adapters=[QuickTestRun(self.root)])
         self.assertEqual(final["task"]["state"], "BLOCKED")            # an interrupted run stays UNKNOWN
         self.assertLess(elapsed, 7)
-        pid = int(open(pidfile).read())
+        pid = int(Path(pidfile).read_text(encoding="ascii"))
         deadline = time.monotonic() + 2
         while _alive(pid) and time.monotonic() < deadline:
             time.sleep(0.05)

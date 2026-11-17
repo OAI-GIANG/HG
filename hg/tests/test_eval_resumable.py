@@ -68,8 +68,14 @@ class FakeOllama:
                 pass
 
         self.server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
-        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
         self.url = f"http://127.0.0.1:{self.server.server_port}"
+
+    def close(self):
+        self.server.shutdown()
+        self.thread.join(2)
+        self.server.server_close()
 
 
 def _comparable(report):
@@ -86,7 +92,7 @@ class EvalResumableTests(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp(prefix="hg-evalres-"))
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.fake = FakeOllama()
-        self.addCleanup(self.fake.server.shutdown)
+        self.addCleanup(self.fake.close)
         self.home = self.tmp / "home"
         conf_dir = self.home / ".local/share/hg/assistant"
         conf_dir.mkdir(parents=True, mode=0o700)
