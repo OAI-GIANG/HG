@@ -501,7 +501,14 @@ class UrlReadAdapter(ToolAdapter):
                 if response.length:     # Content-Length promised more than the server sent
                     raise AdapterFailure("response body is shorter than its Content-Length")
         except urllib.error.HTTPError as exc:
-            raise AdapterFailure(f"HTTP {exc.code}")
+            # HTTPError is also the response object. Unlike the success path above, it
+            # does not enter the response context manager, so close its body/socket here.
+            code = exc.code
+            try:
+                exc.close()
+            except OSError:
+                pass
+            raise AdapterFailure(f"HTTP {code}") from None
         except (urllib.error.URLError, OSError, http.client.HTTPException) as exc:
             raise AdapterFailure(f"cannot read {url}: {getattr(exc, 'reason', None) or type(exc).__name__}")
         data = b"".join(chunks)

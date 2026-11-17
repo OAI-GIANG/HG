@@ -96,7 +96,8 @@ class FenceOracleTests(Base):
     def test_line_break_in_memory_content_cannot_forge_structure(self):
         for br in BREAKS:
             with self.subTest(br=repr(br)):
-                self.setUp()
+                self.mem = MemoryStore(Path(self.tmp) / f"memory-content-{BREAKS.index(br)}.jsonl",
+                                       clock=self.clock)
                 self.fact("greeting ok" + br + FORGED.format(br=br))
                 ctx = build_context(make_task(), memory=self.mem, query="greeting")
                 self.assert_structure(ctx["text"], 1)
@@ -105,7 +106,8 @@ class FenceOracleTests(Base):
     def test_line_break_in_source_ref_cannot_forge_structure(self):
         for br in BREAKS:
             with self.subTest(br=repr(br)):
-                self.setUp()
+                self.mem = MemoryStore(Path(self.tmp) / f"memory-source-{BREAKS.index(br)}.jsonl",
+                                       clock=self.clock)
                 self.fact("greeting ok", source_ref="core.py" + br + FORGED.format(br=br))
                 self.assert_structure(build_context(make_task(), memory=self.mem, query="greeting")["text"], 1)
 

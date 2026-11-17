@@ -1022,3 +1022,36 @@ Local results: 10/10 OK. The full suite is in the PR.
 - Overall verdict: INCOMPLETE (with verified subsystems and accepted evidence above). Production remains on 030a88d5; candidate is staging only.
 - P0/P1 data integrity and restart recovery candidate tests passed, but GO-LIVE is not accepted while Soak 5 is incomplete and RT-06 / PR #77, JobScheduler readback, device boot/autostart proof, Flutter source/E2E and remaining test-harness resource warnings remain unresolved.
 - Next actions: let Soak 5 reach its 24 h target without intervention; reconcile every expected/missing/skipped tick and liveness interval; independently verify JobScheduler/guard persistence and Android boot recovery; resolve RT-06/PR #77 on its own evidence; determine whether Flutter app sources belong in this canonical repo or formally classify web-only UI; clean the remaining test harness resource warnings; only then consider candidate acceptance and a separate GO-LIVE decision. Production must remain untouched until those gates pass.
+
+
+## 61. Addendum 2026-11-18 05:18–05:46 +07 — deterministic resource cleanup and full strict regression
+
+**PRs merged before this change.**
+- PR #200 (test(http): close read-only SQLite oracle connections) merged as 484a83d8c6bc097aecf2559882e59e8123f3e8db.
+- PR #201 (docs(governance): record full-system stability audit) merged as d3ef3575f51206530306e0bd375dbc9b7a788381; §60 is now on main.
+- Both PRs had MAEP tests and RT-06 trust-anchor CI jobs pass for Python 3.13 and 3.14. Main at the base of this change is d3ef3575f51206530306e0bd375dbc9b7a788381.
+
+**Additional concrete resource leaks found and fixed in branch fix/resource-cleanup-20261118.**
+1. hg/tests/test_context_budget_fence_oracle.py: two 11-case loops repeatedly called setUp(), replacing TemporaryDirectory instances without cleanup. Each loop now uses a new MemoryStore JSONL path under the existing test fixture.
+2. hg/tests/test_assistant_ask.py: the proxy-isolation test shut down a local HTTP listener but did not join its serving thread or close the server socket. Cleanup now follows shutdown → join → server_close.
+3. hg/tests/test_eval_resumable.py: FakeOllama similarly did not join its thread or close its HTTPServer. Added an explicit close() lifecycle and registered that cleanup instead of only server.shutdown(). The two residual socket warnings seen in full-suite discovery were traced to these fake Ollama sockets (ports 37127 and 34373).
+4. hg/tests/test_finish_script.py: reading /proc/sys/kernel/random/boot_id with open(...).read() left the file handle unclosed; now uses Path.read_text(encoding="ascii").
+5. hg/tests/test_test_run_output_oracle.py: two child PID reads did not close their file handles; now use Path.read_text. Two repeated subtests also recreated fixtures by calling setUp() from within the test and manually invoking tearDown(), losing the original temporary-directory ownership. They now use a scoped TemporaryDirectory per subtest while preserving the original fixture path.
+6. hg/tools/code.py: UrlReadAdapter handled HTTP 3xx/other HTTP errors by converting HTTPError to AdapterFailure without closing the error response object. It now closes the HTTPError response body/socket before raising the known failure. Redirect and error semantics are unchanged.
+
+**Verification on OPPO PKC110 / Android 17 / Termux ARM64 / Python 3.14.8.**
+- Full HG discovery with warnings promoted to errors: python3 -W error::ResourceWarning -B -m unittest discover -s hg/tests -t . -v → 1,030 tests, OK (skipped=3), runtime 392.733 s. ResourceWarning count 0; FAIL count 0; ERROR count 0.
+- Full MAEP discovery → 385 tests, OK (skipped=3).
+- Full Claude hooks discovery → 42 tests, OK.
+- Aggregate: 1,457 tests pass; 6 environment-dependent skips; no failed/error tests. The HG suite was run with ResourceWarning treated as an error. MAEP/hooks had no observed warnings.
+- Focused tests for the touched areas also pass: context 9; assistant 33; finish 8; EvalResumable 2; evidence store 12 (one hard-link platform skip); test.run output 10; URL redirect 5; URL content 12; strict HTTP/API/deadline/idempotency/parse/SQLite-security 66. All touched resource-lifecycle focused suites showed 0 ResourceWarning. git diff --check passed.
+- The prior parser cleanup from PR #200 is inherited from main; strict HTTP regression was re-run on top of the new main and again passed 66/66 with 0 warnings.
+
+**Scope and safety.** This is a code/test cleanup branch plus this ledger record. It did not touch ~/HG original dirty checkout, production state, service pointers, active staging files, Soak 5, TaskStore, Memory, Knowledge, or user data. No release build/switch/deployment occurred.
+
+**Operational status remains unchanged.**
+- Production is still on 030a88d5…; staging candidate aee6efe4… remains candidate-only.
+- Soak 5 last observed tick 8 at 2026-11-18 05:18:43 +07: 7/7 executed OK, 1 quota skip, 0 failed, 0 process/env recovery or operator stop, J1 2/2 OK, RCOK=3, RSS baseline 41120 KB and last sample 43116 KB. Twenty-four-hour target is still 2026-11-19 01:46:30 +07. Do not infer PASS from this short observation.
+- RT-06 / PR #77, Termux:Boot/JobScheduler device proof, Flutter native source/E2E scope, sustained battery/performance, and a real candidate-to-previous-release rollback rehearsal remain open. No GO-LIVE decision is made.
+
+**Disposition.** Resource-warning cleanup is VERIFIED on the complete HG test suite under strict warning mode. This does not upgrade system-level verdict: overall remains INCOMPLETE until Soak 5, trust, boot/autostart, UI-scope and release gates are satisfied.

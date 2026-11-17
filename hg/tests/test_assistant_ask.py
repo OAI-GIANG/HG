@@ -255,7 +255,10 @@ class LocalModelTransportTests(unittest.TestCase):
                 pass
 
         server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
-        threading.Thread(target=server.serve_forever, daemon=True).start()
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(thread.join, 2)
         self.addCleanup(server.shutdown)
         saved = {k: os.environ.get(k) for k in ("HTTP_PROXY", "http_proxy", "NO_PROXY", "no_proxy")}
         os.environ.update(HTTP_PROXY="http://10.255.255.1:9", http_proxy="http://10.255.255.1:9", NO_PROXY="", no_proxy="")

@@ -121,8 +121,8 @@ class RunTemplateTests(unittest.TestCase):
             f.chmod(0o755)
         state = tmp / "state"
         state.mkdir()
-        boot = open("/proc/sys/kernel/random/boot_id").read().strip() if os.path.exists(
-            "/proc/sys/kernel/random/boot_id") else "unknown"
+        boot_path = Path("/proc/sys/kernel/random/boot_id")
+        boot = boot_path.read_text(encoding="ascii").strip() if boot_path.exists() else "unknown"
         (state / "hg-runtime-finish.count").write_text(f"{boot} 2 0\n")
         run = tmp / "run"
         run.write_text(self.render(tmp))
