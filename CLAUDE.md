@@ -69,6 +69,7 @@ python -m hg authority-check                # live read of the trust root on mai
 python -m hg bench                          # fixed benchmark; fails on unauthorized effects / false closures
 python -m hg learn --workdir DIR            # failures in a runtime's ledgers -> lessons + proposed cases
 python -m hg health --workdir DIR [--trust] # health report from a runtime's ledgers
+python -m hg availability --state-dir DIR   # restart forensics of hg serve (RF-1), read-only
 python -m hg note add|search|list|show|forget # owner's notes (assistant layer, HG_HOME)
 python -m hg ask "..." | check | summarize FILE | model status | eval | repair
 ```

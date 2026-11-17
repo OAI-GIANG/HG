@@ -872,3 +872,38 @@ Local results: 10/10 OK. The full suite is in the PR.
 - Its observed duration is recorded when it ends. No long-term stability is claimed before then.
 
 **Production:** unchanged on `030a88d5`, VERIFIED. Candidate `a293dc7a` is NOT deployed. G7 is open, and GO-LIVE acceptance is the owner's.
+
+## 58. Addendum 2026-11-17 23:52 +07 onward (owner session, Autonomous Stability Engineering & Production Reliability Mission V1.0) — soak 3 forensics, production availability, RF-1 restart forensics
+
+**Directive.** The owner's mission *HG — Autonomous Stability Engineering & Production Reliability Mission V1.0* (2026-11-17 23:52) asks for system truth first, root causes of the soak 3 gaps, and fixes with evidence. The stabilization rules and the P2 decision of 2026-11-13 17:00 stay in force: no production deploy before a qualifying 24 h soak and the GO-LIVE gates.
+
+**Baseline. FACT, 2026-11-17 23:53–23:58 +07:**
+- `main` = `4a4cb37` (#196), CI green. Open PRs: #77 (HOLD), #64 (DEFERRED_V2) — unchanged.
+- Production `hg-runtime` pid 27786 on release `030a88d5` (`4eaac81`), READY with integrity VERIFIED, trust LOADED (trust commit `4a4cb37`), idempotency USABLE; Ollama `qwen3:1.7b` (`8f68893c…`). The whole runit tree had started at 23:37:41, about 15 min before the session; that start was not an HG action.
+- `~/HG` is on `stt/hg-h1.3.1-idempotency-progress` @ `2a80f4f` with 3 modified files and untracked `docs/governance/`; 33 worktrees. All preserved, none touched.
+
+**Soak 3 (`soak3-20261114T180602Z`, candidate `2961f50d…` from `4a4cb37`). Verdict stays INCOMPLETE.** The 49 "missing" ticks (77 expected − 28 ticks) decompose as follows:
+- 29 are an artefact of the driver's verdict: it counts expected ticks over the whole 38.9 h until it was resumed, while the driver correctly stops ticking at its 24 h target. Within the target window 48 ticks were due.
+- ≈17.8: the whole Termux process tree was gone from ≤ 2026-11-15 16:13 +07 (09:13:23Z, last line of an independent agent log; last tick 15:51) until 2026-11-16 16:00 +07. The soak driver, the remote agent and production all stopped; production came back with a new pid (18288 → 26406). Whether Android killed Termux or the phone rebooted: UNKNOWN — no boot id was recorded at the time.
+- ≈3.5: ticks 18→22 (2026-11-15 09:03–12:49 +07) took 48–62 min instead of 30. The driver sleeps in CLOCK_MONOTONIC, which does not run while the CPU is suspended or the process is frozen: SUSPECTED suspend or freeze despite the Termux wake lock; not measurable with the tools of that run.
+- "Recoveries" 1–2 (2026-11-15 01:30) were `sv down hg-staging-soak` while the runit soak service was being installed, not Termux restarts; recovery 3 (2026-11-16 16:00) was a real restart. The driver lock worked: the second driver waited (`another driver holds the lock`).
+
+**Production availability. CONFIRMED, P0.** Between 2026-11-15 00:59 and 2026-11-17 23:55 +07 (70.9 h) production was without Termux for ≥ 55.3 h:
+- 23.8 h: 2026-11-15 16:13 → 2026-11-16 16:00 (above).
+- 31.5 h: the phone rebooted at 2026-11-16 16:08:44 +07 (CLOCK_BOOTTIME 114388 s at 23:55; staging's start marker holds boot `0f39cb3e…` at 16:00:03, the current boot is `1b823ef0…`). Termux:Boot (`com.termux.boot` installed, `~/.termux/boot/00-start-services` present) did not bring the services back: nothing ran until 2026-11-17 23:37:41.
+- Since that boot the CPU was suspended 51686 s of 114388 s (CLOCK_BOOTTIME − CLOCK_MONOTONIC).
+- HG itself recorded none of it: the runit log holds one start line per life and `hg-runtime.started` is overwritten at each start.
+- Root cause outside HG: Android/ColorOS process and autostart policy for Termux and Termux:Boot. From Termux these settings cannot be read (`dumpsys` and `cmd appops` refuse uid 10460): **owner device action** — allow auto-launch and unrestricted background/battery for Termux and Termux:Boot, open Termux:Boot once, then reboot and check that `hg-runtime` starts without opening Termux.
+
+**RF-1 restart forensics (this PR, P1 / WS-03, WS-10).**
+- **Admission:**
+  - *Finding:* production downtime of 55 h was invisible to HG; soak gaps could not be attributed.
+  - *Root cause:* no liveness record survives the process; the only start marker is overwritten and carries no end time.
+  - *Why no existing PR fits:* only #77 and #64 are open, both on hold.
+  - *Files:* `hg/liveness.py` (new), `hg/service.py` (start, heartbeat thread, stop reason), `hg/__main__.py` (`hg availability`), `hg/tests/test_liveness.py`, deploy README, this section.
+  - *Dependencies:* none (stdlib; `CLOCK_BOOTTIME` where available).
+  - *Production impact:* none until a release with it is deployed through the gates; then two small private files in the state dir (≤ 16 KiB heartbeat, ≤ 2 × 64 KiB records) and one write per minute. No readiness, auth, idempotency, ledger or gateway behaviour changes.
+- **Behaviour:** start record classifies the previous end as `CLEAN_STOP`/`ERROR_EXIT`/`DEVICE_REBOOT` (CONFIRMED), `UNCLEAN_END_SAME_BOOT` (SUSPECTED), or `FIRST_START`/`PREVIOUS_UNREADABLE`/`UNCLEAN_END_UNKNOWN_BOOT` (UNKNOWN); downtime after an unclean end is an upper bound; suspend inside a same-boot gap is measured from kernel clocks; stalls split measured suspend from suspected freeze; `since_boot_s` shows how long after a boot HG came back. `hg availability` reports `unobserved_s` and never counts it as uptime.
+- **Tests:** `hg/tests/test_liveness.py`, 18 tests, including `hg serve` itself under SIGTERM. Before the `hg/service.py` change the serve test failed for the expected reason (no `HG_RESTART_FORENSICS` line).
+
+**Not done here:** the soak driver's verdict formula lives in the staging directory, not in the repository; the next soak bounds expected ticks by its target and takes unobserved time from `hg availability`. Production stays on `030a88d5`.

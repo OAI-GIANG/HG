@@ -104,6 +104,17 @@ evaluation with the release's own `ask()` and `evaluate.score()`, appending each
 the same arguments and continues at the first unanswered question. Notes go to `<workdir>/home`, never
 the owner's notes. `hg/tests/test_eval_resumable.py` checks it scores like `hg eval`.
 
+**Restart forensics (RF-1, `hg/liveness.py`).** While serving, `hg serve` rewrites
+`<state_dir>/liveness.json` every 60 s and, at each start, appends to `<state_dir>/restart-forensics.jsonl`
+(64 KiB, one rotation) how the previous run ended: `CLEAN_STOP`/`ERROR_EXIT` and `DEVICE_REBOOT` are
+CONFIRMED; `UNCLEAN_END_SAME_BOOT` (Android kill, SIGKILL, OOM) is only SUSPECTED; a downtime after an
+unclean end is an upper bound from the last beat. A late beat is a stall, split into device suspend
+(CLOCK_BOOTTIME minus CLOCK_MONOTONIC, measured) and awake time the process did not run (frozen or
+starved, suspected). The start line `HG_RESTART_FORENSICS ...` goes to the runit log before
+`HG_RUNTIME_READY`. Read-only report: `python -m hg availability --state-dir <state_dir>` (exit 0 only
+while the heartbeat is fresh); `unobserved_s` is never uptime evidence. Observability only: a failed write
+is logged once and never stops the service. It cannot restart Termux after Android kills it.
+
 `state_precheck.py <release_root> <state copy>` loads a COPY of the state with a release's own loaders
 (tasks, actions, memory, idempotency); never point it at the live directory.
 

@@ -188,6 +188,20 @@ def create_service(config, *, token, authority, release_report, assistant_home=N
                         writer_session=writer_session)
 
 
+def _start_liveness(state_dir: Path, release_id: str):
+    """RF-1 restart forensics (hg/liveness.py). Observability only: never blocks the start."""
+    from hg.liveness import Liveness, format_start
+    try:
+        liveness = Liveness(state_dir, release_id=release_id)
+        record = liveness.start()
+        liveness.start_thread()
+    except Exception as exc:
+        print(f"HG_LIVENESS_UNAVAILABLE ({type(exc).__name__})", file=sys.stderr, flush=True)
+        return None
+    print("HG_RESTART_FORENSICS " + format_start(record), flush=True)
+    return liveness
+
+
 def run(config_path: str | Path, *, check=False) -> int:
     lock_fd = None
     writer_session = None
@@ -234,12 +248,18 @@ def run(config_path: str | Path, *, check=False) -> int:
     previous = {}
     for sig in (signal.SIGINT, signal.SIGTERM):
         previous[sig] = signal.signal(sig, stop)
+    liveness = _start_liveness(Path(config["state_dir"]), config["release_id"])
     print(f"HG_RUNTIME_READY host=127.0.0.1 port={server.address[1]} release_id={config['release_id']}", flush=True)
+    ended = "error"
     try:
         server.serve_forever(poll_interval=0.25)
+        ended = "signal" if stop_once.is_set() else "returned"
     except KeyboardInterrupt:
         stop(signal.SIGINT, None)
+        ended = "signal"
     finally:
+        if liveness is not None:
+            liveness.stop(ended)
         server.server_close()
         if writer_session is not None:
             writer_session.close()
