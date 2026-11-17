@@ -962,3 +962,63 @@ Local results: 10/10 OK. The full suite is in the PR.
   - The first full run of the fix broke three existing tests: the exact public API of TaskStore, a STALE (MAEP-012) RUNNING task, and a control test that executes a RUNNING task through a rebuilt runtime. The change was narrowed (no TaskStore API, STALE skipped, opt-in flag) instead of editing those tests.
 - **Resources (production, read-only, ≈01:25):** state 219 KB (tasks 52 KB, idempotency SQLite 37 KB + WAL 37 KB); runit logs 192 KB (hg-runtime) and 460 KB (ollama), bounded by svlogd; `hg serve` RSS 9.8 MB and Ollama 16.7 MB idle, CPU 0 %; disk 293 GB free.
 - **Network (VII.E), by design:** without GitHub the trust root is unavailable. Start and task authority fail closed (RT-06), and the earlier `test_unavailable_trust_root_blocks_preflight` stays. This is not relaxed.
+
+
+## 60. Addendum 2026-11-18 04:00–05:03 +07 — full-system stability audit, candidate verification and test-harness repair
+
+**Mission and safety boundary.** Executed the owner's full-system stability mission against OAI-GIANG/HG only, on OPPO PKC110 / Android 17 / Termux ARM64. Production was read-only throughout. No release switch, production restart, production deploy, state migration, task/ledger deletion, or mutation of the owner's pre-existing dirty worktree was performed.
+
+**Git baseline.**
+- origin/main at audit start: bad9bf4e538d669433793f86b10e734ba18a8c18 (PR #199 RF-2).
+- Owner's ~/HG: branch stt/hg-h1.3.1-idempotency-progress, HEAD 2a80f4f26fdb6202d581febfe2922468172e398c; original working tree remains dirty with modified hg/assistant/cli.py, hg/assistant/config.py, hg/brain/providers.py, and untracked docs/governance/. The 33 pre-existing worktrees were preserved.
+- Candidate repair branch fix/http-parse-oracle-close-20261118, commit 0de34ec81dd250640a81b212cd0e61406160387e, is a separate worktree based directly on bad9bf4. One test-only file changed. The branch was pushed. Opening a PR through the connected GitHub integration returned HTTP 403 Resource not accessible by integration; no permission workaround was attempted. GitHub compare confirmed the branch is exactly one commit ahead of main, with no other files changed. No PR or CI run is claimed.
+
+**Production and candidate runtime.**
+- Production remains on release 030a88d534bdec086c10b87a4732322d72791260178c1129b0538bb3b42bc7d5, runtime PID 27786.
+- Staging candidate remains on release aee6efe4a9204de6aa12ed25be8e73b04a6107f3bb393cbafc417878fe480519, built from commit bad9bf4e538d669433793f86b10e734ba18a8c18.
+- Final authenticated readiness at approximately 05:02 +07: both returned HTTP 200 with status READY, integrity VERIFIED, trust LOADED, idempotency USABLE, repository OAI-GIANG/HG. These are readiness checks, not a long-term stability verdict.
+- The 5 production config/pointer hashes from the Soak 5 pre-switch baseline were rechecked and all matched. Production release, service scripts and pointers remained unchanged.
+- Read-only health checks: production 7 CLOSED_VERIFIED tasks, 7 SUCCEEDED actions, 0 pending actions, 7 memory records, 0 conflicts; staging 58 CLOSED_VERIFIED tasks, 58 SUCCEEDED actions, 0 pending, 58 memory records, 0 conflicts.
+
+**RF-1/RF-2 and soak.**
+- PR #198 RF-1 and PR #199 RF-2 are merged. Their head commits both had MAEP tests and rt06-trust-anchor-tests workflow runs completed successfully. Candidate release contains both.
+- Candidate RF-1 liveness reported ALIVE, 179 heartbeats, 0 stalls and unobserved_s=0 at the direct observation. Staging soak records three controlled restarts successful.
+- Soak 5 (soak5-20261117T184629Z) remains IN PROGRESS, not PASS. Snapshot at 04:48:33 +07: 7 ticks, 6 executed OK, 0 failed, 1 quota skip (GitHub quota below 30), PIDCHG=0, ENVREC=0, ENVFAIL=0, OPSTOP=0, REBOOTS=0, J1OK=1, J1FAIL=0, RCOK=3. RSS sample increased from 41120 KB to 41756 KB. Last completed tick was 04:48:33 +07. Twenty-four-hour target ends 2026-11-19 01:46:30 +07. Do not infer PASS before the target and evidence reconciliation.
+- Soak 4 remains INCOMPLETE/SUPERSEDED; its gaps were not retroactively reclassified.
+
+**Backend, Brain, Memory, ModelRouter and execution.**
+- Candidate actual /v1/chat J1 used local Ollama qwen3:1.7b, returned HTTP 200 and the answer “Một tuần có 7 ngày.”; model call/ASK receipts were generated and no task/action side effect occurred.
+- Source inspection confirmed runtime.py wires MemoryStore into BrainOrchestrator; execute_goal() builds context through build_context(..., memory=self._memory), and build_context searches SEMANTIC/PROJECT/EPISODIC memory. The HTTP /v1/chat route is a distinct assistant Notebook/notes path that invokes ModelRouter with the local provider; it does not directly call the core BrainOrchestrator MemoryStore/TaskStore/ActionGateway path. This boundary is by current architecture and must not be described as universal conversational memory injection.
+- Candidate selfcheck PASS for its three fixture scenarios. It explicitly retains RT-06 limitation: selfcheck grants are fixtures not anchored to trust root; verifier checks are internal, not independent review. Candidate hg bench: 10/10 cases PASS, zero unauthorized effects and zero false closures.
+- PR #77 remains OPEN/HOLD: listener attestation / runtime ownership / provenance and device-level evidence not complete. No false closure.
+
+**Test evidence on Termux Android ARM64 / Python 3.14.8.**
+- Full MAEP discovery: 385 tests, PASS, 3 platform skips.
+- Full HG discovery: 1,030 tests, PASS, 3 platform skips.
+- Full Claude hooks discovery: 42 tests, PASS.
+- Total: 1,457 tests executed by the three full discovery suites; no FAIL or ERROR. Six skips are platform constraints (hard-link creation and root-only ownership changes).
+- Separate targeted groups also passed: release/evidence/policy/storage 93 (1 skip); acceptance/anchored runtime/gateway/planner/providers 92; HTTP API/idempotency/deadline/parse/security 66; previous focused component groups included RF-1/RF-2, model gateway, memory, chat, and router oracles.
+- A test-harness leak was isolated: claimed_keys() in hg/tests/test_http_request_parse_oracle.py used SQLite's transaction context manager without closing the connection. The patch now uses contextlib.closing. Before the patch the parse oracle passed but emitted 34 unclosed-database warnings; after the patch its 6 tests passed under -W error::ResourceWarning, 0 warnings. The related HTTP regression set passed 66/66 under the same strict warning policy, 0 warnings.
+- Full HG discovery still emitted 114 ResourceWarning lines across other test fixtures (temporary directories, sockets and file handles); it nevertheless reported OK. These were not all fixed in this pass and must remain visible as test-harness cleanup debt, not hidden or attributed to production without reproduction.
+
+**Task integrity, backup and rollback.**
+- Candidate IdempotencyStore/SQLite tests cover concurrent duplicate requests, crash windows, IN_DOUBT, inode replacement, symlink rejection and WAL behaviour. The strict 66-test HTTP regression suite passed after the test-only connection close fix.
+- The Soak 5 staging switch captured a state copy under the live writer lock at switch-20261117T184637Z/state: 58 files, approximately 907 KB. Its state.sha256 was independently checked; all files matched.
+- switch_service.sh implementation has explicit --restore/--restore-state paths, rollback trap, state and run-script layout checks, authenticated READY and stable-PID checks. Earlier staging rehearsal evidence in §57 already records RESTORED and ROLLBACK_READY_VERIFIED. No destructive rollback was triggered against the active Soak 5 service in this audit.
+
+**Android supervisor guard and limits.**
+- Existing on-device guard $HOME/.local/bin/hg-supervisor-guard.sh SHA256 e2bc63ff2581ed00d67e5918cd571322721191535cad7dedea8048f55d3e5acc; corrected /proc/<pid>/cmdline detection reports CHECK_OK for production runsvdir PID 27747. The retired v0 ps -A false negative and one boot-script invocation are retained in the guard log; production HG runtime PID 27786 was unchanged by that test. Corrected guard did not invoke boot script while supervisor was present.
+- JobScheduler job 4211 was registered with 900000 ms period and persisted; temporary network=any readback confirmed registration, then configuration was restored to network=none. Termux:API 0.53.0 on Android 17 did not provide usable pending readback for the network-none state (issue #923). Guard log shows checks recurring at 04:18, 04:32 and 04:47, but periodic execution is not independently attributed to Job 4211. Status: QUALIFIED, not VERIFIED.
+- Android/ColorOS autostart and battery-policy settings could not be inspected from Termux UID; device-level owner confirmation/reboot test remains outstanding.
+
+**UI scope.**
+- The canonical release contains hg/ui/app.js, index.html, styles.css (web UI); JavaScript syntax and UI contract tests pass.
+- No Flutter .dart sources, pubspec.yaml or pubspec.lock were found in the candidate release/repository. No Flutter SDK, Chromium, Playwright, Selenium or jsdom is available on the device. Native Flutter UI/browser E2E therefore remains BLOCKED / NOT PRESENT, not VERIFIED.
+
+**Performance.**
+- Available short-window candidate RSS samples: 41120–41756 KB over the observed early soak interval. Device had about 293 GB free disk and 4.7 GB MemAvailable at 05:00 +07. This is not a battery/thermal/long-duration performance qualification. No full sustained CPU/battery measurement is claimed.
+
+**Disposition.**
+- Overall verdict: INCOMPLETE (with verified subsystems and accepted evidence above). Production remains on 030a88d5; candidate is staging only.
+- P0/P1 data integrity and restart recovery candidate tests passed, but GO-LIVE is not accepted while Soak 5 is incomplete and RT-06 / PR #77, JobScheduler readback, device boot/autostart proof, Flutter source/E2E and remaining test-harness resource warnings remain unresolved.
+- Next actions: let Soak 5 reach its 24 h target without intervention; reconcile every expected/missing/skipped tick and liveness interval; independently verify JobScheduler/guard persistence and Android boot recovery; resolve RT-06/PR #77 on its own evidence; determine whether Flutter app sources belong in this canonical repo or formally classify web-only UI; clean the remaining test harness resource warnings; only then consider candidate acceptance and a separate GO-LIVE decision. Production must remain untouched until those gates pass.
