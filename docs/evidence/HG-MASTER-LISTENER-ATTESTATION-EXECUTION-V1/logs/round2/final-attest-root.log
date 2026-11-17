@@ -1,0 +1,71 @@
+test_exec_after_attestation (hg.tests.test_attest.AttestBracketTests.test_exec_after_attestation) ... ok
+test_first_descriptor_closed_but_duplicate_keeps_the_listener (hg.tests.test_attest.AttestBracketTests.test_first_descriptor_closed_but_duplicate_keeps_the_listener) ... ok
+test_listener_closed_after_attestation (hg.tests.test_attest.AttestBracketTests.test_listener_closed_after_attestation) ... ok
+test_listener_replaced_after_attestation (hg.tests.test_attest.AttestBracketTests.test_listener_replaced_after_attestation) ... ok
+test_service_restart_after_attestation (hg.tests.test_attest.AttestBracketTests.test_service_restart_after_attestation) ... ok
+test_cli_non_ancestor_under_yama_is_blocked_not_passed (hg.tests.test_attest.AttestHappyPathTests.test_cli_non_ancestor_under_yama_is_blocked_not_passed) ... skipped 'Yama ptrace_scope is not 1 here: a non-ancestor attester is not restricted'
+test_cli_reports_json_and_exit_code (hg.tests.test_attest.AttestHappyPathTests.test_cli_reports_json_and_exit_code) ... ok
+test_shipped_empty_anchor_keeps_overall_unverified_but_collects_l5 (hg.tests.test_attest.AttestHappyPathTests.test_shipped_empty_anchor_keeps_overall_unverified_but_collects_l5) ... ok
+test_verified_listener_and_reverify (hg.tests.test_attest.AttestHappyPathTests.test_verified_listener_and_reverify) ... ok
+test_parent_is_not_runsv (hg.tests.test_attest.AttestL1Tests.test_parent_is_not_runsv) ... ok
+test_pid_reuse_between_reads_is_detected (hg.tests.test_attest.AttestL1Tests.test_pid_reuse_between_reads_is_detected) ... ok
+test_runsv_of_another_service (hg.tests.test_attest.AttestL1Tests.test_runsv_of_another_service) ... ok
+test_shell_wrapper_run_script (hg.tests.test_attest.AttestL1Tests.test_shell_wrapper_run_script) ... ok
+test_stale_pid (hg.tests.test_attest.AttestL1Tests.test_stale_pid) ... ok
+test_deleted_executable (hg.tests.test_attest.AttestL2L3Tests.test_deleted_executable) ... ok
+test_executable_metadata_changed_during_hash (hg.tests.test_attest.AttestL2L3Tests.test_executable_metadata_changed_during_hash) ... ok
+test_execve_during_attestation (hg.tests.test_attest.AttestL2L3Tests.test_execve_during_attestation) ... ok
+test_process_killed_during_attestation (hg.tests.test_attest.AttestL2L3Tests.test_process_killed_during_attestation) ... ok
+test_same_name_wrong_digest (hg.tests.test_attest.AttestL2L3Tests.test_same_name_wrong_digest) ... ok
+test_unreadable_executable_fails_closed (hg.tests.test_attest.AttestL2L3Tests.test_unreadable_executable_fails_closed) ... ok
+test_wrong_executable_name (hg.tests.test_attest.AttestL2L3Tests.test_wrong_executable_name) ... ok
+test_same_user_target_passes_real_status (hg.tests.test_attest.AttestL4Tests.test_same_user_target_passes_real_status) ... ok
+test_unreadable_status_fails_closed (hg.tests.test_attest.AttestL4Tests.test_unreadable_status_fails_closed) ... ok
+test_api_answers_but_another_process_owns_the_port_F1 (hg.tests.test_attest.AttestL5Tests.test_api_answers_but_another_process_owns_the_port_F1)
+F-1: the old check calls this VERIFIED_PROCESS; L5 finds no listener in the attested process. ... ok
+test_descriptor_closed_and_reused_between_listing_and_getfd (hg.tests.test_attest.AttestL5Tests.test_descriptor_closed_and_reused_between_listing_and_getfd) ... ok
+test_duplicated_descriptor_is_one_listener_but_independent_sockets_are_two (hg.tests.test_attest.AttestL5Tests.test_duplicated_descriptor_is_one_listener_but_independent_sockets_are_two)
+F-9: two descriptors of ONE socket (dup) are one listener; two sockets on one port are two. ... ok
+test_listener_shared_with_another_process (hg.tests.test_attest.AttestL5Tests.test_listener_shared_with_another_process) ... ok
+test_not_listening_udp_wrong_port (hg.tests.test_attest.AttestL5Tests.test_not_listening_udp_wrong_port) ... ok
+test_other_network_namespace (hg.tests.test_attest.AttestL5Tests.test_other_network_namespace) ... ok
+test_pidfd_getfd_errors (hg.tests.test_attest.AttestL5Tests.test_pidfd_getfd_errors) ... ok
+test_reuseport_single_and_double (hg.tests.test_attest.AttestL5Tests.test_reuseport_single_and_double) ... ok
+test_seccomp_or_missing_syscall_blocks_l5 (hg.tests.test_attest.AttestL5Tests.test_seccomp_or_missing_syscall_blocks_l5) ... ok
+test_wrong_bind_address (hg.tests.test_attest.AttestL5Tests.test_wrong_bind_address) ... ok
+test_capability_outcomes (hg.tests.test_attest.CapabilityTests.test_capability_outcomes) ... ok
+test_overall_status_precedence (hg.tests.test_attest.CapabilityTests.test_overall_status_precedence) ... ok
+test_capabilities_beyond_own_sets (hg.tests.test_attest.CredentialPolicyTests.test_capabilities_beyond_own_sets) ... ok
+test_each_uid_and_gid_position (hg.tests.test_attest.CredentialPolicyTests.test_each_uid_and_gid_position) ... ok
+test_identical_credentials_pass (hg.tests.test_attest.CredentialPolicyTests.test_identical_credentials_pass) ... ok
+test_incomplete_status_fails_closed (hg.tests.test_attest.CredentialPolicyTests.test_incomplete_status_fails_closed) ... ok
+test_seccomp_nnp_selinux (hg.tests.test_attest.CredentialPolicyTests.test_seccomp_nnp_selinux) ... ok
+test_supplementary_groups (hg.tests.test_attest.CredentialPolicyTests.test_supplementary_groups) ... ok
+test_exclusive_bind_while_listening (hg.tests.test_attest.KernelBindSemanticsTests.test_exclusive_bind_while_listening) ... ok
+test_real_self_stat (hg.tests.test_attest.ParserTests.test_real_self_stat) ... ok
+test_stat_comm_with_parentheses_spaces_and_newline (hg.tests.test_attest.ParserTests.test_stat_comm_with_parentheses_spaces_and_newline) ... ok
+test_stat_malformed_or_other_pid (hg.tests.test_attest.ParserTests.test_stat_malformed_or_other_pid) ... ok
+test_empty_missing_malformed (hg.tests.test_attest.PidFileTests.test_empty_missing_malformed) ... ok
+test_not_regular_symlink_and_modes (hg.tests.test_attest.PidFileTests.test_not_regular_symlink_and_modes) ... ok
+test_real_runsv_supervised_listener (hg.tests.test_attest.RealRunitTests.test_real_runsv_supervised_listener) ... skipped 'real runit not installed (stand-in covers the rest)'
+test_excluded_pid_is_not_a_holder (hg.tests.test_attest.SharingScanTests.test_excluded_pid_is_not_a_holder) ... ok
+test_holder_found_and_complete_scope (hg.tests.test_attest.SharingScanTests.test_holder_found_and_complete_scope) ... ok
+test_real_proc_scan_reports_its_own_limits (hg.tests.test_attest.SharingScanTests.test_real_proc_scan_reports_its_own_limits) ... ok
+test_uninspectable_processes_are_classified_not_counted_as_holders (hg.tests.test_attest.SharingScanTests.test_uninspectable_processes_are_classified_not_counted_as_holders) ... ok
+test_unreadable_descriptor_and_hidepid_make_scope_partial (hg.tests.test_attest.SharingScanTests.test_unreadable_descriptor_and_hidepid_make_scope_partial) ... ok
+test_malformed_anchors_rejected (hg.tests.test_attest.TrustAnchorTests.test_malformed_anchors_rejected) ... ok
+test_shipped_anchor_is_valid_and_empty (hg.tests.test_attest.TrustAnchorTests.test_shipped_anchor_is_valid_and_empty) ... ok
+test_valid_entry_and_digest_decisions (hg.tests.test_attest.TrustAnchorTests.test_valid_entry_and_digest_decisions) ... ok
+test_probe_imports_only_the_standard_library (hg.tests.test_l5_probe.ProbeIndependenceTests.test_probe_imports_only_the_standard_library) ... ok
+test_usage_error (hg.tests.test_l5_probe.ProbeIndependenceTests.test_usage_error) ... ok
+test_port_hex_constant (hg.tests.test_l5_probe.ProbeRunTests.test_port_hex_constant) ... ok
+test_self_test_passes_every_check (hg.tests.test_l5_probe.ProbeRunTests.test_self_test_passes_every_check) ... ok
+test_target_mode_finds_owned_listener_and_rejects_wrong_port (hg.tests.test_l5_probe.ProbeRunTests.test_target_mode_finds_owned_listener_and_rejects_wrong_port) ... ok
+test_target_mode_under_yama_without_exception_is_blocked (hg.tests.test_l5_probe.ProbeRunTests.test_target_mode_under_yama_without_exception_is_blocked) ... skipped 'Yama ptrace_scope is not 1 here'
+test_target_with_duplicated_descriptor_is_one_listener (hg.tests.test_l5_probe.ProbeRunTests.test_target_with_duplicated_descriptor_is_one_listener)
+F-9 in the probe: two descriptors of one socket must not read as 'no unique listener'. ... ok
+
+----------------------------------------------------------------------
+Ran 63 tests in 5.347s
+
+OK (skipped=3)

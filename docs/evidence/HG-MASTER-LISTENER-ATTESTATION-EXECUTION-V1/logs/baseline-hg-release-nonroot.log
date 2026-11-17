@@ -1,0 +1,21 @@
+test_archive_tampering_is_detected (hg.tests.test_release.ReleaseIntegrityTests.test_archive_tampering_is_detected) ... ok
+test_archive_verifies_against_git_and_installed_root (hg.tests.test_release.ReleaseIntegrityTests.test_archive_verifies_against_git_and_installed_root) ... ok
+test_duplicate_manifest_keys_are_rejected (hg.tests.test_release.ReleaseIntegrityTests.test_duplicate_manifest_keys_are_rejected) ... ok
+test_extract_cli_and_verify_root (hg.tests.test_release.ReleaseIntegrityTests.test_extract_cli_and_verify_root) ... ok
+test_extract_rejects_symlink_destination (hg.tests.test_release.ReleaseIntegrityTests.test_extract_rejects_symlink_destination) ... ok
+test_installed_source_tampering_and_extra_file_are_detected (hg.tests.test_release.ReleaseIntegrityTests.test_installed_source_tampering_and_extra_file_are_detected) ... ok
+test_invalid_commit_reference_is_rejected (hg.tests.test_release.ReleaseIntegrityTests.test_invalid_commit_reference_is_rejected) ... ok
+test_manifest_digest_is_checked (hg.tests.test_release.ReleaseIntegrityTests.test_manifest_digest_is_checked) ... ok
+test_release_is_deterministic_for_same_commit (hg.tests.test_release.ReleaseIntegrityTests.test_release_is_deterministic_for_same_commit) ... ok
+test_verify_root_rejects_symlink (hg.tests.test_release.ReleaseIntegrityTests.test_verify_root_rejects_symlink) ... ok
+test_seal_rejects_symlink_inside_release_without_changing_modes (hg.tests.test_release.SealedReleaseTests.test_seal_rejects_symlink_inside_release_without_changing_modes) ... ok
+test_seal_rejects_symlink_root (hg.tests.test_release.SealedReleaseTests.test_seal_rejects_symlink_root) ... ok
+test_sealed_import_without_dont_write_bytecode_leaves_tree_unchanged (hg.tests.test_release.SealedReleaseTests.test_sealed_import_without_dont_write_bytecode_leaves_tree_unchanged) ... ok
+test_sealed_release_verifies_and_refuses_owner_writes (hg.tests.test_release.SealedReleaseTests.test_sealed_release_verifies_and_refuses_owner_writes) ... ok
+test_unsealed_import_without_dont_write_bytecode_breaks_verify (hg.tests.test_release.SealedReleaseTests.test_unsealed_import_without_dont_write_bytecode_breaks_verify) ... ok
+test_verify_still_rejects_injected_bytecode_after_seal (hg.tests.test_release.SealedReleaseTests.test_verify_still_rejects_injected_bytecode_after_seal) ... ok
+
+----------------------------------------------------------------------
+Ran 16 tests in 0.430s
+
+OK

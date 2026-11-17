@@ -1,0 +1,13 @@
+tree=f39a0be5333be51f9f52a3134520e3b217436112+working-tree python=Python 3.13.18 kernel=6.18.44-fc-v185 arch=x86_64 user=claude(uid 999)
+maep: python3 -m unittest discover -s maep/tests -> exit=0 start=2026-10-31T13:44:03Z end=2026-10-31T13:44:05Z
+hg: python3 -m unittest discover -s hg/tests -t . -> exit=0 start=2026-10-31T13:44:05Z end=2026-10-31T13:45:08Z
+hooks: python3 -m unittest discover -s .claude/hooks -p test_*.py -> exit=0 start=2026-10-31T13:45:08Z end=2026-10-31T13:45:09Z
+selfcheck: python3 -m hg selfcheck -> exit=0 start=2026-10-31T13:45:09Z end=2026-10-31T13:45:09Z
+bench: python3 -m hg bench -> exit=0 start=2026-10-31T13:45:09Z end=2026-10-31T13:45:09Z
+attest+probe as root: exit=0 start=2026-10-31T13:45:09Z end=2026-10-31T13:45:15Z
+maep: Ran 304 tests in 1.694s OK (skipped=1) 
+hg: Ran 483 tests in 62.815s OK (skipped=4) 
+hooks: Ran 32 tests in 0.259s OK 
+attest-root: Ran 63 tests in 5.347s OK (skipped=3) 
+  "result": "PASS"
+bench PASS lines: 1

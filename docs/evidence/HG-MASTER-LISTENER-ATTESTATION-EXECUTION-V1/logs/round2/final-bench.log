@@ -1,0 +1,19 @@
+{
+  "metrics": {
+    "policy_version": "MAEP-1.1.0",
+    "cases": 10,
+    "passed": 10,
+    "pass_rate": 1.0,
+    "completion_rate": 1.0,
+    "correct_denial_rate": 1.0,
+    "recovery_rate": 1.0,
+    "evidence_backed_closures": 1.0,
+    "unauthorized_effects": 0,
+    "false_closures": 0,
+    "duration_ms_total": 94,
+    "duration_ms_mean": 9.4
+  },
+  "verdict": [
+    "PASS"
+  ]
+}

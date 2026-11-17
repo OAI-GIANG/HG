@@ -1,0 +1,10 @@
+test_raw_syscall_fallback_when_python_wrapper_is_missing (hg.tests.test_attest.PidfdOpenFallbackTests.test_raw_syscall_fallback_when_python_wrapper_is_missing) ... ok
+test_unknown_architecture_fails_closed (hg.tests.test_attest.PidfdOpenFallbackTests.test_unknown_architecture_fails_closed) ... ok
+test_capability_does_not_require_python_pidfd_wrapper (hg.tests.test_attest.CapabilityTests.test_capability_does_not_require_python_pidfd_wrapper) ... ok
+test_capability_outcomes (hg.tests.test_attest.CapabilityTests.test_capability_outcomes) ... ok
+test_overall_status_precedence (hg.tests.test_attest.CapabilityTests.test_overall_status_precedence) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.043s
+
+OK

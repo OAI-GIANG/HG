@@ -1,0 +1,2 @@
+main@2f00a62 attest_listener -> {"status": "VERIFIED_PROCESS", "pid": 3802, "reason": "runit-supervised ollama alive as this user (Ollama exits when it cannot bind its port)"}
+HG-LA-2 attest -> status FAIL L5 {"status": "FAIL", "code": "NO_LISTENER", "inspected_fds": 3, "raced": 0}
