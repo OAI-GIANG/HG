@@ -10,6 +10,7 @@ import socket
 import sqlite3
 import threading
 import time
+from contextlib import closing
 
 from maep.authority.canonical_source import CanonicalManifest
 from maep.tests.test_canonical_source import FakeGitHub
@@ -81,7 +82,7 @@ class HTTPRequestParseOracle(TempDirMixin):
     def claimed_keys(self):
         if not self.idem_path.exists():
             return set()
-        with sqlite3.connect(f"file:{self.idem_path}?mode=ro", uri=True) as db:
+        with closing(sqlite3.connect(f"file:{self.idem_path}?mode=ro", uri=True)) as db:
             return {row[0] for row in db.execute("SELECT idem_key FROM requests")}
 
     def assert_refused_without_effect(self, method, target, headers, body, key):
