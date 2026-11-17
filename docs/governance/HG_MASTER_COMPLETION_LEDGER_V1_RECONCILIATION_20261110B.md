@@ -1117,3 +1117,26 @@ Local results: 10/10 OK. The full suite is in the PR.
 - Production remains release 030a88d5, READY; Soak 5 remains release aee6efe4, READY, active on its own runsvdir/port and IN PROGRESS. No production pointer or runtime was changed.
 - New post-merge release 6e6f5f28 has passed build, switch, J1/J2, restore, TERM rollback rehearsal and real web UI E2E on isolated staging.
 - Overall system verdict remains INCOMPLETE until Soak 5 completes and its ticks/liveness are reconciled; RT-06 / PR #77, Android boot/autostart proof, independently attributable periodic JobScheduler recurrence, Flutter native source (not present in available repo refs), and sustained battery/performance qualification remain open.
+
+## 64. Addendum 2026-11-18 06:10–06:12 +07 — PR #77 real-device L5 capability and partial-scope result
+
+**Exact source under test.**
+- PR #77 HEAD was fetched as refs/remotes/origin/pr/77 and verified to equal 73a45f059d51d91c6063580e1a4a86268d377611. The similarly named remote feature branch is stale at c096cbf and was not used for probe evidence.
+- The probe was run from a detached worktree at the exact PR HEAD using python3 -I -S deploy/termux/l5_probe.py, without importing HG or changing the running Ollama service.
+
+**Android 17 / Termux real-device probe.**
+- Device environment: Android 17 / SDK 37 / arm64-v8a / Python 3.14.8 / uid 10460 / SELinux untrusted_app_27 / seccomp mode 2.
+- The safe disposable-child syscall check reports pidfd syscalls AVAILABLE. The probe does not deliver signals to the Ollama process.
+- Self-test JSON SHA256 7c97a7a85db6993e8f4b9469a8cb4cf4e07643bef2393b786cf1586109647c74; result BLOCKED / SELF_TEST_OBSERVATION_INCOMPLETE.
+- Real target JSON SHA256 a9a07c378ef1578241638eff524aedf28de9df82215ed8912453fde05e114beb; target PID 27784, executable /data/data/com.termux/files/usr/bin/ollama, expected listener 127.0.0.1:11434 was identified and matched by duplicated descriptor/inode, but result BLOCKED / SHARING_SCAN_INCOMPLETE.
+- Both reports record /proc/net/tcp and tcp6 unreadable with EACCES, proc hidepid invisible, sharing scope PARTIAL, gaps PROC_HIDEPID_RESTRICTED_OR_UNKNOWN and SCOPE_PARTIAL. Thus the probe can identify the target socket but cannot prove no unobservable process also holds it. This is a real on-device BLOCKED result, not PASS.
+
+**Source-level acceptance issue identified (PR #77 remains HOLD).**
+- In hg/assistant/attest.py around lines 694–709, _listener() refuses when visible holders are present, but does not require sharing.scope == ALL_PROCESSES_INSPECTED before returning PASS / LISTENER_OWNED. If the scan is PARTIAL and no visible holder is found, current code can still return PASS. This must be fail-closed: PARTIAL/UNKNOWN observation scope must block L5.
+- hg/tests/test_attest.py AttestHappyPathTests.test_verified_listener_and_reverify around lines 487–502 explicitly accepts either ALL_PROCESSES_INSPECTED or PARTIAL while expecting VERIFIED_LISTENER. That test does not enforce exclusivity under an incomplete scan and must be corrected in any future re-admission patch.
+- hg/assistant/trusted_runtimes.json remains empty (runtimes: []), so L3 is UNVERIFIED / NO_TRUST_ANCHOR.
+- Runtime wiring is also absent: hg/assistant/config.py::attest_listener() returns VERIFIED_PROCESS with listener=UNVERIFIED; hg/chat.py::_model_parts() calls only this process-level check, not full hg.assistant.attest.attest() L1–L5. No VERIFIED_LISTENER gate is in the /v1/chat model-call path.
+
+**Disposition.**
+- This evidence confirms the v1 owner HOLD/BLOCKED state. No code, trust registry, caller wiring, permission, or policy was changed. PR #77 was not merged or modified.
+- Re-admission requires, at minimum: a fail-closed PARTIAL scope gate plus mutation tests; a real environment with complete process/descriptor observation (or an explicit versioned owner residual-risk decision); non-empty provenance-backed L3 runtime trust anchor; and integration of a VERIFIED_LISTENER gate in the actual model-call path with tests. Until then the existing VERIFIED_PROCESS label must not be described as listener ownership.
