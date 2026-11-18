@@ -1243,3 +1243,10 @@ This closes G6 staging rehearsal only. It does not authorize a production cutove
 - PR #194 merged 2026-11-13T03:32:16Z with commit 94344cd410ed6e31f4a2c4734bc96cf8e94d0a3c and corrected the real-device acceptance record.
 - G7-CI is therefore VERIFIED as emulator-only qualification. It is not real-device qualification and does not prove a physical Termux process can invoke the Broker's Binder API across distinct Android UIDs.
 - Real-device G7 remains BLOCKED: a Termux-side client, owner-authorized APK install/pairing, release-signing key access, and distinct-UID positive/negative Binder evidence are still missing.
+
+## 71. Addendum 2026-11-18 +07 — G3-1 root-owned SQLite oracle now exercised by CI
+
+- The root-only test is maep.tests.test_sqlite_nofollow.SQLiteNoFollowTests.test_rejects_directory_owned_by_another_user. Previously the ordinary MAEP runner executed with a non-root UID and skipped this test.
+- Draft PR #206 (test(g3): run root-only SQLite ownership oracle in CI), branch ci/g3-root-owned-dir-oracle-20261118, head bb970600c6d80cfea974e1dc63571ecbb3593cb5, adds a separate root-owned-dir-oracle job under sudo for Python 3.13 and 3.14. It runs only the root-specific test, not the full suite as root.
+- On the PR pull_request workflow run 44272376532 and push workflow run 44272334816, the full MAEP Python 3.13 and 3.14 jobs all report SUCCESS; both root-only matrix legs on each event also report SUCCESS. RT-06 anchor Python 3.13/3.14 reports SUCCESS. Root-job logs explicitly show the named test ... ok, Ran 1 test, OK on both Python versions; it was executed as root, not skipped.
+- This provides the missing G3-1 CI coverage. Main integration remains pending because PR #206 is Draft/unmerged; do not claim the root job has already landed on main.
