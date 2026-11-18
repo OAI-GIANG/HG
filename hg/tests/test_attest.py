@@ -483,17 +483,31 @@ class _LabCase(unittest.TestCase):
         self.addCleanup(att.close)
         return att
 
+    @staticmethod
+    def complete_sharing_scope():
+        return {
+            "holders": [],
+            "uninspectable": {"same_uid": 0, "root": 0, "other_uid": 0, "unknown": 0},
+            "unreadable_descriptors": 0,
+            "proc_hidepid": None,
+            "scope": "ALL_PROCESSES_INSPECTED",
+        }
+
+    def attest_with_complete_sharing_scope(self, service, port, **kw):
+        with mock.patch.object(at, "socket_holders", return_value=self.complete_sharing_scope()):
+            return self.attest(service, port, **kw)
+
 
 class AttestHappyPathTests(_LabCase):
     def test_verified_listener_and_reverify(self):
         service, doc = self.lab.start("listen")
-        att = self.attest(service, doc["port"])
+        att = self.attest_with_complete_sharing_scope(service, doc["port"])
         self.assertEqual(att.status, "VERIFIED_LISTENER", att.report())
         self.assertTrue(all(layer["status"] == "PASS" for layer in att.layers.values()))
         self.assertEqual(att.pid, doc["pid"])
         self.assertEqual(att.layers["L5_listener"]["fd"], doc["fd"])
         sharing = att.layers["L5_listener"]["sharing"]
-        self.assertIn(sharing["scope"], ("ALL_PROCESSES_INSPECTED", "PARTIAL"))
+        self.assertEqual(sharing["scope"], "ALL_PROCESSES_INSPECTED")
         self.assertEqual(sharing["basis"], at.SHARING_BASIS)              # the limit travels with the PASS
         self.assertNotIn("holders", sharing)
         # an HTTP-like exchange happens here in production; the listener is still the same one
@@ -504,7 +518,7 @@ class AttestHappyPathTests(_LabCase):
 
     def test_shipped_empty_anchor_keeps_overall_unverified_but_collects_l5(self):
         service, doc = self.lab.start("listen")
-        att = self.attest(service, doc["port"], anchors=None)
+        att = self.attest_with_complete_sharing_scope(service, doc["port"], anchors=None)
         self.assertEqual(att.status, "UNVERIFIED")
         self.assertEqual(_layer(att, "L3_integrity"), ("UNVERIFIED", "NO_TRUST_ANCHOR"))
         self.assertEqual(_layer(att, "L5_listener"), ("PASS", "LISTENER_OWNED"))
@@ -523,7 +537,19 @@ class AttestHappyPathTests(_LabCase):
         service, doc = self.lab.start("listen", ptracer_any=True)
         code, report = self.cli(service, doc["port"])
         self.assertEqual(code, 1)                                  # shipped anchor is empty -> not verified
-        self.assertEqual(report["layers"]["L5_listener"]["status"], "PASS", report["layers"]["L5_listener"])
+        l5 = report["layers"]["L5_listener"]
+        if l5["status"] == "PASS":
+            self.assertEqual((l5["code"], l5["sharing"]["scope"]),
+                             ("LISTENER_OWNED", "ALL_PROCESSES_INSPECTED"))
+        else:
+            # Kernel policy may block before the cross-process sharing scan.
+            # Every non-PASS outcome is acceptable here; only complete,
+            # explicitly recorded inspection may produce LISTENER_OWNED.
+            self.assertIn(l5["status"], ("BLOCKED", "FAIL", "UNVERIFIED"), l5)
+            self.assertNotEqual(l5["code"], "LISTENER_OWNED")
+            if l5["code"] == "SHARING_SCAN_INCOMPLETE":
+                self.assertEqual(l5.get("sharing", {}).get("scope"), "PARTIAL", l5)
+        self.assertNotEqual(report["status"], at.VERIFIED_LISTENER)
         self.assertEqual(report["capability"]["code"], "AVAILABLE")
 
     def test_cli_non_ancestor_under_yama_is_blocked_not_passed(self):
@@ -535,6 +561,40 @@ class AttestHappyPathTests(_LabCase):
         self.assertEqual((report["layers"]["L5_listener"]["status"], report["layers"]["L5_listener"]["code"]),
                          ("BLOCKED", "PIDFD_GETFD_EPERM"))
         self.assertEqual(report["status"], "BLOCKED")
+
+
+class SharingScopeGateTests(unittest.TestCase):
+    def sharing(self, *, scope, holders=None):
+        return {
+            "holders": list(holders or []),
+            "uninspectable": {"same_uid": 1, "root": 0, "other_uid": 0, "unknown": 0},
+            "unreadable_descriptors": 1,
+            "proc_hidepid": "invisible" if scope == "PARTIAL" else "UNKNOWN",
+            "scope": scope,
+        }
+
+    def test_partial_unknown_and_missing_scope_are_blocked(self):
+        for scope in ("PARTIAL", "UNKNOWN", None):
+            with self.subTest(scope=scope), self.assertRaises(at._LayerFail) as caught:
+                at.require_exclusive_sharing_scope(self.sharing(scope=scope))
+            self.assertEqual((caught.exception.status, caught.exception.code),
+                             ("BLOCKED", "SHARING_SCAN_INCOMPLETE"))
+            self.assertEqual(caught.exception.evidence["sharing"]["scope"], scope)
+
+    def test_visible_holder_fails_even_when_scope_is_partial(self):
+        with self.assertRaises(at._LayerFail) as caught:
+            at.require_exclusive_sharing_scope(self.sharing(scope="PARTIAL", holders=[1234]))
+        self.assertEqual((caught.exception.status, caught.exception.code),
+                         ("FAIL", "LISTENER_SHARED"))
+
+    def test_complete_empty_scope_is_the_only_passable_scope(self):
+        sharing = self.sharing(scope="ALL_PROCESSES_INSPECTED")
+        sharing.update({
+            "uninspectable": {"same_uid": 0, "root": 0, "other_uid": 0, "unknown": 0},
+            "unreadable_descriptors": 0,
+            "proc_hidepid": None,
+        })
+        self.assertIsNone(at.require_exclusive_sharing_scope(sharing))
 
 
 class AttestL1Tests(_LabCase):
@@ -705,7 +765,9 @@ class AttestL5Tests(_LabCase):
 
     def test_duplicated_descriptor_is_one_listener_but_independent_sockets_are_two(self):
         """F-9: two descriptors of ONE socket (dup) are one listener; two sockets on one port are two."""
-        att, doc = self.l5("dup")
+        service, doc = self.lab.start("dup")
+        with mock.patch.object(at, "socket_holders", return_value=self.complete_sharing_scope()):
+            att = self.attest(service, doc["port"])
         layer = att.layers["L5_listener"]
         self.assertEqual((layer["status"], layer["code"]), ("PASS", "LISTENER_OWNED"), layer)
         self.assertEqual(len(layer["fds"]), 2)
@@ -789,13 +851,13 @@ class AttestL5Tests(_LabCase):
 class AttestBracketTests(_LabCase):
     def verified(self, usr1=""):
         service, doc = self.lab.start("listen", usr1=usr1)
-        att = self.attest(service, doc["port"])
+        att = self.attest_with_complete_sharing_scope(service, doc["port"])
         self.assertEqual(att.status, "VERIFIED_LISTENER", att.report())
         return att, doc
 
     def test_first_descriptor_closed_but_duplicate_keeps_the_listener(self):
         service, doc = self.lab.start("dup", usr1="close-first")
-        att = self.attest(service, doc["port"])
+        att = self.attest_with_complete_sharing_scope(service, doc["port"])
         self.assertEqual(att.status, "VERIFIED_LISTENER", att.report())
         os.kill(doc["pid"], signal.SIGUSR1)
         self.assertTrue(_wait(lambda: not os.path.exists(f"/proc/{doc['pid']}/fd/{doc['fd']}"), 5))
@@ -855,7 +917,7 @@ class KernelBindSemanticsTests(unittest.TestCase):
 class RealRunitTests(_LabCase):
     def test_real_runsv_supervised_listener(self):
         service, doc = self.lab.start("listen", supervisor="runit")
-        att = self.attest(service, doc["port"])
+        att = self.attest_with_complete_sharing_scope(service, doc["port"])
         self.assertEqual(att.status, "VERIFIED_LISTENER", att.report())
         self.assertEqual(at.read_stat(att.layers["L1_supervision"]["runsv_pid"]).comm, "runsv")
 

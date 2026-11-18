@@ -1,0 +1,37 @@
+test_cli_reports_json_and_exit_code (hg.tests.test_attest.AttestHappyPathTests.test_cli_reports_json_and_exit_code) ... ok
+test_complete_empty_scope_is_the_only_passable_scope (hg.tests.test_attest.SharingScopeGateTests.test_complete_empty_scope_is_the_only_passable_scope) ... ok
+test_partial_unknown_and_missing_scope_are_blocked (hg.tests.test_attest.SharingScopeGateTests.test_partial_unknown_and_missing_scope_are_blocked) ... ok
+test_visible_holder_fails_even_when_scope_is_partial (hg.tests.test_attest.SharingScopeGateTests.test_visible_holder_fails_even_when_scope_is_partial) ... ok
+test_excluded_pid_is_not_a_holder (hg.tests.test_attest.SharingScanTests.test_excluded_pid_is_not_a_holder) ... ok
+test_holder_found_and_complete_scope (hg.tests.test_attest.SharingScanTests.test_holder_found_and_complete_scope) ... ok
+test_real_proc_scan_reports_its_own_limits (hg.tests.test_attest.SharingScanTests.test_real_proc_scan_reports_its_own_limits) ... ok
+test_uninspectable_processes_are_classified_not_counted_as_holders (hg.tests.test_attest.SharingScanTests.test_uninspectable_processes_are_classified_not_counted_as_holders) ... ok
+test_unreadable_descriptor_and_hidepid_make_scope_partial (hg.tests.test_attest.SharingScanTests.test_unreadable_descriptor_and_hidepid_make_scope_partial) ... ok
+test_every_skip_in_this_module_goes_through_env_unmet (hg.tests.test_l5_probe.ProbeDecisionTests.test_every_skip_in_this_module_goes_through_env_unmet) ... ok
+test_external_gate_variable_only_deselects_the_real_kernel_tests (hg.tests.test_l5_probe.ProbeDecisionTests.test_external_gate_variable_only_deselects_the_real_kernel_tests) ... ok
+test_holder_scan_marks_unexpected_oserror_partial (hg.tests.test_l5_probe.ProbeDecisionTests.test_holder_scan_marks_unexpected_oserror_partial) ... ok
+test_holders_marks_each_uid_class_of_unreadable_process_partial (hg.tests.test_l5_probe.ProbeDecisionTests.test_holders_marks_each_uid_class_of_unreadable_process_partial) ... ok
+test_holders_marks_unreadable_descriptor_partial (hg.tests.test_l5_probe.ProbeDecisionTests.test_holders_marks_unreadable_descriptor_partial) ... ok
+test_holders_scope_follows_hidepid_and_counters (hg.tests.test_l5_probe.ProbeDecisionTests.test_holders_scope_follows_hidepid_and_counters) ... ok
+test_missing_capability_follows_the_require_policy (hg.tests.test_l5_probe.ProbeDecisionTests.test_missing_capability_follows_the_require_policy)
+HG_REQUIRE_PROC_TESTS=1 turns any environment limit into a failure; otherwise it is an explicit skip. ... ok
+test_observation_limited_gate_covers_every_incomplete_case (hg.tests.test_l5_probe.ProbeDecisionTests.test_observation_limited_gate_covers_every_incomplete_case) ... ok
+test_platform_gate_accepts_android_and_linux_only (hg.tests.test_l5_probe.ProbeDecisionTests.test_platform_gate_accepts_android_and_linux_only) ... ok
+test_process_observation_gate_does_not_hide_unrelated_probe_errors (hg.tests.test_l5_probe.ProbeDecisionTests.test_process_observation_gate_does_not_hide_unrelated_probe_errors) ... ok
+test_process_observation_gate_recognizes_explicit_permission_denial (hg.tests.test_l5_probe.ProbeDecisionTests.test_process_observation_gate_recognizes_explicit_permission_denial) ... ok
+test_process_observation_gate_recognizes_unknown_proc_visibility (hg.tests.test_l5_probe.ProbeDecisionTests.test_process_observation_gate_recognizes_unknown_proc_visibility) ... ok
+test_self_test_verdict_never_passes_on_holder_or_gap (hg.tests.test_l5_probe.ProbeDecisionTests.test_self_test_verdict_never_passes_on_holder_or_gap) ... ok
+test_self_test_with_incomplete_observation_is_blocked_not_pass (hg.tests.test_l5_probe.ProbeDecisionTests.test_self_test_with_incomplete_observation_is_blocked_not_pass) ... ok
+test_target_blocks_partial_descriptor_inspection (hg.tests.test_l5_probe.ProbeDecisionTests.test_target_blocks_partial_descriptor_inspection) ... ok
+test_target_blocks_unknown_holder_scan (hg.tests.test_l5_probe.ProbeDecisionTests.test_target_blocks_unknown_holder_scan) ... ok
+test_target_decision_table (hg.tests.test_l5_probe.ProbeDecisionTests.test_target_decision_table) ... ok
+test_target_duplicate_descriptor_of_one_socket_is_one_listener (hg.tests.test_l5_probe.ProbeDecisionTests.test_target_duplicate_descriptor_of_one_socket_is_one_listener) ... ok
+test_target_listener_swapped_during_scan_is_not_owned (hg.tests.test_l5_probe.ProbeDecisionTests.test_target_listener_swapped_during_scan_is_not_owned) ... ok
+test_target_post_check_inspection_error_blocks (hg.tests.test_l5_probe.ProbeDecisionTests.test_target_post_check_inspection_error_blocks) ... ok
+test_target_requires_tcp_not_only_stream (hg.tests.test_l5_probe.ProbeDecisionTests.test_target_requires_tcp_not_only_stream) ... ok
+test_target_two_distinct_listeners_are_not_one_listener (hg.tests.test_l5_probe.ProbeDecisionTests.test_target_two_distinct_listeners_are_not_one_listener) ... ok
+
+----------------------------------------------------------------------
+Ran 31 tests in 1.447s
+
+OK
