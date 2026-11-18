@@ -1209,3 +1209,17 @@ Local results: 10/10 OK. The full suite is in the PR.
 - PR #195 checks: MAEP unittest Python 3.13 and Python 3.14 succeeded on both push and pull_request workflows; RT-06 anchor Python 3.13 and Python 3.14 succeeded.
 - Scope covers static S1-S3, runtime GatewayProbe across ask/chat/planner/research and negative mutation of research.py detected by both layers.
 - Therefore the G4 conformance-test admission is VERIFIED. This closes the test admission only; it does not approve deploying all later runtime PRs to production. Production remains behind the separate owner approval gate.
+
+## 68. Addendum 2026-11-18 +07 — Soak5 is deterministically INCOMPLETE under its own gate
+
+The Soak5 v4 driver itself defines PERIOD=1800 and GAP_MAX=3600 seconds. Its verdict() sets INCOMPLETE when LONGEST_GAP > 3600 seconds or ENVREC != 0.
+
+At snapshot 2026-11-18 15:41:59 +07:
+- Start 2026-11-18 01:46:30 +07; target end 2026-11-19 01:46:30 +07; elapsed 14h00m03s.
+- 24 tick rows; RUN=23, OK=23, SKIP=1 (initial GitHub quota below 30), FAIL=0.
+- ENVREC=1, ENVFAIL=0, REBOOTS=0, PIDCHG=0.
+- Longest inter-tick gap = 6,935 seconds / 115.58 minutes; another gap = 3,888 seconds / 64.80 minutes; configured maximum = 3,600 seconds.
+- Driver-formula unobserved_s = 9,700.
+- Thus two independent hard INCOMPLETE conditions are already true. Further ticks cannot reverse this historical result. The 24-hour window had not yet ended at snapshot time; final driver output should still be retained as end-of-window evidence, but this run must not be counted as PASS.
+
+No tick, counter, log, service, or production state was modified. The original Soak5 run was left undisturbed. A new Soak run needs a fresh evidence directory after resolving Termux process-tree restart/suspend stability; it must satisfy both zero recovered environment restarts and every gap <=3600 seconds.
