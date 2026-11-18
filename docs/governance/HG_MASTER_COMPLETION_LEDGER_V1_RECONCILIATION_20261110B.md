@@ -1223,3 +1223,15 @@ At snapshot 2026-11-18 15:41:59 +07:
 - Thus two independent hard INCOMPLETE conditions are already true. Further ticks cannot reverse this historical result. The 24-hour window had not yet ended at snapshot time; final driver output should still be retained as end-of-window evidence, but this run must not be counted as PASS.
 
 No tick, counter, log, service, or production state was modified. The original Soak5 run was left undisturbed. A new Soak run needs a fresh evidence directory after resolving Termux process-tree restart/suspend stability; it must satisfy both zero recovered environment restarts and every gap <=3600 seconds.
+
+## 69. Addendum 2026-11-18 +07 — G6 staging cutover, restore and rollback rehearsal VERIFIED
+
+The earlier ledger statement that G6 was prepared but NOT EXECUTED is superseded by the post-merge device rehearsal:
+- Candidate source commit 6f6cb96d3120c4d06a7d6def3b37a1953a448d60 built reproducibly as release 6e6f5f288f88f5d03519875ad5fed4da84006f72db56c67c487d65be03c275b8.
+- Production release remained 030a88d534bdec086c10b87a4732322d72791260178c1129b0538bb3b42bc7d5.
+- R0 PASS, candidate SWITCH_OK, J2 CLOSED_VERIFIED, J1 ANSWERED_NO_ACTION, restore RESTORED, controlled TERM interruption ROLLBACK_READY_VERIFIED, R2 PASS, REHEARSAL_PASS.
+- Production snapshot diff is 0 bytes.
+- On-device SHA256SUMS verified every listed item (30/30).
+- Staging supervisor and port were torn down after the rehearsal.
+
+This closes G6 staging rehearsal only. It does not authorize a production cutover; production deployment remains subject to the owner's separate explicit approval. Original evidence remains at $HOME/hg-staging-postmerge-20261118/rehearsal-20261117T225455Z/.
