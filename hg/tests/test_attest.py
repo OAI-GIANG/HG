@@ -542,8 +542,14 @@ class AttestHappyPathTests(_LabCase):
             self.assertEqual((l5["code"], l5["sharing"]["scope"]),
                              ("LISTENER_OWNED", "ALL_PROCESSES_INSPECTED"))
         else:
-            self.assertEqual((l5["status"], l5["code"], l5["sharing"]["scope"]),
-                             ("BLOCKED", "SHARING_SCAN_INCOMPLETE", "PARTIAL"))
+            # Kernel policy may block before the cross-process sharing scan.
+            # Every non-PASS outcome is acceptable here; only complete,
+            # explicitly recorded inspection may produce LISTENER_OWNED.
+            self.assertIn(l5["status"], ("BLOCKED", "FAIL", "UNVERIFIED"), l5)
+            self.assertNotEqual(l5["code"], "LISTENER_OWNED")
+            if l5["code"] == "SHARING_SCAN_INCOMPLETE":
+                self.assertEqual(l5.get("sharing", {}).get("scope"), "PARTIAL", l5)
+        self.assertNotEqual(report["status"], at.VERIFIED_LISTENER)
         self.assertEqual(report["capability"]["code"], "AVAILABLE")
 
     def test_cli_non_ancestor_under_yama_is_blocked_not_passed(self):
@@ -573,6 +579,7 @@ class SharingScopeGateTests(unittest.TestCase):
                 at.require_exclusive_sharing_scope(self.sharing(scope=scope))
             self.assertEqual((caught.exception.status, caught.exception.code),
                              ("BLOCKED", "SHARING_SCAN_INCOMPLETE"))
+            self.assertEqual(caught.exception.evidence["sharing"]["scope"], scope)
 
     def test_visible_holder_fails_even_when_scope_is_partial(self):
         with self.assertRaises(at._LayerFail) as caught:

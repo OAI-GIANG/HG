@@ -630,6 +630,7 @@ def require_exclusive_sharing_scope(sharing):
             uninspectable=sharing.get("uninspectable"),
             unreadable_descriptors=sharing.get("unreadable_descriptors"),
             proc_hidepid=sharing.get("proc_hidepid", "UNKNOWN"),
+            sharing=sharing,
         )
 
 
