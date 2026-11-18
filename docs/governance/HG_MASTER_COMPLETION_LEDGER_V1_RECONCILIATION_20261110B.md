@@ -1201,3 +1201,11 @@ Local results: 10/10 OK. The full suite is in the PR.
 - UI branch remains Draft PR #204 for CI/review.
 - No merge, deploy, listener-verification claim, or GO-LIVE decision.
 - Production and active Soak5 remain untouched.
+
+## 67. Addendum 2026-11-18 +07 — G4 ModelRouter conformance acceptance closed
+
+- PR #195, title “test(g4): prove every model call goes through ModelRouter; VERIFY record §56”, merged 2026-11-13T06:41:57Z with merge commit 21c42a8f6c41d3d04401a8ca3ed81b2115de66b0.
+- The canonical main tree includes hg/tests/test_model_call_gateway.py.
+- PR #195 checks: MAEP unittest Python 3.13 and Python 3.14 succeeded on both push and pull_request workflows; RT-06 anchor Python 3.13 and Python 3.14 succeeded.
+- Scope covers static S1-S3, runtime GatewayProbe across ask/chat/planner/research and negative mutation of research.py detected by both layers.
+- Therefore the G4 conformance-test admission is VERIFIED. This closes the test admission only; it does not approve deploying all later runtime PRs to production. Production remains behind the separate owner approval gate.
