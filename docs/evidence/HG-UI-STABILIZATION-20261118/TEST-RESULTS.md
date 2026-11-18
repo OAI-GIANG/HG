@@ -43,3 +43,17 @@ This is a JSDOM integration test, not a real Chromium/Playwright browser qualifi
 - All new data endpoints require the service token. The model-status route is read-only and does not run inference.
 - No production release pointer, production process, Soak5 process, state ledger, or Android setting was changed.
 - This evidence does not establish native Flutter UI source or a native Android/browser test. Flutter source remains absent/unverified.
+
+## Final readiness-contract hardening (follow-up commit)
+
+A final security review found that VERIFIED_PROCESS must never be promoted to service READY. The readiness contract was tightened:
+
+- ChatService.model_status now reports READY only when the model digest is pinned, model check is READY and listener status is VERIFIED_LISTENER.
+- The browser UI applies the same exact gate.
+- Added a regression test proving VERIFIED_PROCESS alone remains NOT_READY.
+- Updated the HTTP status-route fixture/assertion to preserve that distinction.
+
+Verification on the updated candidate:
+- Focused chat/UI HTTP suite: 53 tests, OK, ResourceWarning treated as error.
+- Isolated JSDOM rerun: PASS; explicit model_not_ready_without_listener_attestation assertion true; one Ollama tags query, zero inference calls.
+- Full 1,471-test device suite result above was run on the immediately preceding UI commit; GitHub CI is being rerun for this follow-up commit.

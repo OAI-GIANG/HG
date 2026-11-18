@@ -91,7 +91,9 @@ class ChatService:
         """
         _home, conf, listener, check = self._model_parts()
         pinned = bool(conf.get("model_digest")) and bool(check.get("pinned"))
-        ready = (check.get("status") == "READY" and listener.get("status") == "VERIFIED_PROCESS"
+        # Process identity alone is not listener ownership. Until full L1-L5
+        # attestation is wired into this path, status must remain NOT_READY.
+        ready = (check.get("status") == "READY" and listener.get("status") == "VERIFIED_LISTENER"
                  and pinned)
         return {
             "status": "READY" if ready else "NOT_READY",

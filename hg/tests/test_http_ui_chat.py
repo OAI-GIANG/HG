@@ -54,7 +54,7 @@ class ChatHTTPBase(TempDirMixin):
         self.fake_chat = self.make_chat()
         if self.fake_chat is not None:
             self.fake_chat.model_status = lambda: {
-                "status": "READY", "provider": "ollama", "model": "qwen3:1.7b",
+                "status": "NOT_READY", "provider": "ollama", "model": "qwen3:1.7b",
                 "model_check": {"status": "READY", "digest": "d" * 64, "pinned": True},
                 "listener": {"status": "VERIFIED_PROCESS"}, "pinned": True,
                 "release_id": "a" * 64, "policy": "local model only",
@@ -213,10 +213,11 @@ class ModelStatusRouteTests(ChatHTTPBase):
     def test_model_status_is_read_only_and_reports_only_local_pinned_model(self):
         status, body = self.request("GET", "/v1/model")
         self.assertEqual(status, 200)
-        self.assertEqual(body["status"], "READY")
+        self.assertEqual(body["status"], "NOT_READY")
         self.assertEqual(body["provider"], "ollama")
         self.assertEqual(body["model"], "qwen3:1.7b")
         self.assertTrue(body["pinned"])
+        self.assertEqual(body["model_check"]["status"], "READY")
         self.assertEqual(body["listener"]["status"], "VERIFIED_PROCESS")
         self.assertEqual(self.fake_chat.calls, [])
 

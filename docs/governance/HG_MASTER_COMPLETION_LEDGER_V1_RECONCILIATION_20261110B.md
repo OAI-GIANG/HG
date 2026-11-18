@@ -1182,3 +1182,22 @@ Local results: 10/10 OK. The full suite is in the PR.
 - The web UI candidate is test-green in device suites and isolated JSDOM integration; ready for independent CI/review, not production.
 - PR #77/RT-06 remains HOLD/BLOCKED. Native Flutter source/browser E2E, device reboot/autostart, recurring JobScheduler proof and Soak5 24h result remain open.
 - Production stays on the old release. No GO-LIVE decision or production deployment is made. Overall system verdict remains INCOMPLETE.
+
+## 66. Addendum 2026-11-18 +07 — model readiness must require listener ownership, not process identity
+
+**Security correction to the UI candidate.**
+- Code review found that a read-only model diagnostics implementation could calculate READY from VERIFIED_PROCESS, even though this only attests process identity and does not prove listener ownership.
+- Changed ChatService.model_status() and the UI's own readiness predicate to require exact listener.status == VERIFIED_LISTENER, alongside pinned digest and model_check READY.
+- Added regression test test_model_status_does_not_promote_process_identity_to_listener_ownership; HTTP fixture explicitly shows model_check READY + listener VERIFIED_PROCESS while overall remains NOT_READY.
+- Result: until the complete L1–L5 verification is wired into the real model path, model status is deliberately fail-closed / NOT_READY. No attempt was made to invent listener verification or trust anchors.
+
+**Verification on updated UI branch.**
+- Focused chat/UI HTTP suite: 53 tests, OK under ResourceWarning-as-error; no ResourceWarning.
+- JSDOM 26.1 rerun: PASS; explicit model_not_ready_without_listener_attestation=true; all authenticated routes remain same-origin; one /api/tags, zero inference calls; empty browser console.
+- The full 1,471-test device suite result in §65 was on the immediately preceding UI commit. CI is expected to validate this follow-up commit independently; do not reuse the earlier full-suite count as if it had run on the new SHA.
+- This correction reinforces rather than closes PR #77 / RT-06. It does not create a trust anchor or integrate full L1–L5 attestation into /v1/chat.
+
+**Disposition.**
+- UI branch remains Draft PR #204 for CI/review.
+- No merge, deploy, listener-verification claim, or GO-LIVE decision.
+- Production and active Soak5 remain untouched.

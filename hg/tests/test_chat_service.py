@@ -13,6 +13,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -252,6 +253,16 @@ class ModelStatusTests(ChatServiceBase):
         self.assertEqual(result["status"], "NOT_READY")
         self.assertEqual(self.ollama.tag_requests, 1)
         self.assertEqual(self.ollama.chat_requests, [])
+
+    def test_model_status_does_not_promote_process_identity_to_listener_ownership(self):
+        conf = {"model": MODEL, "model_digest": DIGEST}
+        listener = {"status": "VERIFIED_PROCESS"}
+        check = {"status": "READY", "pinned": True, "digest": DIGEST}
+        with mock.patch.object(self.service, "_model_parts",
+                               return_value=(self.home, conf, listener, check)):
+            result = self.service.model_status()
+        self.assertEqual(result["status"], "NOT_READY")
+        self.assertEqual(result["listener"]["status"], "VERIFIED_PROCESS")
 
     def test_model_status_fails_closed_when_model_digest_changes(self):
         self.ollama.digest = "e" * 64

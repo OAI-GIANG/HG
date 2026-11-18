@@ -363,7 +363,7 @@
     }
     const data = result.data;
     const ready = data.status === 'READY' && data.pinned === true
-      && data.listener && data.listener.status === 'VERIFIED_PROCESS'
+      && data.listener && data.listener.status === 'VERIFIED_LISTENER'
       && data.model_check && data.model_check.status === 'READY';
     setBadge(modelStatusEl, ready ? 'SẴN SÀNG' : 'CHƯA ĐỦ ĐIỀU KIỆN', ready ? 'online' : 'blocked');
     modelSummaryEl.textContent = (data.provider || 'model') + ' · ' + (data.model || 'chưa cấu hình') +
