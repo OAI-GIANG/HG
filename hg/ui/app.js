@@ -14,6 +14,9 @@
   const TASK_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
   const navStack = ['home'];
   let token = '';
+  let notesLoaded = false;
+  let toolsLoaded = false;
+  let modelLoaded = false;
 
   const $ = (id) => document.getElementById(id);
   const screens = {};
@@ -31,6 +34,14 @@
   const chatGeneralEl = $('chat-general');
   const tokenInputEl = $('token-input');
   const tokenStatusEl = $('token-status');
+  const notesOutputEl = $('notes-output');
+  const notesCountEl = $('notes-count');
+  const searchInputEl = $('search-notes-input');
+  const searchOutputEl = $('search-output');
+  const toolsOutputEl = $('tools-output');
+  const modelStatusEl = $('model-status');
+  const modelSummaryEl = $('model-summary');
+  const modelInfoEl = $('model-info');
 
   // ---------- small helpers ----------
 
@@ -176,6 +187,9 @@
     document.querySelectorAll('[data-root-nav]').forEach((btn) => {
       btn.classList.toggle('active', btn.getAttribute('data-root-nav') === activeRoot);
     });
+    if (screenKey === 'memory' && token && !notesLoaded) loadNotes();
+    if (screenKey === 'tools' && token && !toolsLoaded) loadTools();
+    if (screenKey === 'models' && token && !modelLoaded) loadModelStatus();
   }
 
   backBtn.addEventListener('click', () => {
@@ -234,7 +248,148 @@
     const ok = await probeHealth();
     tokenStatusEl.textContent = ok ? 'Token đúng, dịch vụ sẵn sàng.' : $('health-summary').textContent;
   });
-  $('btn-forget-token').addEventListener('click', forgetToken);
+  $('btn-forget-token').addEventListener('click', () => {
+    forgetToken();
+    notesLoaded = false;
+    toolsLoaded = false;
+    modelLoaded = false;
+    if (modelStatusEl) setBadge(modelStatusEl, 'CHƯA KIỂM TRA', 'neutral');
+    if (modelSummaryEl) modelSummaryEl.textContent = 'Cần kết nối lại để kiểm tra model.';
+    if (modelInfoEl) modelInfoEl.textContent = 'Chưa có trạng thái model.';
+    if (notesOutputEl) notesOutputEl.textContent = 'Cần kết nối lại để đọc ghi chú.';
+    if (notesCountEl) notesCountEl.textContent = 'Chưa tải ghi chú.';
+    if (toolsOutputEl) toolsOutputEl.textContent = 'Cần kết nối lại để đọc danh mục công cụ.';
+    if (searchOutputEl) searchOutputEl.textContent = 'Cần kết nối lại để tìm kiếm ghi chú.';
+  });
+
+  // ---------- read-only memory and tool registry ----------
+
+  function renderRecords(container, records, kind) {
+    container.replaceChildren();
+    if (!records.length) {
+      container.appendChild(el('p', 'muted small', kind === 'notes'
+        ? 'Không có ghi chú phù hợp trong sổ đang hoạt động.'
+        : 'Gateway chưa công bố công cụ nào.'));
+      return;
+    }
+    records.forEach((record) => {
+      const card = el('article', 'note-card');
+      const head = el('div', 'note-card-head');
+      const title = kind === 'notes' ? (record.subject || 'Ghi chú') : record.name;
+      head.appendChild(el('strong', 'note-card-title', title));
+      if (kind === 'notes' && record.created_at) {
+        head.appendChild(el('span', 'muted small', shortDate(record.created_at)));
+      } else if (kind === 'tools') {
+        head.appendChild(el('span', 'badge badge-neutral', record.action + ' · ' + record.risk));
+      }
+      card.appendChild(head);
+      if (kind === 'notes') {
+        card.appendChild(el('p', 'note-card-content', record.content || ''));
+        card.appendChild(el('p', 'muted tiny', record.memory_id || ''));
+      } else {
+        card.appendChild(el('p', 'note-card-content', record.description || ''));
+        card.appendChild(el('p', 'muted tiny', 'Phiên bản ' + record.version +
+          ' · ' + (record.idempotent ? 'idempotent' : 'không idempotent') +
+          ' · tham số: ' + Object.keys(record.params || {}).join(', ')));
+      }
+      container.appendChild(card);
+    });
+  }
+
+  async function loadNotes() {
+    if (!notesOutputEl || !token) return false;
+    notesOutputEl.textContent = 'Đang đọc sổ ghi chú…';
+    notesCountEl.textContent = 'Đang tải…';
+    const result = await api('GET', '/v1/notes');
+    if (!result.ok || !result.data || !Array.isArray(result.data.items)) {
+      notesLoaded = false;
+      notesOutputEl.textContent = explain(result);
+      notesCountEl.textContent = 'Không tải được ghi chú.';
+      return false;
+    }
+    renderRecords(notesOutputEl, result.data.items, 'notes');
+    notesCountEl.textContent = result.data.count + ' ghi chú đang hoạt động' +
+      (result.data.truncated ? ' · chỉ hiển thị 50 ghi chú mới nhất' : '');
+    notesLoaded = true;
+    return true;
+  }
+
+  async function searchNotes() {
+    const query = searchInputEl ? searchInputEl.value.trim() : '';
+    if (!searchOutputEl) return false;
+    if (!query) {
+      searchOutputEl.textContent = 'Nhập từ khóa trước khi tìm.';
+      return false;
+    }
+    searchOutputEl.textContent = 'Đang tìm trong ghi chú…';
+    const result = await api('POST', '/v1/notes/search', { query: query, limit: 8 });
+    if (!result.ok || !result.data || !Array.isArray(result.data.results)) {
+      searchOutputEl.textContent = explain(result);
+      return false;
+    }
+    renderRecords(searchOutputEl, result.data.results, 'notes');
+    return true;
+  }
+
+  async function loadTools() {
+    if (!toolsOutputEl || !token) return false;
+    toolsOutputEl.textContent = 'Đang đọc registry của gateway…';
+    const result = await api('GET', '/v1/tools');
+    if (!result.ok || !result.data || !Array.isArray(result.data.tools)) {
+      toolsLoaded = false;
+      toolsOutputEl.textContent = explain(result);
+      return false;
+    }
+    renderRecords(toolsOutputEl, result.data.tools, 'tools');
+    const scope = el('p', 'muted small',
+      'HTTP cho phép: ' + (result.data.http_exposed || []).join(', ') +
+      ' · phạm vi: ' + (result.data.http_scope || []).join(', '));
+    toolsOutputEl.appendChild(scope);
+    toolsLoaded = true;
+    return true;
+  }
+
+  async function loadModelStatus() {
+    if (!token || !modelStatusEl || !modelSummaryEl) return false;
+    setBadge(modelStatusEl, 'ĐANG KIỂM TRA', 'neutral');
+    modelSummaryEl.textContent = 'Đang xác minh cấu hình, digest model và tiến trình Ollama…';
+    const result = await api('GET', '/v1/model');
+    if (!result.ok || !result.data) {
+      modelLoaded = false;
+      setBadge(modelStatusEl, 'KHÔNG XÁC MINH', 'offline');
+      modelSummaryEl.textContent = explain(result);
+      $('model-info').textContent = 'Không đọc được trạng thái model.';
+      return false;
+    }
+    const data = result.data;
+    const ready = data.status === 'READY' && data.pinned === true
+      && data.listener && data.listener.status === 'VERIFIED_PROCESS'
+      && data.model_check && data.model_check.status === 'READY';
+    setBadge(modelStatusEl, ready ? 'SẴN SÀNG' : 'CHƯA ĐỦ ĐIỀU KIỆN', ready ? 'online' : 'blocked');
+    modelSummaryEl.textContent = (data.provider || 'model') + ' · ' + (data.model || 'chưa cấu hình') +
+      ' · model ' + ((data.model_check && data.model_check.status) || 'UNKNOWN') +
+      ' · listener ' + ((data.listener && data.listener.status) || 'UNKNOWN') +
+      ' · digest ' + (data.pinned ? 'đã ghim' : 'chưa ghim') +
+      (ready ? ' · không chạy inference' : ' · chưa được xác minh đầy đủ');
+    $('model-info').textContent = JSON.stringify(data, null, 2);
+    modelLoaded = true;
+    return ready;
+  }
+
+  if ($('btn-refresh-model')) $('btn-refresh-model').addEventListener('click', loadModelStatus);
+  if ($('btn-refresh-notes')) $('btn-refresh-notes').addEventListener('click', loadNotes);
+  if ($('btn-search-notes')) $('btn-search-notes').addEventListener('click', searchNotes);
+  if ($('btn-clear-search')) $('btn-clear-search').addEventListener('click', () => {
+    searchInputEl.value = '';
+    searchOutputEl.textContent = 'Nhập từ khóa để tìm kiếm.';
+  });
+  if ($('btn-load-tools')) $('btn-load-tools').addEventListener('click', loadTools);
+  if (searchInputEl) searchInputEl.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      searchNotes();
+    }
+  });
 
   // ---------- chat ----------
 

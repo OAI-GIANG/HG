@@ -140,6 +140,15 @@ Câu trả lời có cùng nhãn như lệnh `hg ask` (mục 2). Ô **Cho phép 
 - Token chỉ giữ trong tab đang mở (sessionStorage), không đưa vào địa chỉ trang. Bấm **Quên token** khi xong.
 - Mỗi câu chat ghi biên nhận `ASK` (kênh `http:/v1/chat`) và sự kiện `MODEL_CALL` vào `~/.local/share/hg/assistant/asks-YYYY-MM.jsonl`, giống `hg ask`.
 
+### Ghi chú, tìm kiếm và danh mục công cụ
+
+- **Ghi chú**: chỉ đọc các ghi chú đang hoạt động từ assistant home đã cấu hình; màn hình không thêm, sửa hoặc quên ghi chú.
+- **Tìm kiếm**: tìm kiếm tiếng Việt trong ghi chú đang hoạt động bằng `POST /v1/notes/search`; đây không phải tìm kiếm Internet.
+- **Model**: kiểm tra cấu hình Ollama local, model digest đã ghim và listener runit. Route chỉ đọc `/api/tags`, không chạy inference, không thay cấu hình và không tải model. Chỉ báo SẴN SÀNG khi model có digest pin và listener được xác minh.
+- **Công cụ**: xem danh mục adapter do ActionGateway công bố. Danh mục chỉ để kiểm tra; nó không cấp quyền. HTTP task vẫn giới hạn `fs.read`/`fs.write` trong `out/` với grant và acceptance gate hợp lệ.
+- **Tệp**: chưa có trình chọn/tải tệp từ điện thoại; không cấp quyền truy cập bộ nhớ Android tùy ý.
+- Các route đọc ghi chú không tự tạo thư mục assistant home còn thiếu. Nếu home chưa được khởi tạo, dùng `hg note list` trong Termux rồi kết nối lại.
+
 | Hiện tượng trên trang | Cách xử lý |
 |---|---|
 | `TOKEN SAI` / `401` | Dán lại đúng token (mục 2 ở trên) |

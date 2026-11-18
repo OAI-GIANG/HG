@@ -66,9 +66,13 @@
     <section id="screen-models" class="screen" data-title="Model" data-root="tools">
       <div class="card">
         <h2>Model và nhà cung cấp</h2>
-        <p>Chỉ dùng model local qua Ollama trên điện thoại (quyết định Q5). Trang này không có lựa chọn nhà cung cấp trả phí.</p>
-        <p class="muted mt-1">Thông tin dưới đây lấy từ câu trả lời chat gần nhất, không phải dữ liệu mẫu.</p>
-        <pre id="model-info" class="code-block">Chưa có câu trả lời nào trong phiên này.</pre>
+        <p>HG chỉ dùng model local qua Ollama trên điện thoại (quyết định Q5). Không có lựa chọn nhà cung cấp trả phí trên giao diện này.</p>
+        <div class="row mt-2">
+          <span id="model-status" class="badge badge-neutral" role="status">CHƯA KIỂM TRA</span>
+          <button id="btn-refresh-model" class="btn btn-primary">Kiểm tra model</button>
+        </div>
+        <p id="model-summary" class="muted small mt-1">Chưa đọc trạng thái model.</p>
+        <pre id="model-info" class="code-block">Nhấn “Kiểm tra model” để xác minh cấu hình, model digest và tiến trình Ollama. Kiểm tra này không chạy inference.</pre>
       </div>
     </section>
 
@@ -76,30 +80,42 @@
     <section id="screen-memory" class="screen" data-title="Ghi chú" data-root="files">
       <div class="card">
         <h2>Ghi chú của Chủ Nhân</h2>
-        <p>Chat đọc ghi chú để trả lời và gắn nhãn từng câu. Thêm hoặc sửa ghi chú trong Termux:
-          <code>hg note add "nội dung"</code>, <code>hg note list</code>.</p>
-        <p class="mt-1">Sửa ghi chú qua trang web: <span class="badge badge-blocked">CHƯA MỞ QUA HTTP</span></p>
+        <p>HG đọc ghi chú này để trả lời và gắn nhãn nguồn. Màn hình web chỉ đọc; thêm, sửa hoặc quên ghi chú vẫn thực hiện trong Termux bằng lệnh <code>hg note</code>.</p>
+        <div class="row mt-2">
+          <button id="btn-refresh-notes" class="btn btn-primary">Tải ghi chú</button>
+          <span id="notes-count" class="muted small" role="status">Chưa tải ghi chú.</span>
+        </div>
+        <div id="notes-output" class="notes-list mt-2" aria-live="polite">Nhấn “Tải ghi chú” để xem dữ liệu từ sổ ghi chú.</div>
       </div>
     </section>
 
     <!-- 5. Tệp -->
     <section id="screen-files" class="screen" data-title="Tệp" data-root="files">
       <div class="card">
-        <h2>Tệp</h2>
-        <p>Chọn tệp từ điện thoại: <span class="badge badge-blocked">CHƯA CÓ</span></p>
-        <p class="muted mt-1">Tóm tắt tệp dùng lệnh <code>hg summarize TỆP</code> trong Termux.</p>
+        <h2>Tệp trong vùng dữ liệu HG</h2>
+        <p>HG chưa mở trình chọn tệp hoặc tải tệp lên qua trình duyệt. Không có quyền truy cập tùy ý vào bộ nhớ điện thoại.</p>
+        <p class="muted mt-1">Các tác vụ HTTP hiện chỉ đọc/ghi tệp văn bản trong vùng <code>out/</code>, theo kế hoạch MAEP và quyền đã cấp cho từng tác vụ.</p>
+        <div class="row mt-2">
+          <button class="btn btn-primary" data-nav-target="tasks">Mở mục tác vụ</button>
+        </div>
+        <p class="muted small mt-2">Tóm tắt tệp cục bộ bằng lệnh <code>hg summarize TỆP</code> trong Termux.</p>
       </div>
     </section>
 
     <!-- 6. Công cụ -->
     <section id="screen-tools" class="screen" data-title="Công cụ" data-root="tools">
       <div class="card">
-        <h2>Công cụ</h2>
-        <div class="grid-2">
+        <h2>Danh mục công cụ MAEP</h2>
+        <p>Danh mục dưới đây được đọc từ gateway đang chạy. Việc có adapter không tự động cấp quyền thực thi; mọi thao tác vẫn cần policy và grant hợp lệ.</p>
+        <div class="row mt-2">
+          <button id="btn-load-tools" class="btn btn-primary">Tải danh mục công cụ</button>
+        </div>
+        <div id="tools-output" class="notes-list mt-2" aria-live="polite">Nhấn “Tải danh mục công cụ” để đọc registry.</div>
+        <div class="grid-2 mt-2">
           <button class="btn" data-nav-target="models">Model</button>
           <button class="btn" data-nav-target="memory">Ghi chú</button>
           <button class="btn" data-nav-target="tasks">Tác vụ</button>
-          <button class="btn" data-nav-target="search">Tìm kiếm</button>
+          <button class="btn" data-nav-target="search">Tìm trong ghi chú</button>
           <button class="btn" data-nav-target="diagnostics">Chẩn đoán</button>
           <button class="btn" data-nav-target="settings">Kết nối</button>
         </div>
@@ -124,9 +140,16 @@
     <!-- 8. Tìm kiếm -->
     <section id="screen-search" class="screen" data-title="Tìm kiếm" data-root="tools">
       <div class="card">
-        <h2>Tìm kiếm và nghiên cứu</h2>
-        <p>Trạng thái: <span class="badge badge-blocked">CHƯA MỞ QUA HTTP</span></p>
-        <p class="muted mt-1">Tìm trong ghi chú dùng <code>hg note search "từ khoá"</code> trong Termux.</p>
+        <h2>Tìm kiếm trong ghi chú HG</h2>
+        <p>Tìm kiếm tiếng Việt trên sổ ghi chú đang hoạt động. Đây không phải tìm kiếm Internet.</p>
+        <label for="search-notes-input" class="field-label mt-2">Từ khóa</label>
+        <input id="search-notes-input" class="field mb-1" type="search" maxlength="2000"
+          placeholder="Ví dụ: lịch bảo dưỡng xe" autocomplete="off" />
+        <div class="row">
+          <button id="btn-search-notes" class="btn btn-primary">Tìm trong ghi chú</button>
+          <button id="btn-clear-search" class="btn">Xóa</button>
+        </div>
+        <div id="search-output" class="notes-list mt-2" aria-live="polite">Nhập từ khóa để tìm kiếm.</div>
       </div>
     </section>
 

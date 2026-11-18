@@ -18,6 +18,7 @@ from pathlib import Path
 
 from maep.authority.canonical_source import CanonicalManifest
 from maep.tests.test_canonical_source import FakeGitHub
+from hg.assistant.notes import Notebook
 from hg.http_api import HGHTTPServer, HTTPBoundaryError, planned_write_readback_verifier
 from hg.runtime import build_runtime
 from hg.tests.support import TempDirMixin
@@ -51,10 +52,21 @@ class ChatHTTPBase(TempDirMixin):
         self.release = {"result": "VERIFIED", "release_id": "a" * 64}
         self.trust = {"result": "LOADED", "provenance": {"commit": "b" * 40}}
         self.fake_chat = self.make_chat()
+        if self.fake_chat is not None:
+            self.fake_chat.model_status = lambda: {
+                "status": "READY", "provider": "ollama", "model": "qwen3:1.7b",
+                "model_check": {"status": "READY", "digest": "d" * 64, "pinned": True},
+                "listener": {"status": "VERIFIED_PROCESS"}, "pinned": True,
+                "release_id": "a" * 64, "policy": "local model only",
+            }
+        self.notes_home = self.workdir / "assistant-home"
+        self.notes_home.mkdir(mode=0o700)
+        self.notebook = Notebook(self.notes_home)
         self.server = HGHTTPServer(
             runtime=self.runtime, token=TOKEN, host="127.0.0.1", port=0, max_body_bytes=4096,
             release_report=lambda: self.release, trust_report=lambda: self.trust,
-            idempotency_path=self.workdir / "http-idempotency.sqlite3", chat=self.fake_chat)
+            idempotency_path=self.workdir / "http-idempotency.sqlite3", chat=self.fake_chat,
+            notes_home=self.notes_home)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
         self.host, self.port = self.server.address
@@ -141,8 +153,88 @@ class StaticUITests(ChatHTTPBase):
         self.assertEqual((status, body["error"]), (404, "not_found"))
 
     def test_existing_routes_still_require_the_token(self):
-        for path in ("/v1/health/live", "/v1/health/ready", "/v1/integrity", "/v1/tasks/T-1"):
+        for path in ("/v1/health/live", "/v1/health/ready", "/v1/integrity", "/v1/tasks/T-1",
+                     "/v1/notes", "/v1/tools", "/v1/model"):
             self.assertEqual(self.request("GET", path, token=False)[0], 401, path)
+        status, body = self.request("POST", "/v1/notes/search", token=False, body={"query": "x"})
+        self.assertEqual((status, body["error"]), (401, "unauthorized"))
+
+
+class NotesAndToolsRouteTests(ChatHTTPBase):
+    def test_notes_list_is_read_only_and_returns_active_notes(self):
+        self.notebook.add("Xe cần thay dầu định kỳ sau mỗi 3.000 km.", subject="bao-duong-xe", origin="test")
+        status, body = self.request("GET", "/v1/notes")
+        self.assertEqual(status, 200)
+        self.assertEqual(body["count"], 1)
+        self.assertEqual(body["returned"], 1)
+        self.assertFalse(body["truncated"])
+        self.assertEqual(body["items"][0]["subject"], "bao-duong-xe")
+        self.assertIn("3.000 km", body["items"][0]["content"])
+        self.assertEqual(len(self.notebook.active()), 1)
+
+    def test_notes_search_uses_vietnamese_note_retrieval(self):
+        self.notebook.add("Xe cần thay dầu định kỳ sau mỗi 3.000 km.", subject="bao-duong-xe", origin="test")
+        status, body = self.request("POST", "/v1/notes/search", body={"query": "thay dầu định kỳ", "limit": 5})
+        self.assertEqual(status, 200)
+        self.assertEqual(body["count"], 1)
+        self.assertEqual(body["results"][0]["subject"], "bao-duong-xe")
+        self.assertGreater(body["results"][0]["score"], 0)
+        self.assertTrue(body["results"][0]["matched"])
+
+    def test_notes_search_rejects_invalid_request_shape_and_limits(self):
+        for body in ({}, {"query": ""}, {"query": "xe", "limit": 0},
+                     {"query": "xe", "limit": True}, {"query": "xe", "extra": 1}):
+            status, payload = self.request("POST", "/v1/notes/search", body=body)
+            self.assertEqual(status, 400, body)
+            self.assertIn(payload["error"], {"invalid_request", "invalid_query", "invalid_limit"})
+
+    def test_notes_routes_do_not_create_a_missing_assistant_home(self):
+        missing = self.workdir / "missing-assistant-home"
+        self.server.notes_home = missing
+        status, body = self.request("GET", "/v1/notes")
+        self.assertEqual((status, body["error"]), (503, "notes_unavailable"))
+        self.assertFalse(missing.exists())
+
+    def test_tools_registry_is_read_only_and_describes_http_scope(self):
+        status, body = self.request("GET", "/v1/tools")
+        self.assertEqual(status, 200)
+        names = {tool["name"] for tool in body["tools"]}
+        self.assertIn("fs.read", names)
+        self.assertIn("fs.write", names)
+        self.assertEqual(body["http_exposed"], ["fs.read", "fs.write"])
+        self.assertEqual(body["http_scope"], ["out/"])
+
+    def test_tools_registry_requires_the_token(self):
+        status, body = self.request("GET", "/v1/tools", token=False)
+        self.assertEqual((status, body["error"]), (401, "unauthorized"))
+
+
+class ModelStatusRouteTests(ChatHTTPBase):
+    def test_model_status_is_read_only_and_reports_only_local_pinned_model(self):
+        status, body = self.request("GET", "/v1/model")
+        self.assertEqual(status, 200)
+        self.assertEqual(body["status"], "READY")
+        self.assertEqual(body["provider"], "ollama")
+        self.assertEqual(body["model"], "qwen3:1.7b")
+        self.assertTrue(body["pinned"])
+        self.assertEqual(body["listener"]["status"], "VERIFIED_PROCESS")
+        self.assertEqual(self.fake_chat.calls, [])
+
+    def test_model_status_requires_token(self):
+        status, body = self.request("GET", "/v1/model", token=False)
+        self.assertEqual((status, body["error"]), (401, "unauthorized"))
+
+    def test_model_status_refuses_when_not_configured(self):
+        self.server.chat = None
+        status, body = self.request("GET", "/v1/model")
+        self.assertEqual((status, body["error"]), (503, "model_unavailable"))
+
+    def test_model_status_maps_unverifiable_status_to_503_without_leaking_details(self):
+        self.fake_chat.model_status = lambda: (_ for _ in ()).throw(
+            RuntimeError("secret provider credential"))
+        status, body = self.request("GET", "/v1/model")
+        self.assertEqual((status, body["error"]), (503, "model_status_unavailable"))
+        self.assertNotIn("secret", json.dumps(body))
 
 
 class ChatRouteTests(ChatHTTPBase):
@@ -236,7 +328,8 @@ class UISourceContractTests(unittest.TestCase):
 
     def test_calls_only_contract_routes_on_its_own_origin(self):
         routes = set(re.findall(r"""['"](/v1/[A-Za-z0-9/_.:-]*)""", self.js))
-        self.assertEqual(routes, {"/v1/chat", "/v1/health/ready", "/v1/tasks/"})
+        self.assertEqual(routes, {"/v1/chat", "/v1/health/ready", "/v1/tasks/",
+                                  "/v1/notes", "/v1/notes/search", "/v1/tools", "/v1/model"})
         self.assertIn("'Authorization'", self.js)
         self.assertIn("'Bearer '", self.js)
         self.assertIn("credentials: 'omit'", self.js)
@@ -265,10 +358,21 @@ class UISourceContractTests(unittest.TestCase):
         self.assertNotRegex(self.js, r"keydown[\s\S]{0,200}sendChat\(")
 
     def test_screens_and_root_navigation(self):
-        for screen in ("home", "chat", "tasks", "settings"):
+        for screen in ("home", "chat", "models", "memory", "files", "tools",
+                       "tasks", "search", "diagnostics", "settings"):
             self.assertIn(f'id="screen-{screen}"', self.html)
+        for control in ("btn-refresh-notes", "notes-output", "btn-search-notes",
+                        "search-notes-input", "btn-load-tools", "tools-output"):
+            self.assertIn(f'id="{control}"', self.html)
         for root in ("home", "chat", "quick-actions", "files", "tools"):
             self.assertIn(f'data-root-nav="{root}"', self.html)
+
+    def test_accessible_responsive_styles_are_present(self):
+        self.assertIn(":focus-visible", self.css)
+        self.assertIn("@media (max-width: 520px)", self.css)
+        self.assertIn("prefers-reduced-motion: reduce", self.css)
+        self.assertIn(".notes-list", self.css)
+        self.assertIn(".note-card", self.css)
 
 
 if __name__ == "__main__":

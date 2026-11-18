@@ -240,6 +240,35 @@ class ChatServiceTests(ChatServiceBase):
             self.assertNotIn("\x07", text)
 
 
+class ModelStatusTests(ChatServiceBase):
+    def test_model_status_reads_pinned_model_and_listener_without_inference(self):
+        result = self.service.model_status()
+        self.assertEqual(result["provider"], "ollama")
+        self.assertEqual(result["model"], MODEL)
+        self.assertTrue(result["pinned"])
+        self.assertEqual(result["model_check"]["status"], "READY")
+        self.assertEqual(result["model_check"]["digest"], DIGEST)
+        self.assertEqual(result["listener"]["status"], "UNVERIFIED")
+        self.assertEqual(result["status"], "NOT_READY")
+        self.assertEqual(self.ollama.tag_requests, 1)
+        self.assertEqual(self.ollama.chat_requests, [])
+
+    def test_model_status_fails_closed_when_model_digest_changes(self):
+        self.ollama.digest = "e" * 64
+        with self.assertRaises(HTTPBoundaryError) as caught:
+            self.service.model_status()
+        self.assertEqual((caught.exception.status, caught.exception.code), (503, "model_untrusted"))
+        self.assertEqual(self.ollama.chat_requests, [])
+
+    def test_model_status_does_not_create_a_missing_assistant_home(self):
+        missing = self.tmp / "missing-model-home"
+        service = ChatService(missing, release_id="r" * 64)
+        with self.assertRaises(HTTPBoundaryError) as caught:
+            service.model_status()
+        self.assertEqual((caught.exception.status, caught.exception.code), (503, "assistant_unavailable"))
+        self.assertFalse(missing.exists())
+
+
 class UnpinnedModelTests(ChatServiceBase):
     pin = False
 
