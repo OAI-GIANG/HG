@@ -617,6 +617,22 @@ def socket_holders(inode, *, exclude=(), proc="/proc"):
             "proc_hidepid": hidepid, "scope": "ALL_PROCESSES_INSPECTED" if complete else "PARTIAL"}
 
 
+def require_exclusive_sharing_scope(sharing):
+    """Fail closed unless the socket-holder scan proves that every process was inspected."""
+    holders = sharing.get("holders") or []
+    if holders:
+        raise _LayerFail("LISTENER_SHARED", holders=holders[:8])
+    if sharing.get("scope") != "ALL_PROCESSES_INSPECTED":
+        raise _LayerFail(
+            "SHARING_SCAN_INCOMPLETE",
+            status=BLOCKED,
+            scope=sharing.get("scope", "UNKNOWN"),
+            uninspectable=sharing.get("uninspectable"),
+            unreadable_descriptors=sharing.get("unreadable_descriptors"),
+            proc_hidepid=sharing.get("proc_hidepid", "UNKNOWN"),
+        )
+
+
 def _listener(pid, pidfd, ref, host, port, proc, getfd, hooks, check_capability):
     want = ip_address(host)
     try:
@@ -695,8 +711,7 @@ def _listener(pid, pidfd, ref, host, port, proc, getfd, hooks, check_capability)
         sharing = socket_holders(inode, exclude={pid, os.getpid()}, proc=proc)
     except OSError as exc:
         raise _LayerFail("PROC_SCAN_FAILED", error=_errname(exc)) from exc
-    if sharing["holders"]:
-        raise _LayerFail("LISTENER_SHARED", holders=sharing["holders"][:8])
+    require_exclusive_sharing_scope(sharing)
     try:
         now = read_stat(pid, proc=proc)
     except (OSError, ValueError) as exc:
