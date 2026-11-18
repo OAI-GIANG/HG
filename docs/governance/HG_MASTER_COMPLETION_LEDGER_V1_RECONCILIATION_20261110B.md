@@ -1235,3 +1235,11 @@ The earlier ledger statement that G6 was prepared but NOT EXECUTED is superseded
 - Staging supervisor and port were torn down after the rehearsal.
 
 This closes G6 staging rehearsal only. It does not authorize a production cutover; production deployment remains subject to the owner's separate explicit approval. Original evidence remains at $HOME/hg-staging-postmerge-20261118/rehearsal-20261117T225455Z/.
+
+## 70. Addendum 2026-11-18 +07 — G7-CI emulator acceptance verified; real-device G7 remains blocked
+
+- PR #119 “Qualify HG Android Broker cross-UID Binder boundary on the CI emulator (G7-CI)” merged 2026-11-12T21:00:24Z with commit cfe376c0f7fca49f9ec50a345a6eab6203569463.
+- Its broker-build-unit, emulator-negative-binder, MAEP Python 3.13/3.14 and RT-06 anchor Python 3.13/3.14 checks all report SUCCESS.
+- PR #194 merged 2026-11-13T03:32:16Z with commit 94344cd410ed6e31f4a2c4734bc96cf8e94d0a3c and corrected the real-device acceptance record.
+- G7-CI is therefore VERIFIED as emulator-only qualification. It is not real-device qualification and does not prove a physical Termux process can invoke the Broker's Binder API across distinct Android UIDs.
+- Real-device G7 remains BLOCKED: a Termux-side client, owner-authorized APK install/pairing, release-signing key access, and distinct-UID positive/negative Binder evidence are still missing.
