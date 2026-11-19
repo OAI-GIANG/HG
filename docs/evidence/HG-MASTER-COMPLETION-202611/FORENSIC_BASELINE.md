@@ -43,29 +43,16 @@ Dispositions already recorded in the ledger (§53–§65):
 
 Python 3.14 is not installed in this cloud workspace. CI covers 3.13 and 3.14 on GitHub.
 
-## 3. Termux / production / runtime — BLOCKED_DEVICE_OFFLINE (not observed in this session)
+## 3. Termux / production / runtime — OBSERVED 2026-11-19 23:24 +07 (device came online at 23:23)
 
-These items still need observation on the device. The read-only collector is in `docs/governance/HG_AUTONOMOUS_HANDOFF.md`.
-- `~/HG` branch/HEAD/dirty files.
-- 33 worktrees.
-- Unpushed commits.
-- `hg-runtime` / `ollama` / staging service status.
-- Production pointer and shim hashes.
-- `hg availability` of production.
-- Soak 5 final state. Its window ended 2026-11-19 01:46:30 +07, and its verdict is already deterministically INCOMPLETE (§65).
-- Boot id.
-- JobScheduler job 4211 log.
+- `WORKTREE_INVENTORY.csv`: 43 worktrees, 24 dirty, all preserved.
+- `DIRTY_WORKTREE_PRESERVATION.md`: `~/HG` is unchanged from mission §4.3; 2 phone-only commits are bundled offline (D1).
+- `PRODUCTION_BASELINE.md`: release `030a88d5`, pointer and shim hashes equal the ledger, so production is UNCHANGED.
+- `RUNTIME_BASELINE.md`: outage table (≥ 35 % availability over 118 h), findings F-P3-1..3, Soak 5 final INCOMPLETE.
+- Collector: `~/hg-v1-evidence/p0-collector-20261119.sh`. Output: `~/hg-v1-evidence/p0-forensic-20261119T162422Z/` (SHA256SUMS on the device).
 
-The last ledger facts are §60–§65 (2026-11-18): production `030a88d5` (from `4eaac81`), pid 27786, READY. These are **not re-verified** here, and the production status is UNVERIFIED.
+Status update: the header says PARTIAL (cloud session start). P0 is now **VERIFIED** on both sides, except per-worktree content classification. That classification is listed under Phase 1 in `DIRTY_WORKTREE_PRESERVATION.md`.
 
-## 4. Risk register (P0/P1 open items)
+## 4. Risks
 
-| ID | Risk | Evidence | Status |
-|---|---|---|---|
-| R-01 | The Termux process tree dies or freezes, so no 24 h soak can pass. Soak 3 gap was 23.8 h; Soak 5 had a 6,935 s gap and ENVREC=1. | §58, §65 | OPEN, P0. Owner device settings plus an on-device reboot test are needed (handoff §B). |
-| R-02 | Termux:Boot autostart after reboot is unproven. | §58, §59 | OPEN, P1, owner device action |
-| R-03 | L5 listener ownership cannot be proven on Android 17 as uid 10460: `/proc/net/tcp` gives EACCES and hidepid applies. L3 has no trust anchor. | §64, #205 CI l5-capability-gate red = BLOCKED | BLOCKED_WITH_TECHNICAL_EVIDENCE; accepted for v1 by D2 |
-| R-04 | Model readiness must not be shown without `VERIFIED_LISTENER`. | #204 `model_status` fail-closed. Chromium check: `CHƯA ĐỦ ĐIỀU KIỆN`. | Mitigated in #204 (pending merge) |
-| R-05 | Production state has not been observed since 2026-11-18. | Device offline | UNVERIFIED |
-| R-06 | GitHub quota and network dependency of the trust root (RT-06 fails closed without GitHub). | §59 | Accepted by design |
-| R-07 | G7 real-device Binder needs a new APK and the owner's signing key. | §56, §57, issue #197 | BLOCKED (owner) |
+See `RISK_REGISTER.md`.

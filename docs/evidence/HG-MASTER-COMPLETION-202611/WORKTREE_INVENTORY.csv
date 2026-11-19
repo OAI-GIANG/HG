@@ -1,0 +1,44 @@
+path,head12,branch,dirty_entries,disposition
+~/HG,2a80f4f26fdb,stt/hg-h1.3.1-idempotency-progress,4,PRESERVED (owner checkout; 3 modified + untracked docs/governance)
+~/.cache/hg-worktrees/hg-batch1-task-a-v31,c096cbf18d1e,stt/batch1-task-a-l5-v31-20261108,2,PRESERVED
+~/.cache/hg-worktrees/hg-batch1-task-b-ec07,63f9e120858b,stt/batch1-task-b-ec07-ledger-20261108,6,PRESERVED
+~/.cache/hg-worktrees/hg-fd4-fw1-v1-20261115,4a4cb3706808,stt/hg-fd4-fw1-v1-20261115,11,PRESERVED
+~/.cache/hg-worktrees/hg-full-system-audit-20261118,a1060149ca8d,docs/full-system-stability-audit-20261118,0,CLEAN
+~/.cache/hg-worktrees/hg-g3-root-oracle-ci-20261118,bb970600c6d8,ci/g3-root-owned-dir-oracle-20261118,0,CLEAN (= PR #206 head)
+~/.cache/hg-worktrees/hg-http-parse-oracle-close-20261118,0de34ec81dd2,fix/http-parse-oracle-close-20261118,0,CLEAN
+~/.cache/hg-worktrees/hg-la2-round3,90c106967d24,fix/hg-la2-round3-20261031,9,PRESERVED
+~/.cache/hg-worktrees/hg-master-completion-ledger-v1,b207f3bcd493,stt/hg-master-completion-ledger-v1-20261106,3,PRESERVED
+~/.cache/hg-worktrees/hg-postmerge-rehearsal-ledger-20261118,05fc95581f87,docs/postmerge-rehearsal-evidence-20261118,0,CLEAN
+~/.cache/hg-worktrees/hg-pr77-ci-repair,c97b8e41b231,stt/pr77-ci-observation-gate-20261106,0,CLEAN
+~/.cache/hg-worktrees/hg-pr77-l5-fail-closed-20261118,d4564fb7dfff,fix/pr77-l5-partial-scope-20261118,0,CLEAN (= PR #205 head)
+~/.cache/hg-worktrees/hg-pr77-l5-probe-20261118,c096cbf18d1e,(detached),0,CLEAN
+~/.cache/hg-worktrees/hg-pr77-l5-probe-head-20261118,73a45f059d51,(detached),0,CLEAN (= PR #77 head)
+~/.cache/hg-worktrees/hg-pr77-pidns-blocked-candidate,c97b8e41b231,stt/pr77-pidns-blocked-candidate-20261106,3,PRESERVED
+~/.cache/hg-worktrees/hg-pr77-pidns-review-c096,c096cbf18d1e,(detached),3,PRESERVED
+~/.cache/hg-worktrees/hg-rcme-foundation-v1,63f9e120858b,stt/rcme-foundation-v1-20261109,5,PRESERVED
+~/.cache/hg-worktrees/hg-resource-cleanup-20261118,98d9edfaa150,fix/resource-cleanup-20261118,0,CLEAN
+~/.cache/hg-worktrees/hg-resource-cleanup-postmerge-20261118,13a56be75a62,fix/resource-cleanup-postmerge-20261118,0,CLEAN (= main)
+~/.cache/hg-worktrees/hg-s03-cross-store-recovery-20261106,71566ea55ee3,stt/s03-cross-store-recovery-20261106,0,CLEAN
+~/.cache/hg-worktrees/hg-ui-stabilization-20261115,4a4cb3706808,stt/hg-ui-stabilization-20261115,11,PRESERVED
+~/.cache/hg-worktrees/hg-ui-stabilization-rebase-20261118,e89434a539dc,feat/ui-stabilization-main-20261118,5,PRESERVED (behind PR #204 head 027b450)
+~/HG-ANDROID-BROKER-CI,aba365f586ff,stt/hg-android-broker-ci-v1-20261111,0,CLEAN
+~/HG-CIM-POC-INTEGRATION-20261110,ea90bd897d59,stt/hg-cim-poc-experimental-integration-20261110,2,PRESERVED
+~/HG-CONVERGENCE-INTEGRATION-20261110,1709af6fea46,stt/hg-capability-convergence-integration-20261110,0,CLEAN (phone-only commit; offline bundle D1)
+~/HG-CONVERGENCE-INTEGRATION-20261110B,ff77455ad5a7,stt/hg-capability-convergence-integration-20261110b,0,CLEAN (phone-only commit; offline bundle D1)
+~/HG-CONVERGENCE-V1,0feca8a0ae0a,stt/hg-capability-convergence-v1-20261110,0,CLEAN (G4 source; do not touch)
+~/HG-FORENSIC-CONSOLIDATION-20261110,ea90bd897d59,stt/hg-second-pass-forensic-20261110,4,PRESERVED
+~/HG-GO-LIVE-CANDIDATE,e465db2ef814,stt/hg-go-live-certification-20261111,19,PRESERVED
+~/HG-IGYM-CIM-V1,2a80f4f26fdb,stt/hg-igym-cim-v1-20261110,3,PRESERVED
+~/HG-IGYM-CIM-V1-MAIN,163be5dc5fe5,stt/hg-igym-cim-v1-mainline-20261110,5,PRESERVED
+~/HG-IR-PR88,64e4c088d11e,stt/b3-r05-exception-unknown-20261109,0,CLEAN
+~/HG-IR-REMEDIATION-20261109,3d13e36de14d,stt/b4-ledger-append-admission-20261109,0,CLEAN
+~/HG-MASTER-GO-LIVE-V3-EXECUTION,272300a76631,stt/hg-master-go-live-v3-execution-20261111,6,PRESERVED
+~/HG-MEMORY-CONTINUITY-R3.1-PORT,8e3fd7a6c432,stt/hg-memory-continuity-r3.1-port-20261111,0,CLEAN
+~/HG-MODEL-CALL-GATEWAY-V1,e465db2ef814,stt/hg-model-call-gateway-v1-20261111,3,PRESERVED
+~/HG-PR77-EXACT-HEAD-20261110,73a45f059d51,(detached),0,CLEAN
+~/HG-PR77-PIDNS-UNAVAILABLE-20261110,73a45f059d51,stt/hg-pr77-pidns-unavailable-20261110,3,PRESERVED
+~/HG-RCME-INTEGRATION-20261110,ea90bd897d59,stt/hg-rcme-foundation-integration-20261110,5,PRESERVED
+~/HG-S03-STAGING/source,63f9e120858b,(detached),1,PRESERVED
+~/HG-h1.3.1-review,4c1aa9dcaebe,(detached),30,PRESERVED
+~/HG-llama-cpp-candidate,2f00a62deb26,stt/llama-cpp-adapter-v1,5,PRESERVED
+~/HG-memory-continuity,2f00a62deb26,feature/memory-continuity-v2,28,PRESERVED

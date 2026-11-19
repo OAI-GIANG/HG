@@ -7,7 +7,7 @@ Preconditions:
 - Production is read-only until the owner approves production.
 - Never run `reset`, `clean`, or `rm` on `~/HG`, on worktrees, or on `recovery/*`.
 
-## A. Read-only forensic collector (Phase 0, Termux)
+## A. Read-only forensic collector (Phase 0, Termux) — DONE 2026-11-19 23:24 (`~/hg-v1-evidence/p0-forensic-20261119T162422Z/`; script `p0-collector-20261119.sh`, sha256 `0075d429…`). Re-run it the same way for later snapshots.
 
 Run it detached. It only reads and writes one new directory under `~/hg-v1-evidence/`.
 
@@ -41,6 +41,11 @@ External references (2026-11-19 search):
 - Android 14 and later have a Developer options toggle, **"Disable child process restrictions"**, that turns it off. It survives a reboot.
 - ColorOS has its own controls: auto-launch, battery optimisation, background activity, "sleep standby optimisation" and "app quick freeze".
 - termux-app issue #5150 reports kills on Android 15 even with a wake lock and unrestricted battery.
+
+Device findings, 2026-11-19 (see `RUNTIME_BASELINE.md`):
+- The JobScheduler guard stopped after 2026-11-18 15:18 (F-P3-1).
+- The manual-open recovery path takes no wake lock (F-P3-2).
+- Step 3 below therefore also applies to **Termux:API** (`com.termux.api`), which owns the job: background allowed, battery not optimised.
 
 Owner actions, one at a time. Read each value before changing it, and take a screenshot as evidence:
 1. Settings → Developer options → **Disable child process restrictions** = ON.

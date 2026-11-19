@@ -5,6 +5,23 @@ The single resume point for this mission. Update it in place at each milestone; 
 2. Verify `main`, the branches and the device yourself.
 3. Never repeat a side-effecting step whose result is unknown.
 
+## Checkpoint 2 — 2026-11-19 ~23:40 +07 (same mission; the phone came online 23:23)
+
+| Field | Value |
+|---|---|
+| `main` | `13a56be` (unchanged) |
+| PR #204 | Open, ready, head `027b450`, CI green. Still **not merged**: the session permission refused the merge in checkpoint 1 and the merge was not retried. |
+| Device | Online. Boot `1b823ef0` (no reboot since 11-16). Runit tree restarted at 22:45:39 after the owner opened Termux. |
+| Production | `030a88d5`, pid 2682, READY line 22:45:44. Pointer and shim hashes equal §56/§57: **UNCHANGED (VERIFIED read-only)**. |
+| Device action | `termux-wake-lock` at 23:27:02 (reversible). No other device change. |
+
+| Phase | Status |
+|---|---|
+| P0 | **VERIFIED**: GitHub, cloud and device sides (`docs/evidence/HG-MASTER-COMPLETION-202611/`). Per-worktree content classification moved to P1. |
+| P2 L3 | BLOCKED for the running 0.40.14. A signed-index candidate exists for 0.40.16 (`5809c69d…`); adopting it needs owner approval (`docs/evidence/HG-LISTENER-ATTESTATION-202611/L3_PROVENANCE.md`). |
+| P3 | Root-cause findings F-P3-1..3 CONFIRMED/OBSERVED (`RUNTIME_BASELINE.md`). Strategy B (JobScheduler) FAILED in practice. Next: Strategy C, one idempotent ensure-services entry point used by both the boot and manual paths, and it takes the wake lock. This is a repo change under `deploy/termux/` with tests. Strategy A: owner settings (handoff §B). |
+| P4 | Soak 5 final = INCOMPLETE (42/48, gap 6,935 s). A new window only after P3. |
+
 ## Checkpoint 1 — 2026-11-19 ~23:30 +07 (cloud session)
 
 | Field | Value |
