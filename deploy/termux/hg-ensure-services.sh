@@ -107,7 +107,9 @@ scan() {
   printf 'pids=%s unknown=%s\n' "${found# }" "${unknown# }"
 }
 
-if [ ! -r "$PROC/self/cmdline" ] || [ ! -s "$PROC/self/cmdline" ]; then
+# procfs files report size 0, so read the content instead of testing the size (-s).
+selfargs="$(tr '\000' '\n' < "$PROC/self/cmdline" 2>/dev/null)" || selfargs=""
+if [ -z "$selfargs" ]; then
   log "BLOCKED proc_unreadable source=$SOURCE"
   exit 2
 fi

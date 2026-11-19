@@ -15,6 +15,7 @@ import os
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -195,6 +196,35 @@ class EnsureServicesTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 2, self.log())
         self.assertIn("BLOCKED svdir_not_private", self.log())
         self.assertFalse([c for c in self.calls_list() if c.startswith("service-daemon")])
+
+    # --- the real procfs of the test host (its files report size 0; found on the phone 2026-11-19) ---
+
+    def test_real_proc_is_readable_and_absence_is_proven(self):
+        env = self.env(FAKE_SD_NOSPAWN="1")
+        del env["HG_ENSURE_PROC"]
+        proc = subprocess.run([SH, str(SCRIPT), "--source", "profile"], env=env,
+                              capture_output=True, text=True, timeout=30)
+        self.assertNotIn("proc_unreadable", self.log())
+        self.assertIn("ABSENT_VERIFIED", self.log())
+        self.assertEqual(proc.returncode, 4, self.log())     # the fake start spawns nothing on real /proc
+
+    def test_real_proc_live_supervisor_is_detected_and_never_started_again(self):
+        (self.svdir / "__main__.py").write_text("import time\ntime.sleep(30)\n", encoding="utf-8")
+        fake = self.bin / "runsvdir"                          # argv0 basename runsvdir, argv1 = SVDIR
+        sup = subprocess.Popen([str(fake), str(self.svdir)], executable=sys.executable)
+        self.addCleanup(sup.wait)
+        self.addCleanup(sup.kill)
+        env = self.env()
+        del env["HG_ENSURE_PROC"]
+        for _ in range(50):
+            if Path(f"/proc/{sup.pid}/cmdline").read_bytes().startswith(str(fake).encode()):
+                break
+            time.sleep(0.05)
+        proc = subprocess.run([SH, str(SCRIPT), "--source", "boot"], env=env,
+                              capture_output=True, text=True, timeout=30)
+        self.assertEqual(proc.returncode, 0, self.log())
+        self.assertIn(f"PRESENT pids={sup.pid}", self.log())
+        self.assertFalse([c for c in self.calls_list() if c.startswith(("service-daemon", "sv "))])
 
     # --- failures are reported, never hidden ---
 
