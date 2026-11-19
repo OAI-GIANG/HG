@@ -1288,3 +1288,34 @@ The 6 root-only skips were rerun as uid `nobody` (`test_deploy_scripts`, `test_f
 - Soak 5 stays INCOMPLETE (§65).
 - L5/RT-06 stays BLOCKED.
 - No GO-LIVE.
+
+## 67. Addendum 2026-11-19 23:53 +07 onward (owner decisions D-01/D-02) — PR #204 merged; P3 Strategy C (single start entrypoint)
+
+**D-01.** PR #204 was squash-merged with head `027b450` pinned. All six owner conditions were verified first: repository, PR, head, base `main` = `13a56be`, CI 6/6 green with 0 required reviews, and `recovery/main-pre-204-20261119` → `13a56be`. Merge commit `47e076e` has parent `13a56be`. CI on `main` `47e076e` (run 44571342307): unittest 3.13/3.14 success.
+
+**Finding (P0, R-01).** Device forensics on 2026-11-19 (`stt/hg-master-completion-v2-20261119`, `RUNTIME_BASELINE.md`):
+- production was down for ≤ 19.7 h on the same boot;
+- availability was ≥ 35 % over 118 h;
+- every recovery came from the owner opening Termux;
+- the JobScheduler guard has not run since 2026-11-18 15:18.
+
+**Root cause (CONFIRMED).**
+- The profile.d hook from termux-services 0.13 starts `service-daemon` from every login shell. It holds no lock, has no proof that the supervisor is absent, and takes no wake lock.
+- The Termux:Boot path does take the wake lock.
+- `service-daemon` was read on the device: `start-stop-daemon -S -b -m -p $PREFIX/var/run/service-daemon.pid -x runsvdir -- "$SVDIR"`.
+
+**Change (PR #207, admission record in the PR):**
+- `deploy/termux/hg-ensure-services.sh`: one flock; wake lock on every path; start only when /proc proves absence; fail-closed; bounded log.
+- Two hooks, `hg-start-services.{profile,boot}.sh`, each with a fallback to the old behaviour.
+- `hg/tests/test_ensure_services.py`: 18 tests.
+
+**Tests.**
+- The 16 fake-command tests failed before the script existed.
+- The real-device drill found a procfs defect: files report size 0, so `-s` fails. The 2 real-/proc tests fail on `f372008` for that reason.
+- After the fix, 18/18 OK with ResourceWarning as error, also as uid `nobody`. `test_deploy_scripts`: 43 OK.
+
+**Device drill (staging):** see `docs/evidence/HG-P3-STRATEGY-C-20261119/DEVICE-DRILL.md`. A/B/C/E/F VERIFIED; production unchanged (`1e633cfc…` before = after).
+
+**Limit:** D, Android killing the whole Termux tree on the same boot, is **BLOCKED_WITH_TECHNICAL_EVIDENCE**. No trigger runs the entrypoint, and this PR does not claim to fix it.
+
+**Install:** after merge, on the phone. Back up both hooks first (sha256, mode, mtime). Production release, service definitions, config and data stay unchanged.
