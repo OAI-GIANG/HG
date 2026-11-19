@@ -13,6 +13,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -238,6 +239,45 @@ class ChatServiceTests(ChatServiceBase):
         for text in texts:
             self.assertNotIn("\x1b", text)
             self.assertNotIn("\x07", text)
+
+
+class ModelStatusTests(ChatServiceBase):
+    def test_model_status_reads_pinned_model_and_listener_without_inference(self):
+        result = self.service.model_status()
+        self.assertEqual(result["provider"], "ollama")
+        self.assertEqual(result["model"], MODEL)
+        self.assertTrue(result["pinned"])
+        self.assertEqual(result["model_check"]["status"], "READY")
+        self.assertEqual(result["model_check"]["digest"], DIGEST)
+        self.assertEqual(result["listener"]["status"], "UNVERIFIED")
+        self.assertEqual(result["status"], "NOT_READY")
+        self.assertEqual(self.ollama.tag_requests, 1)
+        self.assertEqual(self.ollama.chat_requests, [])
+
+    def test_model_status_does_not_promote_process_identity_to_listener_ownership(self):
+        conf = {"model": MODEL, "model_digest": DIGEST}
+        listener = {"status": "VERIFIED_PROCESS"}
+        check = {"status": "READY", "pinned": True, "digest": DIGEST}
+        with mock.patch.object(self.service, "_model_parts",
+                               return_value=(self.home, conf, listener, check)):
+            result = self.service.model_status()
+        self.assertEqual(result["status"], "NOT_READY")
+        self.assertEqual(result["listener"]["status"], "VERIFIED_PROCESS")
+
+    def test_model_status_fails_closed_when_model_digest_changes(self):
+        self.ollama.digest = "e" * 64
+        with self.assertRaises(HTTPBoundaryError) as caught:
+            self.service.model_status()
+        self.assertEqual((caught.exception.status, caught.exception.code), (503, "model_untrusted"))
+        self.assertEqual(self.ollama.chat_requests, [])
+
+    def test_model_status_does_not_create_a_missing_assistant_home(self):
+        missing = self.tmp / "missing-model-home"
+        service = ChatService(missing, release_id="r" * 64)
+        with self.assertRaises(HTTPBoundaryError) as caught:
+            service.model_status()
+        self.assertEqual((caught.exception.status, caught.exception.code), (503, "assistant_unavailable"))
+        self.assertFalse(missing.exists())
 
 
 class UnpinnedModelTests(ChatServiceBase):

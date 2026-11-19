@@ -70,7 +70,7 @@ Only the dedicated HG runit service is a candidate for activation. Do not enable
 
 ## 5. HTTP contract
 
-Contract revision 2026-10-29 (owner instruction of 2026-10-29: the web UI's Chat must reach this service with valid authentication and get an answer from HG Brain end to end). The revision is additive: every route that existed keeps its behavior. It adds the web UI files and `POST /v1/chat`. It changes no policy, grant or trust root (MAEP-1.1.0, Q4).
+Contract revision 2026-11-15 (UI read-only notes/search and tool-registry surfaces). This is additive: existing route behavior is unchanged. It adds `GET /v1/notes`, `POST /v1/notes/search` and `GET /v1/tools`; no note mutation route is added and no policy, grant or trust root is changed.
 
 Every route requires Authorization: Bearer token and a Host header identifying the loopback listener, with one exception: the four exact request targets of the web UI below, which carry no data and cause no effect, are served without the token so that a browser can open the page. They still require the loopback Host and a loopback client. Any other path, including any other `/ui/...` target or one with a query string, still answers 401 before routing when the token is missing.
 
@@ -81,10 +81,14 @@ Every route requires Authorization: Bearer token and a Host header identifying t
 | GET | /v1/health/ready | required | 200 only if installed release integrity is VERIFIED, current owner authority is LOADED and the idempotency store is not UNUSABLE; the body's `idempotency` is USABLE, UNUSABLE or NOT_CONFIGURED |
 | GET | /v1/integrity | required | Installed release integrity and release_id |
 | GET | /v1/tasks/<task_id> | required | Read-only task snapshot |
+| GET | /v1/notes | required | Read-only list of active owner notes from the configured assistant home; returns at most 50 newest notes |
+| POST | /v1/notes/search | required | Vietnamese-aware retrieval from active owner notes; body contains query and optional limit 1..20 |
+| GET | /v1/tools | required | Read-only ActionGateway registry plus explicit HTTP exposure/scope metadata |
+| GET | /v1/model | required | Read-only local Ollama configuration, model digest/pin and supervised-listener status; reads /api/tags only, never runs inference or changes configuration |
 | POST | /v1/tasks | required | Submit one constrained task through the canonical HG runtime |
 | POST | /v1/chat | required | One message from the owner -> HG Brain model layer -> HG-labelled answer (below) |
 
-The UI calls only its own origin with relative `/v1/...` paths (same address space, so no CORS preflight and no browser local-network permission is involved), keeps the token the owner pastes in the tab's sessionStorage and sends it only in the Authorization header. There is no CORS support: a page from any other origin cannot read responses.
+The UI calls only its own origin with relative `/v1/...` paths (same address space, so no CORS preflight and no browser local-network permission is involved), keeps the token the owner pastes in the tab's sessionStorage and sends it only in the Authorization header. There is no CORS support: a page from any other origin cannot read responses. Notes list/search are strictly read-only: the assistant home must already exist and pass the existing private-home checks; the service will not create a missing home. The UI has no note add/edit/forget route. The tools screen displays the gateway registry for inspection; it does not grant authority. The model status route reads the existing private assistant configuration, supervised listener attestation and Ollama `/api/tags`; it does not call `/api/chat`, alter configuration or pull a model. A model is READY only when its digest is pinned, the model is present and the supervised listener is verified. The HTTP task boundary still permits only `fs.read` and `fs.write` under `out/` with a valid task grant and acceptance gate.
 
 ### POST /v1/chat
 

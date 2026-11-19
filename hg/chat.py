@@ -84,6 +84,29 @@ class ChatService:
         finally:
             self._busy.release()
 
+    def model_status(self):
+        """Read-only local-model diagnostics; reads the pinned config, listener identity and /api/tags.
+
+        This does not issue an inference request, alter the config, pull a model or write a receipt.
+        """
+        _home, conf, listener, check = self._model_parts()
+        pinned = bool(conf.get("model_digest")) and bool(check.get("pinned"))
+        # Process identity alone is not listener ownership. Until full L1-L5
+        # attestation is wired into this path, status must remain NOT_READY.
+        ready = (check.get("status") == "READY" and listener.get("status") == "VERIFIED_LISTENER"
+                 and pinned)
+        return {
+            "status": "READY" if ready else "NOT_READY",
+            "provider": "ollama",
+            "model": conf["model"],
+            "configured": True,
+            "model_check": check,
+            "listener": listener,
+            "pinned": pinned,
+            "release_id": self.release_id,
+            "policy": PROVIDER_POLICY,
+        }
+
     # ---------- steps ----------
 
     def _model_parts(self):
