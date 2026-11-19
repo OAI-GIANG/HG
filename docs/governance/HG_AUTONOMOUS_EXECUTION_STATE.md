@@ -5,6 +5,23 @@ The single resume point for this mission. Update it in place at each milestone; 
 2. Verify `main`, the branches and the device yourself.
 3. Never repeat a side-effecting step whose result is unknown.
 
+## Checkpoint 3 — 2026-11-20 ~00:15 +07 (owner decisions D-01/D-02, 2026-11-19 23:53)
+
+| Field | Value |
+|---|---|
+| `main` | `2201ab9`: #207 squash on `47e076e`, which is #204 squash on `13a56be` |
+| Recovery points | `recovery/main-pre-204-20261119` → `13a56be`; `recovery/main-pre-207-20261120` → `47e076e` (both checked with ls-remote) |
+| CI | #204 head `027b450` 6/6; main `47e076e` unittest 3.13/3.14 success; #207 head `26ecd6c` 6/6 |
+| Production | `030a88d5`, pids 2665/2682/2679. Hashes unchanged across every device step (5 before/after diffs, all empty). |
+
+| Phase | Status |
+|---|---|
+| P5 UI | #204 MERGED (`47e076e`): Chromium 25/25. On-phone browser check NOT_RUN. |
+| P3 Strategy C | #207 MERGED (`2201ab9`). Device staging A/B/C/E/F VERIFIED. Installed and VERIFIED (`P3C_INSTALL.md`). Whole-tree kill on the same boot: **BLOCKED_WITH_TECHNICAL_EVIDENCE**. Reboot and owner Android settings UNVERIFIED. |
+| P1 | Dirty map done (`P1_DIRTY_WORKTREE_MAP.md`): 304 unique / 101 differ / 24 same. Per-row disposition pending. |
+| P2 L3 | Candidate 0.40.16 QUALIFIED in staging (`L3_UPGRADE_CANDIDATE_ASSESSMENT.md`). Production upgrade needs an owner decision. |
+| P4 | Not started. Waits for P3 acceptance: owner settings, then a reboot test. |
+
 ## Checkpoint 2 — 2026-11-19 ~23:40 +07 (same mission; the phone came online 23:23)
 
 | Field | Value |
