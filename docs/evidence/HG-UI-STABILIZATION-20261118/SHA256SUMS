@@ -9,3 +9,5 @@ c5b0aa9aa544187275a1cbdf2e7a05bdc9084aa00fa81214f6700d6bdc39caac  ./ui-readiness
 6ffe783feda6570575e086b4a1a7454469c2bdf3e4a0f7e27ff14c96d56a506c  ./ui-server-metrics.json
 1269256d6258702b7b80e4edd874743f15274a1c0b3518c9a2b4d62fb85a3ea9  ./ui_dom_runner.cjs
 99a701fd0bf79ebdaf8657a8cd96e9002792a1c3bad4a80a360e21b9cdc6fca4  ./ui_dom_server.py
+d77aaa6fb8313e65e2c063562a9a81a89af6b65cc13ee1edf68d9cb0a3f53ab2  ./ui-browser-chromium-report.json
+3e8f707e7a0e4c85bbde4cd2177811fae8ec2b58990567a7b542128365ab9289  ./ui-browser-mutation-innerhtml-report.json

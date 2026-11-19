@@ -1250,3 +1250,41 @@ This closes G6 staging rehearsal only. It does not authorize a production cutove
 - Draft PR #206 (test(g3): run root-only SQLite ownership oracle in CI), branch ci/g3-root-owned-dir-oracle-20261118, head bb970600c6d80cfea974e1dc63571ecbb3593cb5, adds a separate root-owned-dir-oracle job under sudo for Python 3.13 and 3.14. It runs only the root-specific test, not the full suite as root.
 - On the PR pull_request workflow run 44272376532 and push workflow run 44272334816, the full MAEP Python 3.13 and 3.14 jobs all report SUCCESS; both root-only matrix legs on each event also report SUCCESS. RT-06 anchor Python 3.13/3.14 reports SUCCESS. Root-job logs explicitly show the named test ... ok, Ran 1 test, OK on both Python versions; it was executed as root, not skipped.
 - This provides the missing G3-1 CI coverage. Main integration remains pending because PR #206 is Draft/unmerged; do not claim the root job has already landed on main.
+
+## 66. Addendum 2026-11-19 22:18 +07 onward (owner mission *HG — Master Autonomous Completion V2.0*, cloud session) — PR #204 real-Chromium qualification
+
+**Baseline. FACT, 2026-11-19 +07:** `main` = `13a56be` (#203), CI green on 3.13/3.14. Open PRs #204/#205/#206 (draft), #77 (HOLD), #64 (DEFERRED_V2). The phone's Desktop Commander device was offline (last seen ~17 min before the session), so no device, production or staging action was taken; production stays on `030a88d5` and is UNVERIFIED in this session.
+
+**Finding (WS-13, P2).** §65 qualified the UI with JSDOM only. JSDOM computes no layout, so it cannot see that an element is hidden. In real Chromium (Chrome for Testing 153, Playwright 1.63, cloud x86_64, Python 3.13.18) `python -m hg.tests.ui_browser_e2e` failed on PR head `e89434a`: the new step clicked the bottom navigation while the Chat screen was active, and Chat hides the bottom navigation by design (`data-hide-bottom-nav="true"`, unchanged since `main`). After that, `[data-nav-target=models]` matched two buttons (home and tools) and the first one was hidden. On `main` the same tool passes 14/14 checks.
+
+**Root cause.** The defect is in the test's navigation path, not in the product: an owner leaves Chat with the back button, and the hidden bottom navigation is intended. No UI code is changed.
+
+**Change (test-only, `hg/tests/ui_browser_e2e.py`, not collected by unittest discovery).**
+- Leave Chat through the back button and assert that Chat hides the bottom navigation and that home shows it again.
+- Scope the Model button to `#screen-tools`.
+- Add three security checks: an untrusted note containing `<img onerror>`/`<script>` renders as text with no `img` or `script` element; the token never appears in any request URL; the token is not stored in cookies or localStorage. The token stays in sessionStorage by design.
+
+**Evidence** (`docs/evidence/HG-UI-STABILIZATION-20261118/`, SHA256SUMS updated):
+- `ui-browser-chromium-report.json`: **25/25 PASS**, including no CSP violations, same-origin requests only, `/v1/model` = `CHƯA ĐỦ ĐIỀU KIỆN` without `VERIFIED_LISTENER`, and 0 inference calls from the model screen.
+- `ui-browser-mutation-innerhtml-report.json`: mutation check. With `textContent` replaced by `innerHTML` for note content, the run FAILS on `untrusted_note_rendered_as_text`, `no_unexpected_console_errors` and `no_csp_violations`. `app.js` was restored afterwards with an empty diff.
+- The focused suites `hg.tests.test_http_ui_chat` and `hg.tests.test_chat_service` passed: 53 tests OK with `-W error::ResourceWarning`.
+- Backend review: `/v1/notes`, `/v1/tools`, `/v1/model` and `/v1/notes/search` are all routed after `_authenticate()`, which uses a constant-time compare, and each has a 401 negative test.
+
+**Main baseline (cloud, `13a56be`, Python 3.13.18, root):**
+
+| Suite | Result |
+|---|---|
+| MAEP | 385 OK |
+| HG | 1,030 OK (6 root-only skips) |
+| Hooks | 42 OK |
+| Selfcheck | PASS |
+| Bench | PASS |
+| Release build | Reproducible twice; verify VERIFIED, release id `10a1710e…` (cloud zlib), tree `9cb74a45` |
+
+The 6 root-only skips were rerun as uid `nobody` (`test_deploy_scripts`, `test_fs_write_permission_oracle`, `test_release`): 68 tests OK, 0 skips.
+
+**Not closed here:**
+- The UI was not checked in a browser on the phone itself.
+- Soak 5 stays INCOMPLETE (§65).
+- L5/RT-06 stays BLOCKED.
+- No GO-LIVE.
