@@ -15,3 +15,4 @@
 | R-07 | G7 real-device Binder needs an APK and the signing key. | #197 | BLOCKED (owner) |
 | R-08 | A second, unsupervised Desktop Commander remote runs from the shell (pid 4042) next to the runit one (2680). | `RUNTIME_BASELINE.md` F-P3-3 | OPEN P2. Owner's tool; do not kill it without the owner. |
 | R-09 | 24 dirty worktrees hold unclassified work. | `WORKTREE_INVENTORY.csv` | PRESERVED; Phase 1 classification |
+| R-10 | P3-D: no trigger restarts Termux after a same-boot kill. Likely cause of the guard failure: the Termux:API standby bucket (Android does not run restricted jobs on their own). | Android power docs; F-P3-1 | BLOCKED_WITH_TECHNICAL_EVIDENCE. B1 after §B; B2/C2 need an owner decision. |

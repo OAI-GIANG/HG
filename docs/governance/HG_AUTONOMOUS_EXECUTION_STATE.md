@@ -5,6 +5,25 @@ The single resume point for this mission. Update it in place at each milestone; 
 2. Verify `main`, the branches and the device yourself.
 3. Never repeat a side-effecting step whose result is unknown.
 
+## Checkpoint 4 — 2026-11-20 ~12:30 +07 (owner decisions D-03..D-05; waiting on device and owner)
+
+| Field | Value |
+|---|---|
+| `main` | `2201ab9` (unchanged; CI green) |
+| Device | **OFFLINE**, last seen ~05:00 +07. Cause UNKNOWN until it is online: possibly P3-D again, the owner's reboot, or the phone being off. |
+| Owner confirmation of §B + reboot | **NOT RECEIVED**. P3-B checks (handoff §D) prepared, NOT_RUN. |
+
+| Item | Status |
+|---|---|
+| P3-A, manual open | VERIFIED (staging A + installed profile hook) |
+| P3-B, Termux:Boot after reboot | UNVERIFIED (waiting on the owner) |
+| P3-C, child dies while runsvdir lives | VERIFIED (staging) |
+| P3-D, whole tree killed on the same boot | BLOCKED_WITH_TECHNICAL_EVIDENCE. Options B1/B2/C2 in handoff §G. |
+| P4 | Candidate source VERIFIED in the cloud (`RC_CLOUD_BUILD_2201ab9.md`). Device build ×2, rehearsal and soak NOT_STARTED (D-04 gate: P3-B). |
+| P1 | Second-pass rules and the preservation archive defined (handoff §E). NOT_RUN (device offline). |
+| L3 | 0.40.16 BINARY_PROVENANCE_QUALIFIED candidate. Explicit gpgv chain (handoff §F) NOT_RUN. Production L3 BLOCKED; upgrade and trust registry NOT APPROVED (D-05). |
+| Production | `030a88d5`; last read-only check 2026-11-20 00:10 UNCHANGED. Not observed since. |
+
 ## Checkpoint 3 — 2026-11-20 ~00:15 +07 (owner decisions D-01/D-02, 2026-11-19 23:53)
 
 | Field | Value |
