@@ -157,21 +157,33 @@ def compare(sentence, note_text):
     return overlap, problems
 
 
-def anchored(question, note_text):
-    """Is the note about what was asked? (None if yes, else the missing topic word(s).)
+def anchored(question, note_text, *, other_notes=()):
+    """Return missing discriminative topic terms, or None when this note is on-topic.
 
-    Topic = the question's content syllables without question/modal words, negations and the
-    answer slot (hg.assistant.textvi.topic_keys). Vietnamese topic words are mostly two syllables
-    ("mật khẩu", "nhóm máu"), so:
-    - no adjacent pair of topic syllables may be missing from the note entirely, and
-    - few syllables may be missing overall: none for a topic of 1-2 syllables ("nhóm máu" is not
-      matched by a note about "nhóm chat"), one for 3-6, two beyond that ("đi khám răng" still
-      matches "lịch khám răng").
+    In addition to the original topic threshold, every question number, proper name, and
+    content word that appears in another active note must be present in this candidate note.
+    This prevents a note about Bin/September from answering a question about Na/October.
     """
     topic = textvi.topic_keys(question or "")
     if not topic:
         return None
     note_keys = set(textvi.document_keys(note_text))
+    missing_numbers = textvi.number_gap(question or "", note_text)
+    if missing_numbers:
+        return "số " + ", ".join(sorted(missing_numbers))
+    other_keys = set()
+    for other in other_notes or ():
+        other_keys.update(textvi.document_keys(other))
+    proper_names = _names(question or "")
+    discriminative = []
+    for token in textvi.content_words(question or ""):
+        key = textvi.query_keys(token)[0]
+        is_name = textvi.fold(token) in proper_names
+        appears_elsewhere = key in other_keys
+        if (is_name or appears_elsewhere) and key not in note_keys:
+            discriminative.append(token)
+    if discriminative:
+        return " ".join(dict.fromkeys(discriminative))
     missing = [k for k in topic if k not in note_keys]
     allowed = 0 if len(topic) <= 2 else 1 if len(topic) <= 6 else 2
     for a, b in zip(topic, topic[1:]):
@@ -180,6 +192,73 @@ def anchored(question, note_text):
     if len(missing) > allowed:
         return " ".join(k.lstrip("~") for k in missing)
     return None
+
+
+def answer_slots(question):
+    """Return required answer shapes inferred conservatively from common Vietnamese questions."""
+    folded = " ".join(textvi.fold(w) for w in textvi.words(question or ""))
+    slots = []
+    money_context = bool(re.search(r"\b(?:phi|hoc phi|chi phi|tien|gia)\b", folded))
+    if (re.search(r"\b(?:bao nhieu tien|gia bao nhieu|gia la bao nhieu|het bao nhieu)\b", folded)
+            or (money_context and re.search(r"\bbao nhieu\b", folded))):
+        slots.append("price")
+    if re.search(r"\b(?:may gio|bao nhieu gio|luc may gio)\b", folded):
+        slots.append("time")
+    if re.search(r"\b(?:ngay nao|thang nao|khi nao|bao gio|han .* khi nao|vao hom nao)\b", folded):
+        slots.append("date")
+    if re.search(r"\b(?:ten gi|la ai|cua ai|ai phu trach|ai truc)\b", folded):
+        slots.append("person")
+    if re.search(r"\b(?:o dau|cho nao|dia chi|dia diem nao)\b", folded):
+        slots.append("place")
+    if not slots and re.search(r"\b(?:bao nhieu|may|so may|co may|co bao nhieu)\b", folded):
+        slots.append("number")
+    return tuple(dict.fromkeys(slots))
+
+
+_WEEKDAYS = frozenset("thu hai thu ba thu tu thu nam thu sau thu bay chu nhat".split())
+_MONEY = re.compile(r"(?<!\w)\d[\d.,]*(?:\s*(?:dong|nghin|ngan|trieu|ty|ti|vnd|usd|do))?\b", re.I)
+_CLOCK = re.compile(r"(?<!\w)(?:[01]?\d|2[0-3])(?:[:h]|\s+gio)(?:[0-5]?\d)?\b", re.I)
+_DATE = re.compile(r"\b(?:\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?|\d{4}-\d{2}-\d{1,2}|ngay\s+\d{1,2}|thang\s+\d{1,2})\b", re.I)
+
+
+def slot_mismatch(sentence, slots):
+    """Answer-slot checks are conservative lexical guards, not semantic extraction."""
+    if not slots:
+        return []
+    folded = " ".join(textvi.fold(w) for w in textvi.words(sentence or ""))
+    missing = []
+    for slot in slots:
+        if slot == "price":
+            ok = bool(_MONEY.search(folded)) and bool(re.search(r"\b(?:dong|nghin|ngan|trieu|ty|ti|vnd|usd|do)\b", folded))
+        elif slot == "time":
+            ok = bool(_CLOCK.search(folded)) or bool(re.search(r"\b(?:sang|trua|chieu|toi)\b", folded) and textvi.numbers(folded))
+        elif slot == "date":
+            raw_sentence = textvi.fold(textvi.nfc(sentence or ""))
+            ok = bool(_DATE.search(raw_sentence)) or any(
+                phrase in folded for phrase in ("thu hai", "thu ba", "thu tu", "thu nam",
+                                                "thu sau", "thu bay", "chu nhat"))
+        elif slot == "person":
+            ok = bool(_names(sentence)) or bool(re.search(r"\b(?:anh|chi|ong|ba|co|chu|bac)\s+[a-z]+\b", folded))
+        elif slot == "place":
+            raw = textvi.words(sentence or "")
+            ok = (any(w in raw for w in ("ở", "tại", "đến", "dưới", "trên", "trong", "cạnh",
+                                          "bên", "sát", "đầu", "cuối", "gần", "sau", "trước",
+                                          "chợ", "đường", "quận", "phường", "tầng", "phòng",
+                                          "hẻm", "ngõ", "tiệm", "hồ", "quầy", "ngăn", "kệ",
+                                          "chậu", "nhà", "sân")) or
+                  bool(re.search(r"\b(?:o|tai|den|duong|quan|phuong|tang|phong|hem|ngo|so nha|dau duong)\b", folded)))
+        else:
+            ok = bool(textvi.numbers(sentence)) or bool(re.search(r"\b(?:mot|hai|ba|bon|nam|sau|bay|tam|chin|muoi|tram|nghin|trieu)\b", folded))
+        if not ok:
+            missing.append(slot)
+    return missing
+
+
+def is_question_echo(sentence, question):
+    """A sentence made only of the question's own content words is not an answer claim."""
+    sentence_keys = set(textvi.query_keys(sentence or ""))
+    question_keys = set(textvi.query_keys(question or ""))
+    return len(sentence_keys) >= 2 and sentence_keys <= question_keys and not textvi.numbers(sentence)
 
 
 NEW_INFO_RATIO = 0.6        # share of the answer's new words (not in the question) the note must contain
@@ -207,10 +286,13 @@ def new_information_gap(sentence, question, note_text):
     return []
 
 
-def check_sentence(sentence, notes, *, question=None):
-    """notes: {ref: text}; question: what was asked (enables the topic check). One labelled record."""
+def check_sentence(sentence, notes, *, question=None, other_notes_by_ref=None):
+    """notes: {ref: text}; optional sibling notes enforce discriminative anchors."""
     text = strip_citations(sentence)
     cited = citations(sentence)
+    if question and is_question_echo(text, question):
+        return {"sentence": text, "label": "NONE", "note": None, "cited": cited,
+                "reasons": ["lặp lại câu hỏi, không cung cấp câu trả lời"]}
     if is_abstention(text):
         return {"sentence": text, "label": "ABSTAIN", "note": None, "cited": cited, "reasons": []}
     if not _claim_words(text):
@@ -218,12 +300,22 @@ def check_sentence(sentence, notes, *, question=None):
     scored, off_topic = [], {}
     for ref, note_text in notes.items():
         overlap, problems = compare(text, note_text)
-        topic = anchored(question, note_text) if question else None
+        siblings = (other_notes_by_ref or {}).get(ref, ())
+        topic = anchored(question, note_text, other_notes=siblings) if question else None
         added = new_information_gap(text, question, note_text) if question else []
+        question_topic = set(textvi.topic_keys(question or "")) if question else set()
+        sentence_keys = set(textvi.query_keys(text))
+        slot_relevant = bool(question_topic & sentence_keys)
+        slots_missing = slot_mismatch(text, answer_slots(question)) if slot_relevant else []
+        reasons = []
         if topic:
-            off_topic[ref] = f"{ref} không nói về: {topic}"
-        elif added:
-            off_topic[ref] = f"{ref} không có: {', '.join(added)}"
+            reasons.append(f"{ref} không phân biệt đúng chủ đề: {topic}")
+        if added:
+            reasons.append(f"{ref} không có: {', '.join(added)}")
+        if slots_missing:
+            reasons.append(f"câu trả lời không điền đúng kiểu thông tin: {', '.join(slots_missing)}")
+        if reasons:
+            off_topic[ref] = "; ".join(reasons)
         scored.append((ref, overlap, problems))
     supported = sorted(((r, o) for r, o, p in scored if o >= SUPPORT_THRESHOLD and not p and r not in off_topic),
                        key=lambda x: (-x[1], x[0]))

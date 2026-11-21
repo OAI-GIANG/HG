@@ -137,6 +137,16 @@ class ChatServiceTests(ChatServiceBase):
                          ("http:/v1/chat", "ANSWERED", "r" * 64))
         self.assertEqual(result["brain"]["receipt_event_id"], self.ledger()[1]["event_id"])
 
+    def test_unverified_conflicting_answer_is_explicitly_retracted_in_http_response(self):
+        Notebook(self.home).add("Họp nhóm dự án HG vào thứ Năm lúc 20 giờ qua Google Meet.", origin="test")
+        self.ollama.text = "Họp nhóm dự án HG vào thứ Năm lúc 21 giờ qua Google Meet [N1]."
+        result = self.service("Họp nhóm HG lúc mấy giờ?", general=False)
+        self.assertEqual(result["sentences"][0]["label"], "CONFLICT")
+        self.assertEqual(result["retraction"], "HG đính chính: Ghi chú chưa có thông tin này.")
+        self.assertIn(result["retraction"], result["display"])
+        receipt = self.ledger()[-1]["payload"]
+        self.assertEqual(receipt["retraction"], result["retraction"])
+
     def test_note_grounded_answer_cites_the_note(self):
         Notebook(self.home).add("Xe máy thay dầu lần cuối ngày 2026-09-15 ở mốc 18.200 km.", origin="test")
         self.ollama.text = "Bạn thay dầu xe lần cuối ngày 2026-09-15 ở mốc 18.200 km [N1]."

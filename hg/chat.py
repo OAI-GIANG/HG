@@ -194,6 +194,7 @@ class ChatService:
             "counts": receipt.get("counts"),
             "grounded_ratio": receipt.get("grounded_ratio"),
             "abstained": bool(receipt.get("abstained")),
+            "retraction": safe(receipt["retraction"]) if receipt.get("retraction") else None,
             "gate": receipt.get("gate"),
             "notes": notes,
             "quarantined": receipt.get("quarantined", []),

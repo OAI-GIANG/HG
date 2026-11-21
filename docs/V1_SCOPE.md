@@ -364,6 +364,12 @@ Tái hiện offline trên `9634f41` bằng `grounding.anchored`, `grounding.chec
 
 Có thể làm A rồi mới B nếu A + v4 vẫn FAIL vì phần M.
 
+### Quyết định của Chủ Nhân — 2026-11-15
+
+Chủ Nhân phê duyệt **Phương án A** cho F-D4/F-W1. Phạm vi triển khai gồm neo phân biệt theo tên/số/từ khóa xuất hiện ở ghi chú khác; kiểm tra kiểu chỗ trả lời; loại metadata ngày lưu và ví dụ số/ngày khỏi prompt; HG tự đính chính khi không có câu NOTE nhưng có CONFLICT/BADCITE. Không thay đổi ngưỡng nghiệm thu.
+
+Triển khai biệt lập tại nhánh `stt/hg-fd4-fw1-v1-20261115`. Việc triển khai không đồng nghĩa nghiệm thu: AC-A6 chỉ được xét lại bằng bộ `eval_vi_v4.json` mới do evaluator độc lập viết, tối thiểu 40 câu và có ca injection; phải đóng băng hash trước lần chạy. Cho đến khi có kết quả và review độc lập, WS-13 vẫn BLOCKED. Production không được thay đổi.
+
 ## 13. Đợt 4 (2026-10-29): Chat trên giao diện web qua `hg serve` — sửa hai lỗi P0
 
 Chỉ thị của Chủ Nhân (2026-10-29, nguyên văn rút gọn): *frontend cấu hình `127.0.0.1:8080` nhưng dịch vụ chạy ở `127.0.0.1:18766` (401 khi gọi health không xác thực, 18767 không lắng nghe) — xác định đúng service, API contract, endpoint được phép dùng, thiết lập kết nối có auth hợp lệ; chưa chứng minh Brain xử lý yêu cầu end-to-end — tích hợp provider/adapter thật được phê duyệt, chạy E2E có bằng chứng gồm request, kết quả Brain và phản hồi hiển thị ở UI; sửa triệt để.* Chỉ thị này **thay thế** dòng "mở `ask`/`note` qua HTTP" trong mục 4.2 (V2_DEFERRED) cho riêng `ask`: `note` vẫn chưa mở qua HTTP.

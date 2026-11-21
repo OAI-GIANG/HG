@@ -358,6 +358,10 @@ class UISourceContractTests(unittest.TestCase):
         self.assertIn("e.key === 'Enter'", self.js)
         self.assertNotRegex(self.js, r"keydown[\s\S]{0,200}sendChat\(")
 
+    def test_hg_retraction_is_rendered_in_the_chat(self):
+        self.assertIn("if (data.retraction)", self.js)
+        self.assertIn("↳ ' + data.retraction", self.js)
+
     def test_screens_and_root_navigation(self):
         for screen in ("home", "chat", "models", "memory", "files", "tools",
                        "tasks", "search", "diagnostics", "settings"):
