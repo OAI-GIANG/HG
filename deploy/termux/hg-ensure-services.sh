@@ -19,6 +19,14 @@
 # whole Termux process tree while the phone stays on, neither entrypoint runs until the owner opens
 # Termux or the phone reboots.
 #
+# Logs (both 0600 in $STATE, bounded by bytes):
+#   ensure.log  every line, 16 KiB. Each login shell (owner or Desktop Commander) adds two routine lines,
+#               so rare lines roll out of it within ~80 shells.
+#   events.log  64 KiB, every line except the routine profile ones (WAKE_LOCK_OK, PRESENT, SKIP from
+#               --source profile): ABSENT_VERIFIED, STARTED, SV_UP_*, BLOCKED, failures, and every line of
+#               the boot/guard/manual paths. P3 forensics and the D-03 post-reboot check read this file
+#               (ledger §72, finding F-EV-1).
+#
 # Exit: 0 present/started/skipped, 2 BLOCKED, 4 start failed or unverified, 5 several supervisors.
 # Test hooks: HG_ENSURE_PROC, HG_ENSURE_SVDIR, HG_ENSURE_STATE, HG_ENSURE_WAIT_S.
 set -u
@@ -41,17 +49,31 @@ STATE="${HG_ENSURE_STATE:-$HOME/.local/state/hg-ensure-services}"
 WAIT_S="${HG_ENSURE_WAIT_S:-15}"
 ALLOW_UP="desktop-commander-remote desktop-commander-watchdog"
 LOG="$STATE/ensure.log"
+EVENTS="$STATE/events.log"
 export SVDIR
 export LOGDIR="${LOGDIR:-$PREFIX/var/log}"
 
 mkdir -p "$STATE" 2>/dev/null && chmod 700 "$STATE" 2>/dev/null || exit 2
 
-log() {
-  printf '%s %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$*" >> "$LOG"
-  if [ "$(wc -c < "$LOG" 2>/dev/null || echo 0)" -gt 16384 ]; then
-    # Bound bytes, not lines (one long line must not defeat the cap); drop the cut first line.
-    tail -c 8192 "$LOG" | sed 1d > "$LOG.tmp" && mv "$LOG.tmp" "$LOG"
+# bound FILE MAX KEEP: once FILE exceeds MAX bytes keep its last KEEP bytes. Bound bytes, not lines (one long
+# line must not defeat the cap); drop the cut first line.
+bound() {
+  if [ "$(wc -c < "$1" 2>/dev/null || echo 0)" -gt "$2" ]; then
+    tail -c "$3" "$1" | sed 1d > "$1.tmp" && mv "$1.tmp" "$1"
   fi
+}
+
+log() {
+  _line="$(date '+%Y-%m-%dT%H:%M:%S%z') $*"
+  printf '%s\n' "$_line" >> "$LOG"
+  bound "$LOG" 16384 8192
+  case "$SOURCE:${*%% *}" in
+    profile:WAKE_LOCK_OK|profile:PRESENT|profile:SKIP) ;;
+    *)
+      printf '%s\n' "$_line" >> "$EVENTS"
+      bound "$EVENTS" 65536 32768
+      ;;
+  esac
 }
 
 command -v flock >/dev/null 2>&1 || { log "BLOCKED flock_missing source=$SOURCE"; exit 2; }

@@ -1319,3 +1319,58 @@ The 6 root-only skips were rerun as uid `nobody` (`test_deploy_scripts`, `test_f
 **Limit:** D, Android killing the whole Termux tree on the same boot, is **BLOCKED_WITH_TECHNICAL_EVIDENCE**. No trigger runs the entrypoint, and this PR does not claim to fix it.
 
 **Install:** after merge, on the phone. Back up both hooks first (sha256, mode, mtime). Production release, service definitions, config and data stay unchanged.
+
+## 72. Addendum 2026-11-22 02:02 +07 onward (owner mission *HG — Autonomous Stabilization & Completion V1.0*) — Phase 0 baseline; P3 forensic events (F-EV-1)
+
+**Baseline (OBSERVED 02:03–02:40 +07, read-only).**
+- Source and device:
+  - `main` `2201ab9`.
+  - Device PKC110, Android 17, uid 10460, boot id `1b823ef0…`, uptime 5 d 9 h.
+- Production:
+  - One runsvdir (pid 3203), started 2026-11-22 00:50:09.
+  - Release pointer `030a88d5…`.
+  - `/v1/health/live` 200 LIVE; `/v1/health/ready` 200 READY, release `030a88d5…` (production token, loopback).
+- Installed entrypoints match `main` byte for byte (`3acc0785…`, `e1fd7e2e…`, `618f5856…`).
+- Worktrees: 43 in total, 24 dirty, 429 dirty entries; unchanged from P1.
+- Preservation manifest: `~/hg-evidence/P0-BASELINE-20261122/` (`WORKTREE_PRESERVATION_MANIFEST.json` `4b388f43…`, `PRODUCTION_BASELINE.json` `12925719…`).
+- Open PRs:
+  - #205 and #206 are drafts: #205's L5 gate is red and it stays with #77 under D2; #206 is G3-1, deferred.
+  - #77 HOLD; #64 DEFERRED_V2.
+  - No PR is eligible to merge.
+
+**Findings.**
+- **F-P3D-1 (P0).** Android kills the whole Termux tree on the same boot.
+  - 54 unclean svlogd ends (`*.u`) for `hg-runtime`.
+  - The last two recoveries were both `source=profile`: 2026-11-21 03:35 and 2026-11-22 00:50.
+  - Latest outage ≈ 14 h 50 m (INFERENCE): from the guard's last CHECK_OK (21/11 09:55) to STARTED (22/11 00:50).
+- **F-P3D-2.** Job 4211 does run, every ~15 min, but only while the Termux tree is alive.
+  - It was silent in every outage, so it shares the failure domain.
+  - Correction to §67: the guard has run since 2026-11-18 15:18 (21/11 03:39–09:55 and 22/11 01:48 onward).
+- **F-P3D-3.** The phantom-process flag cannot be read from the app uid (SecurityException): UNKNOWN.
+  - Which mechanism kills the tree (phantom killer, LMK or ColorOS freeze) is not distinguishable without logcat, `/proc/stat` or `/proc/pressure`.
+  - Owner action: the Android 14+ developer option "Disable child process restrictions", plus handoff §B.
+- **F-EV-1 (P1).** Every login shell adds two routine lines to the 16 KiB `ensure.log`. This includes each Desktop Commander call.
+  - ABSENT_VERIFIED, STARTED and boot-path lines roll out after ~80 shells.
+  - That destroys P3 evidence and the D-03 post-reboot evidence before it is read.
+
+**Change.**
+- `deploy/termux/hg-ensure-services.sh` adds `events.log` (0600, 64 KiB → 32 KiB). It receives every line except the routine profile lines (WAKE_LOCK_OK/PRESENT/SKIP with `--source profile`).
+- `ensure.log` is unchanged, and so are the start logic, the lock and the fail-closed rules.
+
+**Tests (Python 3.13.18, dash).**
+- `hg.tests.test_ensure_services`: 4 new tests failed before the fix for the expected reason (no `events.log`). The precondition reproduces the defect: STARTED is gone from `ensure.log`. 22/22 OK after the fix, with `-W error::ResourceWarning`.
+- Full suites:
+  - `maep/tests` 385 OK;
+  - `hg/tests` 1067 OK (6 skipped);
+  - `.claude/hooks` 42 OK.
+
+**Install** (D-02 conditions, after merge):
+- Back up the installed script first (sha256, mode, mtime).
+- Copy the merged file and verify its sha256.
+- Hooks, production release, service definitions, config and data stay unchanged.
+
+**Status:**
+- F-EV-1: fixed once installed.
+- P3-B: NOT_RUN, waiting for the owner's reboot.
+- P3-D: BLOCKED_WITH_TECHNICAL_EVIDENCE.
+- Schedule: `HG_AUTONOMOUS_STABILIZATION_SCHEDULE_V1.md`; R1–R14 rows in `HG_MASTER_COMPLETION_LEDGER_V1.csv`.
