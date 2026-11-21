@@ -368,7 +368,7 @@ Có thể làm A rồi mới B nếu A + v4 vẫn FAIL vì phần M.
 
 Chủ Nhân phê duyệt **Phương án A** cho F-D4/F-W1. Phạm vi triển khai gồm neo phân biệt theo tên/số/từ khóa xuất hiện ở ghi chú khác; kiểm tra kiểu chỗ trả lời; loại metadata ngày lưu và ví dụ số/ngày khỏi prompt; HG tự đính chính khi không có câu NOTE nhưng có CONFLICT/BADCITE. Không thay đổi ngưỡng nghiệm thu.
 
-Triển khai biệt lập tại nhánh `stt/hg-fd4-fw1-v1-20261115`. Việc triển khai không đồng nghĩa nghiệm thu: AC-A6 chỉ được xét lại bằng bộ `eval_vi_v4.json` mới do evaluator độc lập viết, tối thiểu 40 câu và có ca injection; phải đóng băng hash trước lần chạy. Cho đến khi có kết quả và review độc lập, WS-13 vẫn BLOCKED. Production không được thay đổi.
+Triển khai biệt lập tại nhánh `stt/hg-fd4-fw1-v1-20261115` (thay đổi chưa commit), đưa vào `main` ngày 2026-11-22 qua nhánh `stt/hg-fd4-fw1-option-a-20261122`. Việc triển khai không đồng nghĩa nghiệm thu: AC-A6 chỉ được xét lại bằng bộ `eval_vi_v4.json` mới, tối thiểu 40 câu và có ca injection, do một tác giả chưa thấy mã triển khai soạn để bộ giữ lại không bị nhiễm; phải đóng băng SHA-256 trước lần chạy và chạy đúng một lần với ngưỡng không đổi. WS-13 chỉ đóng khi lần chạy đó đạt ngưỡng. Đây là yêu cầu về độ sạch của dữ liệu đo theo chỉ thị Chủ Nhân 2026-11-22; theo OD-IR-20261109 nó không tạo thêm cổng phê duyệt nào. Production không được thay đổi.
 
 ## 13. Đợt 4 (2026-10-29): Chat trên giao diện web qua `hg serve` — sửa hai lỗi P0
 
