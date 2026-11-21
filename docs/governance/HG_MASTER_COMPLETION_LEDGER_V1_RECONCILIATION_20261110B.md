@@ -1374,3 +1374,23 @@ The 6 root-only skips were rerun as uid `nobody` (`test_deploy_scripts`, `test_f
 - P3-B: NOT_RUN, waiting for the owner's reboot.
 - P3-D: BLOCKED_WITH_TECHNICAL_EVIDENCE.
 - Schedule: `HG_AUTONOMOUS_STABILIZATION_SCHEDULE_V1.md`; R1–R14 rows in `HG_MASTER_COMPLETION_LEDGER_V1.csv`.
+
+## 73. Addendum 2026-11-22 02:46 +07 — owner: "solve the other remaining HG issues; Termux is out of scope" — G3-1 to main; P1 dirty-work classification
+
+**Owner instruction (02:46 +07).**
+- Termux reliability (P3-B/P3-D) is set aside. Its state stays as recorded in §72.
+- Every other owner decision still holds: D2 (#77/#205 HOLD), D-04 (soak only after the reboot check), D-05 (no production change).
+
+**G3-1.** PR #206 was updated server-side onto `main` `8282c9e`: `update-branch`, expected head `bb97060`, new head `5f0dbc3`, no force push. The diff against `main` is unchanged: the `root-owned-dir-oracle` job and an evidence README. The named test also runs as root in the cloud session (uid 0, Python 3.13.18): `... ok`, not skipped.
+
+**P1 (preservation-first; read-only on every worktree; device `~/hg-evidence/P0-BASELINE-20261122/`).**
+- Classification against `main` `8282c9e` (`P1_DIRTY_CLASSIFICATION.json` `0ae68139…`): 429 entries.
+  - SAME_AS_MAIN 24;
+  - DIVERGED 101;
+  - UNIQUE 304;
+  - CONFLICT 0;
+  - UNKNOWN 0.
+- Content backup of the 405 DIVERGED/UNIQUE files:
+  - `P1_DIRTY_CONTENT_BACKUP.tar.gz` `9c9aedec…`, 9.7 MB raw;
+  - manifest `15ebb74f…` with per-file SHA-256.
+- No worktree was reset, cleaned, checked out or modified. A post-install snapshot gives a byte-identical worktree manifest (`4b388f43…`).

@@ -55,3 +55,29 @@ jobs:
               assert report["result"] == "VERIFIED", report
               print(json.dumps(report, sort_keys=True))
           PY
+  root-owned-dir-oracle:
+    name: root ownership oracle (${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Verify hosted runner can execute the root-only oracle
+        shell: bash
+        run: |
+          set -euo pipefail
+          python_path="$(command -v python)"
+          sudo -n "$python_path" -c 'import os; assert os.geteuid() == 0, "oracle interpreter did not run as root"'
+      - name: Reject SQLite directory owned by another UID
+        shell: bash
+        run: |
+          set -euo pipefail
+          python_path="$(command -v python)"
+          sudo -n "$python_path" -m unittest -v \
+            maep.tests.test_sqlite_nofollow.SQLiteNoFollowTests.test_rejects_directory_owned_by_another_user
