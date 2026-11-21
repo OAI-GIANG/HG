@@ -1424,3 +1424,53 @@ The 6 root-only skips were rerun as uid `nobody` (`test_deploy_scripts`, `test_f
   - `node --check hg/ui/app.js` OK; `git diff --check` clean.
 - **ResourceWarning (directive phase 5, item 2):** none remain on this branch under warnings-as-errors.
 - **Status:** IMPLEMENTED and UNIT_TESTED once merged. AC-A6 v4 is NOT_RUN. WS-13 stays open until the one frozen v4 run passes. Production is unchanged.
+
+## 75. Addendum 2026-11-22 03:09 +07 onward — AC-A6 v4 FAIL on `bc54040`; root causes fixed (RC-1, RC-2, RC-4, RC-5)
+
+**Option A merge.** PR #209 squash-merged → `main` `bc54040`, pinned head `54000c5`, parent `27f9d33`. Recovery `recovery/main-pre-fd4a-20261122` = `27f9d33`, confirmed before the merge. CI 10/10 green.
+
+**Release candidate (R13).** From `bc54040`, built twice in the cloud with `hg.release build`:
+- byte-identical archive and manifest;
+- `verify` VERIFIED;
+- release_id `15cb8fff…`, archive `358f1f9e…`, tree `906ce696…`, 413 files.
+
+Not installed anywhere (D-05).
+
+**AC-A6 v4: one frozen run.** Details in `docs/evidence/HG-AC-A6-V4-20261122/RESULT.md`.
+- Holdout: sha256 `5d3be9b2…`, frozen in `f121ceb` before the run.
+- Author: a separately-contexted Claude subagent working only from the contract, not a human reviewer (MAEP-021).
+- Run: on device from `git archive bc54040` with a synthetic HG_HOME, qwen3:1.7b digest `8f68893c…`.
+- Result, verdict **FAIL**:
+  - fact 0.531 and grounded 0.531, below the thresholds;
+  - abstain 0.929, injection 0, p50 3.1 s and model failures 0 all pass.
+- v4 is now contaminated and stays in the repo as a record.
+
+**Root causes (offline reproduction of note selection).**
+- RC-1, an Option A regression: question words counted as discriminative topic, and "bao" folds onto "bảo". 11 answerable questions were affected.
+- RC-2: "ngày D tháng M" was not read as "D/M", and leading zeros stayed in keys.
+- RC-3, by design: whole-note quarantine of AI-directed instructions (2 questions). Owner decision; unchanged.
+- RC-4: discourse markers counted as topic.
+- RC-5 (safety): "ông" is a pronoun stopword, so a note about the father anchored "ông nội" and HG labelled a wrong-person answer NOTE.
+
+**Fix (this PR).**
+- `grounding.anchored` discriminates only on topic keys and names, and requires a relative named in the question (bố/cha, mẹ, vợ, chồng, ông/bà nội/ngoại, with note-side synonyms ba/cha/tía, má/mạ) to be in the note.
+- `textvi`:
+  - "ngày D tháng M [năm Y]" is read as a date value;
+  - one- or two-digit keys drop a leading zero (identifiers such as `0420` keep it);
+  - date-structure words of a full date and the discourse pairs cụ thể / chính xác / "đúng + negation" are not topic;
+  - "ông/bà" before "nội/ngoại" is kept as topic.
+
+**Tests.**
+- New tests that fail before the fix: 7 grounding/textvi tests and 2 ask-path tests. The cases are new examples, not v4 items.
+- Python 3.13.18, `-W error::ResourceWarning`:
+  - `hg/tests` 1087 OK (6 skipped), 0 ResourceWarning;
+  - `maep/tests` OK; hooks OK.
+- Diagnostic on the contaminated v4 (not acceptance), expected note among usable notes:
+  - 17/32 → 29/32;
+  - unanswerable questions with a usable note: 1/14 → 0/14.
+
+**Status.**
+- AC-A6: FAIL on `bc54040`. The fix is UNIT_TESTED.
+- Re-acceptance needs a new frozen holdout v5 and one run.
+- RC-3 awaits the owner's decision.
+- Production is unchanged.
