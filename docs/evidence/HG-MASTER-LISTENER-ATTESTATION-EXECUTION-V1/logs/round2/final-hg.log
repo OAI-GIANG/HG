@@ -1,0 +1,181 @@
+................................................/usr/local/lib/python3.13/unittest/case.py:655: ResourceWarning: unclosed <socket.socket fd=3, family=2, type=1, proto=0, laddr=('127.0.0.1', 40153)>
+  self.doCleanups()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+.......................................................................s......................s..................s...................................................../home/claude/hg/hg/tests/test_finish_script.py:124: ResourceWarning: unclosed file <_io.TextIOWrapper name='/proc/sys/kernel/random/boot_id' mode='r' encoding='utf-8'>
+  boot = open("/proc/sys/kernel/random/boot_id").read().strip() if os.path.exists(
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+........................../usr/local/lib/python3.13/copy.py:119: ResourceWarning: unclosed <socket.socket fd=3, family=2, type=1, proto=0, laddr=('127.0.0.1', 39903)>
+  def deepcopy(x, memo=None, _nil=[]):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/usr/local/lib/python3.13/copy.py:119: ResourceWarning: unclosed <socket.socket fd=4, family=2, type=1, proto=0, laddr=('127.0.0.1', 38069)>
+  def deepcopy(x, memo=None, _nil=[]):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+...
+[guard dev] false-positive rate = 0.019 (1/52); flagged: [('FP008', ['ai-addressee', 'answer-instruction'])]
+.
+[guard dev] recall = 1.000 (66/66); missed: []
+.............................................................s.........................................{
+ "cpu_count": 2,
+ "kernel": "6.18.44-fc-v185",
+ "machine": "x86_64",
+ "model": "qwen3:1.7b",
+ "model_digest": "8f68893c685c3ddff2aa3fffce2aa60a30bb2da65ca488b61fff134a4d1730e7",
+ "options": {
+  "num_ctx": 4096,
+  "num_thread": 4
+ },
+ "python": "3.13.18",
+ "runs": [
+  {
+   "chunks": 1,
+   "empty_chunks": 0,
+   "endpoint": "chat",
+   "errors": [
+    {
+     "error": "no final (done=true) chunk"
+    }
+   ],
+   "first_thinking_s": null,
+   "generation_tps": null,
+   "http_status": 200,
+   "index": 1,
+   "model_loaded_before": true,
+   "prompt_tps": null,
+   "raw_file": "run-1-chat.ndjson",
+   "raw_sha256": "494eea8504380215c0f16f0344c5d115ff8102eedaaad67795c13d55e3853dfe",
+   "request": {
+    "messages": [
+     {
+      "content": "Giải thích ngắn gọn bằng tiếng Việt: vì sao bầu trời có màu xanh?",
+      "role": "user"
+     }
+    ],
+    "model": "qwen3:1.7b",
+    "options": {
+     "num_ctx": 4096,
+     "num_thread": 4
+    },
+    "stream": true,
+    "think": false
+   },
+   "rss_kib_after": {},
+   "rss_kib_before": {},
+   "start": "warm",
+   "ttfb_s": 0.0004517969999824345,
+   "ttft_s": 0.0004517969999824345,
+   "wall_s": 0.0005365289999872402
+  }
+ ],
+ "started_utc": "2026-10-31T13:45:01Z",
+ "think": false,
+ "tool": "hg-ollama-bench-1",
+ "url": "http://127.0.0.1:44231",
+ "version": {
+  "version": "0.40.13"
+ }
+}
+..{
+ "cpu_count": 2,
+ "kernel": "6.18.44-fc-v185",
+ "machine": "x86_64",
+ "model": "qwen3:1.7b",
+ "model_digest": "8f68893c685c3ddff2aa3fffce2aa60a30bb2da65ca488b61fff134a4d1730e7",
+ "options": {
+  "num_ctx": 4096,
+  "num_thread": 4
+ },
+ "python": "3.13.18",
+ "runs": [
+  {
+   "chunks": 5,
+   "done_reason": "stop",
+   "empty_chunks": 1,
+   "endpoint": "chat",
+   "errors": [],
+   "eval_count": 50,
+   "eval_duration": 2500000000,
+   "first_thinking_s": 0.05090172600000642,
+   "generation_tps": 20.0,
+   "http_status": 200,
+   "index": 1,
+   "load_duration": 3000000000,
+   "model_loaded_before": false,
+   "prompt_eval_count": 20,
+   "prompt_eval_duration": 400000000,
+   "prompt_tps": 50.0,
+   "raw_file": "run-1-chat.ndjson",
+   "raw_sha256": "309a2891d59496f4ae1e71d929a99b37a9668405db2315e35dc3f4b2cb593ea8",
+   "request": {
+    "messages": [
+     {
+      "content": "Giải thích ngắn gọn bằng tiếng Việt: vì sao bầu trời có màu xanh?",
+      "role": "user"
+     }
+    ],
+    "model": "qwen3:1.7b",
+    "options": {
+     "num_ctx": 4096,
+     "num_thread": 4
+    },
+    "stream": true,
+    "think": false
+   },
+   "rss_kib_after": {},
+   "rss_kib_before": {},
+   "start": "cold",
+   "total_duration": 9000000000,
+   "ttfb_s": 0.05090172600000642,
+   "ttft_s": 0.3017595750000055,
+   "wall_s": 0.4023404050000181
+  },
+  {
+   "chunks": 5,
+   "done_reason": "stop",
+   "empty_chunks": 1,
+   "endpoint": "generate",
+   "errors": [],
+   "eval_count": 50,
+   "eval_duration": 2500000000,
+   "first_thinking_s": 0.050794411000026685,
+   "generation_tps": 20.0,
+   "http_status": 200,
+   "index": 1,
+   "load_duration": 3000000000,
+   "model_loaded_before": true,
+   "prompt_eval_count": 20,
+   "prompt_eval_duration": 400000000,
+   "prompt_tps": 50.0,
+   "raw_file": "run-1-generate.ndjson",
+   "raw_sha256": "72a83ee9d82752d740124e2148bf63b37c9f24ac844e4aca11a2f2975847f998",
+   "request": {
+    "model": "qwen3:1.7b",
+    "options": {
+     "num_ctx": 4096,
+     "num_thread": 4
+    },
+    "prompt": "Giải thích ngắn gọn bằng tiếng Việt: vì sao bầu trời có màu xanh?",
+    "stream": true,
+    "think": false
+   },
+   "rss_kib_after": {},
+   "rss_kib_before": {},
+   "start": "warm",
+   "total_duration": 9000000000,
+   "ttfb_s": 0.050794411000026685,
+   "ttft_s": 0.30157123700001875,
+   "wall_s": 0.4023767180000277
+  }
+ ],
+ "started_utc": "2026-10-31T13:45:02Z",
+ "think": false,
+ "tool": "hg-ollama-bench-1",
+ "url": "http://127.0.0.1:34049",
+ "version": {
+  "version": "0.40.13"
+ }
+}
+.....................................................................................................................................
+----------------------------------------------------------------------
+Ran 483 tests in 62.815s
+
+OK (skipped=4)

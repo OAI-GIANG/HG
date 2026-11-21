@@ -19,10 +19,35 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+      - name: Install runit (real runsv for listener-attestation integration tests)
+        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends runit
       - name: MAEP unit tests
         run: python -m unittest discover -s maep/tests -v
       - name: HG runtime tests
-        run: python -m unittest discover -s hg/tests -t . -v
+        env:
+          HG_REQUIRE_PROC_TESTS: "1"   # pidfd_getfd / real runsv tests fail instead of skipping
+          # The real-kernel L5 probe tests need every process observable, which GitHub-hosted runners do not
+          # give. They are NOT collected here (NOT_RUN, never skipped or passed) and are reported by the
+          # separate l5-capability-gate job below, whose red status means BLOCKED.
+          HG_L5_REAL_KERNEL_GATE: "external"
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m unittest discover -s hg/tests -t . -v 2>&1 | tee "$RUNNER_TEMP/hg-tests.log"
+      - name: Report failing HG tests as annotations (readable without log access)
+        if: failure()
+        shell: bash
+        run: |
+          python - "$RUNNER_TEMP/hg-tests.log" <<'PY'
+          import re, sys
+          text = open(sys.argv[1], encoding="utf-8", errors="replace").read()
+          for block in re.split(r"\n=+\n", text)[1:11]:
+              head, _, rest = block.partition("\n")
+              lines = [l for l in rest.splitlines() if l.strip() and not set(l.strip()) <= {"-"}
+                       and not re.match(r"(Ran \d+ tests? in|FAILED \(|OK$|OK \()", l.strip())]
+              tail = " | ".join(lines[-3:])[:900]
+              print(f"::error title={head.strip()[:150]}::{tail}")
+          PY
       - name: HG runtime self-check
         run: python -m hg selfcheck
       - name: HG benchmark (fails on unauthorized effects, false closures or failed cases)
@@ -55,3 +80,36 @@ jobs:
               assert report["result"] == "VERIFIED", report
               print(json.dumps(report, sort_keys=True))
           PY
+
+  # L5 listener-ownership gate on the real kernel. PASS here needs a runner that can inspect every process and
+  # every descriptor (hidepid unrestricted, same-UID, root and other-UID processes readable, pidfd_getfd allowed).
+  # GitHub-hosted runners cannot, so this job is expected to be RED (BLOCKED) there. It is not part of the
+  # required checks of ruleset `main-maep` and must never be made green by skipping its tests.
+  l5-capability-gate:
+    name: l5-capability-gate (real kernel; red = BLOCKED)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Capability report (informational, records why the gate is BLOCKED)
+        continue-on-error: true
+        shell: bash
+        run: |
+          python3 -I -S deploy/termux/l5_probe.py --timeout 50 > "$RUNNER_TEMP/l5-selftest.json" || true
+          python3 -I - "$RUNNER_TEMP/l5-selftest.json" >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json, sys
+          r = json.load(open(sys.argv[1]))
+          sh = r.get("sharing") or {}
+          print("### L5 capability report")
+          print("- probe result: `%s`" % json.dumps(r.get("result"), sort_keys=True))
+          print("- syscalls: `%s`" % json.dumps(r.get("syscalls"), sort_keys=True))
+          print("- scope: `%s`, proc_hidepid: `%s`, unreadable descriptors: `%s`" % (
+              sh.get("scope"), sh.get("proc_hidepid"), sh.get("unreadable_descriptors")))
+          print("- uninspectable processes: `%s`" % json.dumps(sh.get("uninspectable"), sort_keys=True))
+          PY
+      - name: L5 real-kernel tests (HG_REQUIRE_PROC_TESTS=1 - an unmet capability fails, it never skips)
+        env:
+          HG_REQUIRE_PROC_TESTS: "1"
+        run: python -m unittest -v hg.tests.test_l5_probe.ProbeRunTests
