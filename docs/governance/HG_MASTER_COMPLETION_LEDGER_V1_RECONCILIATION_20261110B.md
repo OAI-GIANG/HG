@@ -1140,3 +1140,237 @@ Local results: 10/10 OK. The full suite is in the PR.
 **Disposition.**
 - This evidence confirms the v1 owner HOLD/BLOCKED state. No code, trust registry, caller wiring, permission, or policy was changed. PR #77 was not merged or modified.
 - Re-admission requires, at minimum: a fail-closed PARTIAL scope gate plus mutation tests; a real environment with complete process/descriptor observation (or an explicit versioned owner residual-risk decision); non-empty provenance-backed L3 runtime trust anchor; and integration of a VERIFIED_LISTENER gate in the actual model-call path with tests. Until then the existing VERIFIED_PROCESS label must not be described as listener ownership.
+## 65. Addendum 2026-11-18 15:31 +07 — web UI stabilization, complete device suites and L5 fail-closed follow-up
+
+**Candidate branch and scope.**
+- Current main base: 13a56be75a62a56f2123c755aea97a6d1c9cd79a.
+- New branch: feat/ui-stabilization-main-20261118; separate worktree $HOME/.cache/hg-worktrees/hg-ui-stabilization-rebase-20261118.
+- Eleven files add authenticated read-only notes list/search, tool registry and local-model status routes/screens; service wiring retains recover_interrupted=True and uses one assistant home for chat and notes.
+- The previous UI worktree and original dirty ~/HG checkout were preserved. No production, Soak5, user memory, TaskStore, Android settings or release pointer was changed.
+
+**Verification on OPPO PKC110 / Android 17 / Termux ARM64 / Python 3.14.8 / Node 26.12.1.**
+- HG: 1,044 tests, OK (3 environment-dependent skips), 405.885 s, executed with ResourceWarning promoted to error; zero warnings, failures or errors.
+- MAEP: 385 tests, OK (3 environment-dependent skips), 11.590 s.
+- Claude hooks: 42 tests, OK, 0.818 s (canonical command from CI workflow).
+- Focused chat/UI HTTP tests: 52 tests, OK, 23.569 s.
+- Aggregate: 1,471 tests passed, 6 platform-dependent skips.
+- node --check hg/ui/app.js PASS; git diff --cached --check PASS.
+
+**Isolated DOM integration evidence.**
+- A disposable HGHTTPServer + FakeOllama instance used a temporary HOME/state and the candidate's actual UI files. JSDOM 26.1.0 loaded the page.
+- Authenticated GET /v1/health/ready, GET /v1/model, GET /v1/notes, POST /v1/notes/search and GET /v1/tools requests all returned HTTP 200; all six recorded requests carried Authorization and stayed on the same origin.
+- Model panel accurately reported NOT_READY / listener UNVERIFIED because the fixture had no supervised Ollama service directory. It did not claim VERIFIED_LISTENER.
+- XSS sentinel remained text, no IMG DOM node was created; forgetting the token cleared notes/search/tools views.
+- Ollama received one /api/tags status request and zero /api/chat inference calls. No /v1/chat request occurred. Console log was empty. UI DOM report PASS.
+- This is JSDOM, not a real Chromium/Playwright run. Playwright and Chromium are unavailable on this Termux device; real-browser/CSP qualification remains open.
+
+**Resource-cleanup ledger reconciliation.**
+- The previously described resource-cleanup source changes are already present on current main through PR #202 (6f6cb96). All six source/test file blob IDs match commit 98d9edfaa150f35c18d5f9ad2b2965e0ce1bc751. The old CSV statement that no PR/CI existed is stale; corrected here. No duplicate PR was opened.
+
+**L5 security follow-up, separate branch.**
+- Branch fix/pr77-l5-partial-scope-20261118 was created from exact PR #77 HEAD 73a45f059d51d91c6063580e1a4a86268d377611 and pushed as commit d34688a0e0e606477473372668f5cb0607523c9d; PR #77 itself was not modified.
+- The new helper blocks PARTIAL/UNKNOWN/missing process-sharing scope as SHARING_SCAN_INCOMPLETE; a visible holder remains LISTENER_SHARED. Focused scope/probe tests passed 30/30.
+- Broader integration tests on Android are not a pass: 33 failures, 1 error and 5 skips because procfs cannot read the parent process in the lab (L1 PARENT_UNREADABLE / ENOENT). The real Ollama probe still has /proc hidepid=invisible and PARTIAL sharing visibility. L3 trusted_runtimes remains empty and the live model-call path is not gated by VERIFIED_LISTENER.
+- This narrow change is not eligible for merge until supported-runner CI and remaining PR #77 conditions are satisfied.
+
+**Operational status at 15:31 +07.**
+- Production process tree observed alive: runsv PID 20288, runtime PID 20309, on the original release 030a88d534bdec086c10b87a4732322d72791260178c1129b0538bb3b42bc7d5. Last authenticated readiness check at 15:09 +07 was HTTP 200, READY, integrity VERIFIED, trust LOADED, idempotency USABLE.
+- Soak5 staging remains aee6efe4a9204de6aa12ed25be8e73b04a6107f3bb393cbafc417878fe480519. At 15:31:41 +07, tick rows=23, 22 OK, 1 initial quota SKIP, 0 FAIL; latest tick 23 at 15:11:01 +07. A same-boot Termux process-tree restart was recorded at 14:10:33; staging recovered and ticks 21–23 passed. 24h target is 2026-11-19 01:46:30 +07; soak has not completed.
+- JobScheduler recurrence remains QUALIFIED, not VERIFIED; one-shot 4212 executed but recurring job 4211 is not independently attributable due Termux:API 0.53 / Android 17 pending-readback issue. Termux Boot/reboot proof remains open.
+
+**Disposition.**
+- The web UI candidate is test-green in device suites and isolated JSDOM integration; ready for independent CI/review, not production.
+- PR #77/RT-06 remains HOLD/BLOCKED. Native Flutter source/browser E2E, device reboot/autostart, recurring JobScheduler proof and Soak5 24h result remain open.
+- Production stays on the old release. No GO-LIVE decision or production deployment is made. Overall system verdict remains INCOMPLETE.
+
+## 66. Addendum 2026-11-18 +07 — model readiness must require listener ownership, not process identity
+
+**Security correction to the UI candidate.**
+- Code review found that a read-only model diagnostics implementation could calculate READY from VERIFIED_PROCESS, even though this only attests process identity and does not prove listener ownership.
+- Changed ChatService.model_status() and the UI's own readiness predicate to require exact listener.status == VERIFIED_LISTENER, alongside pinned digest and model_check READY.
+- Added regression test test_model_status_does_not_promote_process_identity_to_listener_ownership; HTTP fixture explicitly shows model_check READY + listener VERIFIED_PROCESS while overall remains NOT_READY.
+- Result: until the complete L1–L5 verification is wired into the real model path, model status is deliberately fail-closed / NOT_READY. No attempt was made to invent listener verification or trust anchors.
+
+**Verification on updated UI branch.**
+- Focused chat/UI HTTP suite: 53 tests, OK under ResourceWarning-as-error; no ResourceWarning.
+- JSDOM 26.1 rerun: PASS; explicit model_not_ready_without_listener_attestation=true; all authenticated routes remain same-origin; one /api/tags, zero inference calls; empty browser console.
+- The full 1,471-test device suite result in §65 was on the immediately preceding UI commit. CI is expected to validate this follow-up commit independently; do not reuse the earlier full-suite count as if it had run on the new SHA.
+- This correction reinforces rather than closes PR #77 / RT-06. It does not create a trust anchor or integrate full L1–L5 attestation into /v1/chat.
+
+**Disposition.**
+- UI branch remains Draft PR #204 for CI/review.
+- No merge, deploy, listener-verification claim, or GO-LIVE decision.
+- Production and active Soak5 remain untouched.
+
+## 67. Addendum 2026-11-18 +07 — G4 ModelRouter conformance acceptance closed
+
+- PR #195, title “test(g4): prove every model call goes through ModelRouter; VERIFY record §56”, merged 2026-11-13T06:41:57Z with merge commit 21c42a8f6c41d3d04401a8ca3ed81b2115de66b0.
+- The canonical main tree includes hg/tests/test_model_call_gateway.py.
+- PR #195 checks: MAEP unittest Python 3.13 and Python 3.14 succeeded on both push and pull_request workflows; RT-06 anchor Python 3.13 and Python 3.14 succeeded.
+- Scope covers static S1-S3, runtime GatewayProbe across ask/chat/planner/research and negative mutation of research.py detected by both layers.
+- Therefore the G4 conformance-test admission is VERIFIED. This closes the test admission only; it does not approve deploying all later runtime PRs to production. Production remains behind the separate owner approval gate.
+
+## 68. Addendum 2026-11-18 +07 — Soak5 is deterministically INCOMPLETE under its own gate
+
+The Soak5 v4 driver itself defines PERIOD=1800 and GAP_MAX=3600 seconds. Its verdict() sets INCOMPLETE when LONGEST_GAP > 3600 seconds or ENVREC != 0.
+
+At snapshot 2026-11-18 15:41:59 +07:
+- Start 2026-11-18 01:46:30 +07; target end 2026-11-19 01:46:30 +07; elapsed 14h00m03s.
+- 24 tick rows; RUN=23, OK=23, SKIP=1 (initial GitHub quota below 30), FAIL=0.
+- ENVREC=1, ENVFAIL=0, REBOOTS=0, PIDCHG=0.
+- Longest inter-tick gap = 6,935 seconds / 115.58 minutes; another gap = 3,888 seconds / 64.80 minutes; configured maximum = 3,600 seconds.
+- Driver-formula unobserved_s = 9,700.
+- Thus two independent hard INCOMPLETE conditions are already true. Further ticks cannot reverse this historical result. The 24-hour window had not yet ended at snapshot time; final driver output should still be retained as end-of-window evidence, but this run must not be counted as PASS.
+
+No tick, counter, log, service, or production state was modified. The original Soak5 run was left undisturbed. A new Soak run needs a fresh evidence directory after resolving Termux process-tree restart/suspend stability; it must satisfy both zero recovered environment restarts and every gap <=3600 seconds.
+
+## 69. Addendum 2026-11-18 +07 — G6 staging cutover, restore and rollback rehearsal VERIFIED
+
+The earlier ledger statement that G6 was prepared but NOT EXECUTED is superseded by the post-merge device rehearsal:
+- Candidate source commit 6f6cb96d3120c4d06a7d6def3b37a1953a448d60 built reproducibly as release 6e6f5f288f88f5d03519875ad5fed4da84006f72db56c67c487d65be03c275b8.
+- Production release remained 030a88d534bdec086c10b87a4732322d72791260178c1129b0538bb3b42bc7d5.
+- R0 PASS, candidate SWITCH_OK, J2 CLOSED_VERIFIED, J1 ANSWERED_NO_ACTION, restore RESTORED, controlled TERM interruption ROLLBACK_READY_VERIFIED, R2 PASS, REHEARSAL_PASS.
+- Production snapshot diff is 0 bytes.
+- On-device SHA256SUMS verified every listed item (30/30).
+- Staging supervisor and port were torn down after the rehearsal.
+
+This closes G6 staging rehearsal only. It does not authorize a production cutover; production deployment remains subject to the owner's separate explicit approval. Original evidence remains at $HOME/hg-staging-postmerge-20261118/rehearsal-20261117T225455Z/.
+
+## 70. Addendum 2026-11-18 +07 — G7-CI emulator acceptance verified; real-device G7 remains blocked
+
+- PR #119 “Qualify HG Android Broker cross-UID Binder boundary on the CI emulator (G7-CI)” merged 2026-11-12T21:00:24Z with commit cfe376c0f7fca49f9ec50a345a6eab6203569463.
+- Its broker-build-unit, emulator-negative-binder, MAEP Python 3.13/3.14 and RT-06 anchor Python 3.13/3.14 checks all report SUCCESS.
+- PR #194 merged 2026-11-13T03:32:16Z with commit 94344cd410ed6e31f4a2c4734bc96cf8e94d0a3c and corrected the real-device acceptance record.
+- G7-CI is therefore VERIFIED as emulator-only qualification. It is not real-device qualification and does not prove a physical Termux process can invoke the Broker's Binder API across distinct Android UIDs.
+- Real-device G7 remains BLOCKED: a Termux-side client, owner-authorized APK install/pairing, release-signing key access, and distinct-UID positive/negative Binder evidence are still missing.
+
+## 71. Addendum 2026-11-18 +07 — G3-1 root-owned SQLite oracle now exercised by CI
+
+- The root-only test is maep.tests.test_sqlite_nofollow.SQLiteNoFollowTests.test_rejects_directory_owned_by_another_user. Previously the ordinary MAEP runner executed with a non-root UID and skipped this test.
+- Draft PR #206 (test(g3): run root-only SQLite ownership oracle in CI), branch ci/g3-root-owned-dir-oracle-20261118, head bb970600c6d80cfea974e1dc63571ecbb3593cb5, adds a separate root-owned-dir-oracle job under sudo for Python 3.13 and 3.14. It runs only the root-specific test, not the full suite as root.
+- On the PR pull_request workflow run 44272376532 and push workflow run 44272334816, the full MAEP Python 3.13 and 3.14 jobs all report SUCCESS; both root-only matrix legs on each event also report SUCCESS. RT-06 anchor Python 3.13/3.14 reports SUCCESS. Root-job logs explicitly show the named test ... ok, Ran 1 test, OK on both Python versions; it was executed as root, not skipped.
+- This provides the missing G3-1 CI coverage. Main integration remains pending because PR #206 is Draft/unmerged; do not claim the root job has already landed on main.
+
+## 66. Addendum 2026-11-19 22:18 +07 onward (owner mission *HG — Master Autonomous Completion V2.0*, cloud session) — PR #204 real-Chromium qualification
+
+**Baseline. FACT, 2026-11-19 +07:** `main` = `13a56be` (#203), CI green on 3.13/3.14. Open PRs #204/#205/#206 (draft), #77 (HOLD), #64 (DEFERRED_V2). The phone's Desktop Commander device was offline (last seen ~17 min before the session), so no device, production or staging action was taken; production stays on `030a88d5` and is UNVERIFIED in this session.
+
+**Finding (WS-13, P2).** §65 qualified the UI with JSDOM only. JSDOM computes no layout, so it cannot see that an element is hidden. In real Chromium (Chrome for Testing 153, Playwright 1.63, cloud x86_64, Python 3.13.18) `python -m hg.tests.ui_browser_e2e` failed on PR head `e89434a`: the new step clicked the bottom navigation while the Chat screen was active, and Chat hides the bottom navigation by design (`data-hide-bottom-nav="true"`, unchanged since `main`). After that, `[data-nav-target=models]` matched two buttons (home and tools) and the first one was hidden. On `main` the same tool passes 14/14 checks.
+
+**Root cause.** The defect is in the test's navigation path, not in the product: an owner leaves Chat with the back button, and the hidden bottom navigation is intended. No UI code is changed.
+
+**Change (test-only, `hg/tests/ui_browser_e2e.py`, not collected by unittest discovery).**
+- Leave Chat through the back button and assert that Chat hides the bottom navigation and that home shows it again.
+- Scope the Model button to `#screen-tools`.
+- Add three security checks: an untrusted note containing `<img onerror>`/`<script>` renders as text with no `img` or `script` element; the token never appears in any request URL; the token is not stored in cookies or localStorage. The token stays in sessionStorage by design.
+
+**Evidence** (`docs/evidence/HG-UI-STABILIZATION-20261118/`, SHA256SUMS updated):
+- `ui-browser-chromium-report.json`: **25/25 PASS**, including no CSP violations, same-origin requests only, `/v1/model` = `CHƯA ĐỦ ĐIỀU KIỆN` without `VERIFIED_LISTENER`, and 0 inference calls from the model screen.
+- `ui-browser-mutation-innerhtml-report.json`: mutation check. With `textContent` replaced by `innerHTML` for note content, the run FAILS on `untrusted_note_rendered_as_text`, `no_unexpected_console_errors` and `no_csp_violations`. `app.js` was restored afterwards with an empty diff.
+- The focused suites `hg.tests.test_http_ui_chat` and `hg.tests.test_chat_service` passed: 53 tests OK with `-W error::ResourceWarning`.
+- Backend review: `/v1/notes`, `/v1/tools`, `/v1/model` and `/v1/notes/search` are all routed after `_authenticate()`, which uses a constant-time compare, and each has a 401 negative test.
+
+**Main baseline (cloud, `13a56be`, Python 3.13.18, root):**
+
+| Suite | Result |
+|---|---|
+| MAEP | 385 OK |
+| HG | 1,030 OK (6 root-only skips) |
+| Hooks | 42 OK |
+| Selfcheck | PASS |
+| Bench | PASS |
+| Release build | Reproducible twice; verify VERIFIED, release id `10a1710e…` (cloud zlib), tree `9cb74a45` |
+
+The 6 root-only skips were rerun as uid `nobody` (`test_deploy_scripts`, `test_fs_write_permission_oracle`, `test_release`): 68 tests OK, 0 skips.
+
+**Not closed here:**
+- The UI was not checked in a browser on the phone itself.
+- Soak 5 stays INCOMPLETE (§65).
+- L5/RT-06 stays BLOCKED.
+- No GO-LIVE.
+
+## 67. Addendum 2026-11-19 23:53 +07 onward (owner decisions D-01/D-02) — PR #204 merged; P3 Strategy C (single start entrypoint)
+
+**D-01.** PR #204 was squash-merged with head `027b450` pinned. All six owner conditions were verified first: repository, PR, head, base `main` = `13a56be`, CI 6/6 green with 0 required reviews, and `recovery/main-pre-204-20261119` → `13a56be`. Merge commit `47e076e` has parent `13a56be`. CI on `main` `47e076e` (run 44571342307): unittest 3.13/3.14 success.
+
+**Finding (P0, R-01).** Device forensics on 2026-11-19 (`stt/hg-master-completion-v2-20261119`, `RUNTIME_BASELINE.md`):
+- production was down for ≤ 19.7 h on the same boot;
+- availability was ≥ 35 % over 118 h;
+- every recovery came from the owner opening Termux;
+- the JobScheduler guard has not run since 2026-11-18 15:18.
+
+**Root cause (CONFIRMED).**
+- The profile.d hook from termux-services 0.13 starts `service-daemon` from every login shell. It holds no lock, has no proof that the supervisor is absent, and takes no wake lock.
+- The Termux:Boot path does take the wake lock.
+- `service-daemon` was read on the device: `start-stop-daemon -S -b -m -p $PREFIX/var/run/service-daemon.pid -x runsvdir -- "$SVDIR"`.
+
+**Change (PR #207, admission record in the PR):**
+- `deploy/termux/hg-ensure-services.sh`: one flock; wake lock on every path; start only when /proc proves absence; fail-closed; bounded log.
+- Two hooks, `hg-start-services.{profile,boot}.sh`, each with a fallback to the old behaviour.
+- `hg/tests/test_ensure_services.py`: 18 tests.
+
+**Tests.**
+- The 16 fake-command tests failed before the script existed.
+- The real-device drill found a procfs defect: files report size 0, so `-s` fails. The 2 real-/proc tests fail on `f372008` for that reason.
+- After the fix, 18/18 OK with ResourceWarning as error, also as uid `nobody`. `test_deploy_scripts`: 43 OK.
+
+**Device drill (staging):** see `docs/evidence/HG-P3-STRATEGY-C-20261119/DEVICE-DRILL.md`. A/B/C/E/F VERIFIED; production unchanged (`1e633cfc…` before = after).
+
+**Limit:** D, Android killing the whole Termux tree on the same boot, is **BLOCKED_WITH_TECHNICAL_EVIDENCE**. No trigger runs the entrypoint, and this PR does not claim to fix it.
+
+**Install:** after merge, on the phone. Back up both hooks first (sha256, mode, mtime). Production release, service definitions, config and data stay unchanged.
+
+## 72. Addendum 2026-11-22 02:02 +07 onward (owner mission *HG — Autonomous Stabilization & Completion V1.0*) — Phase 0 baseline; P3 forensic events (F-EV-1)
+
+**Baseline (OBSERVED 02:03–02:40 +07, read-only).**
+- Source and device:
+  - `main` `2201ab9`.
+  - Device PKC110, Android 17, uid 10460, boot id `1b823ef0…`, uptime 5 d 9 h.
+- Production:
+  - One runsvdir (pid 3203), started 2026-11-22 00:50:09.
+  - Release pointer `030a88d5…`.
+  - `/v1/health/live` 200 LIVE; `/v1/health/ready` 200 READY, release `030a88d5…` (production token, loopback).
+- Installed entrypoints match `main` byte for byte (`3acc0785…`, `e1fd7e2e…`, `618f5856…`).
+- Worktrees: 43 in total, 24 dirty, 429 dirty entries; unchanged from P1.
+- Preservation manifest: `~/hg-evidence/P0-BASELINE-20261122/` (`WORKTREE_PRESERVATION_MANIFEST.json` `4b388f43…`, `PRODUCTION_BASELINE.json` `12925719…`).
+- Open PRs:
+  - #205 and #206 are drafts: #205's L5 gate is red and it stays with #77 under D2; #206 is G3-1, deferred.
+  - #77 HOLD; #64 DEFERRED_V2.
+  - No PR is eligible to merge.
+
+**Findings.**
+- **F-P3D-1 (P0).** Android kills the whole Termux tree on the same boot.
+  - 54 unclean svlogd ends (`*.u`) for `hg-runtime`.
+  - The last two recoveries were both `source=profile`: 2026-11-21 03:35 and 2026-11-22 00:50.
+  - Latest outage ≈ 14 h 50 m (INFERENCE): from the guard's last CHECK_OK (21/11 09:55) to STARTED (22/11 00:50).
+- **F-P3D-2.** Job 4211 does run, every ~15 min, but only while the Termux tree is alive.
+  - It was silent in every outage, so it shares the failure domain.
+  - Correction to §67: the guard has run since 2026-11-18 15:18 (21/11 03:39–09:55 and 22/11 01:48 onward).
+- **F-P3D-3.** The phantom-process flag cannot be read from the app uid (SecurityException): UNKNOWN.
+  - Which mechanism kills the tree (phantom killer, LMK or ColorOS freeze) is not distinguishable without logcat, `/proc/stat` or `/proc/pressure`.
+  - Owner action: the Android 14+ developer option "Disable child process restrictions", plus handoff §B.
+- **F-EV-1 (P1).** Every login shell adds two routine lines to the 16 KiB `ensure.log`. This includes each Desktop Commander call.
+  - ABSENT_VERIFIED, STARTED and boot-path lines roll out after ~80 shells.
+  - That destroys P3 evidence and the D-03 post-reboot evidence before it is read.
+
+**Change.**
+- `deploy/termux/hg-ensure-services.sh` adds `events.log` (0600, 64 KiB → 32 KiB). It receives every line except the routine profile lines (WAKE_LOCK_OK/PRESENT/SKIP with `--source profile`).
+- `ensure.log` is unchanged, and so are the start logic, the lock and the fail-closed rules.
+
+**Tests (Python 3.13.18, dash).**
+- `hg.tests.test_ensure_services`: 4 new tests failed before the fix for the expected reason (no `events.log`). The precondition reproduces the defect: STARTED is gone from `ensure.log`. 22/22 OK after the fix, with `-W error::ResourceWarning`.
+- Full suites:
+  - `maep/tests` 385 OK;
+  - `hg/tests` 1067 OK (6 skipped);
+  - `.claude/hooks` 42 OK.
+
+**Install** (D-02 conditions, after merge):
+- Back up the installed script first (sha256, mode, mtime).
+- Copy the merged file and verify its sha256.
+- Hooks, production release, service definitions, config and data stay unchanged.
+
+**Status:**
+- F-EV-1: fixed once installed.
+- P3-B: NOT_RUN, waiting for the owner's reboot.
+- P3-D: BLOCKED_WITH_TECHNICAL_EVIDENCE.
+- Schedule: `HG_AUTONOMOUS_STABILIZATION_SCHEDULE_V1.md`; R1–R14 rows in `HG_MASTER_COMPLETION_LEDGER_V1.csv`.

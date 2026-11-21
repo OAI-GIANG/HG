@@ -420,7 +420,7 @@ class HGHTTPServer(http.server.ThreadingHTTPServer):
                  release_report=None, trust_report=None, idempotency_path=None, writer_session=None,
                  request_timeout_seconds=REQUEST_TIMEOUT_SECONDS,
                  request_deadline_seconds=REQUEST_DEADLINE_SECONDS, max_connections=MAX_CONNECTIONS,
-                 chat=None, ui_dir=UI_DIR):
+                 chat=None, notes_home=None, ui_dir=UI_DIR):
         if host != "127.0.0.1":
             raise ValueError("HG HTTP API must bind to IPv4 loopback 127.0.0.1")
         if isinstance(port, bool) or not isinstance(port, int) or not (0 <= port <= 65535):
@@ -451,6 +451,7 @@ class HGHTTPServer(http.server.ThreadingHTTPServer):
         self.idempotency = (IdempotencyStore(idempotency_path, writer_session=writer_session)
                             if idempotency_path else None)
         self.chat = chat                       # hg.chat.ChatService in production (hg/service.py)
+        self.notes_home = Path(notes_home) if notes_home is not None else None
         self.ui_assets = load_ui_assets(ui_dir) if ui_dir is not None else {}
         self._request_lock = threading.Lock()
         self.request_timeout_seconds = float(request_timeout_seconds)
@@ -646,6 +647,32 @@ class HGHTTPServer(http.server.ThreadingHTTPServer):
                     if path == "/v1/health/live":
                         self._send(200, {"status": "LIVE", "repository": "OAI-GIANG/HG"})
                         return
+                    if path == "/v1/notes":
+                        self._list_notes()
+                        return
+                    if path == "/v1/tools":
+                        gateway = getattr(outer.runtime, "gateway", None)
+                        if gateway is None:
+                            raise HTTPBoundaryError(503, "tools_unavailable", "tool registry is unavailable")
+                        self._send(200, {
+                            "tools": gateway.registry(),
+                            "http_exposed": ["fs.read", "fs.write"],
+                            "http_scope": ["out/"],
+                        })
+                        return
+                    if path == "/v1/model":
+                        status_reader = getattr(outer.chat, "model_status", None)
+                        if not callable(status_reader):
+                            raise HTTPBoundaryError(503, "model_unavailable", "read-only model status is not configured")
+                        try:
+                            status = status_reader()
+                        except HTTPBoundaryError:
+                            raise
+                        except Exception as exc:
+                            raise HTTPBoundaryError(503, "model_status_unavailable",
+                                                    "model status could not be verified") from exc
+                        self._send(200, status)
+                        return
                     if path == "/v1/integrity":
                         try:
                             release = outer.release_report()
@@ -691,6 +718,72 @@ class HGHTTPServer(http.server.ThreadingHTTPServer):
                 except Exception:
                     self._send(500, {"error": "internal_error"})
 
+            def _notes(self):
+                """Read-only note access, using the same private assistant home as ChatService."""
+                if outer.notes_home is None:
+                    raise HTTPBoundaryError(503, "notes_unavailable", "assistant notes are not configured")
+                try:
+                    from hg.assistant.home import ensure_home
+                    from hg.assistant.notes import Notebook
+                    home = ensure_home(outer.notes_home, create=False)
+                    return Notebook(home)
+                except Exception as exc:
+                    raise HTTPBoundaryError(503, "notes_unavailable",
+                                            "assistant notes are not available for read-only access") from exc
+
+            @staticmethod
+            def _note_view(record, *, score=None, matched=None):
+                result = {
+                    "memory_id": record.get("memory_id"),
+                    "subject": record.get("subject"),
+                    "content": record.get("content"),
+                    "created_at": record.get("created_at"),
+                    "status": record.get("status"),
+                    "source": record.get("source"),
+                }
+                if score is not None:
+                    result["score"] = score
+                if matched is not None:
+                    result["matched"] = matched
+                return result
+
+            def _list_notes(self):
+                notebook = self._notes()
+                try:
+                    records = sorted(notebook.active(), key=lambda r: r.get("created_at", ""), reverse=True)
+                except Exception as exc:
+                    raise HTTPBoundaryError(503, "notes_unavailable",
+                                            "assistant notes could not be read safely") from exc
+                limit = 50
+                self._send(200, {
+                    "items": [self._note_view(r) for r in records[:limit]],
+                    "count": len(records),
+                    "returned": min(len(records), limit),
+                    "truncated": len(records) > limit,
+                })
+
+            def _search_notes(self):
+                payload = self._body()
+                if not isinstance(payload, dict) or set(payload) not in ({"query"}, {"query", "limit"}):
+                    raise HTTPBoundaryError(400, "invalid_request", "request must contain query and optional limit")
+                query = payload.get("query")
+                limit = payload.get("limit", 8)
+                if not isinstance(query, str) or not query.strip() or len(query) > 2000:
+                    raise HTTPBoundaryError(400, "invalid_query", "query must contain 1..2000 characters")
+                if type(limit) is not int or not 1 <= limit <= 20:
+                    raise HTTPBoundaryError(400, "invalid_limit", "limit must be an integer in 1..20")
+                notebook = self._notes()
+                try:
+                    hits = notebook.search(query.strip(), limit=limit)
+                except Exception as exc:
+                    raise HTTPBoundaryError(503, "notes_search_unavailable",
+                                            "assistant note search is unavailable") from exc
+                self._send(200, {
+                    "query": query.strip(),
+                    "results": [self._note_view(r, score=r.get("score"), matched=r.get("matched")) for r in hits],
+                    "count": len(hits),
+                })
+
             def _chat(self):
                 """POST /v1/chat (contract revision 2026-10-29): one message -> outer.chat -> answer."""
                 if outer.chat is None:
@@ -719,6 +812,9 @@ class HGHTTPServer(http.server.ThreadingHTTPServer):
                     path = self._origin_path()
                     if path == "/v1/chat":
                         self._chat()
+                        return
+                    if path == "/v1/notes/search":
+                        self._search_notes()
                         return
                     if path != "/v1/tasks":
                         raise HTTPBoundaryError(404, "not_found", "route not found")

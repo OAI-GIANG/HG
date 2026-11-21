@@ -153,3 +153,50 @@ main { flex: 1; padding: 1rem; max-width: 960px; width: 100%; margin: 0 auto; pa
   font-size: 0.85rem; background: var(--bg-elevated); border-left: 4px solid var(--accent-primary);
 }
 .status-banner.error { border-left-color: var(--status-err); }
+
+/* Read-only memory and capability registry cards. */
+.notes-list { display: flex; flex-direction: column; gap: 0.65rem; min-width: 0; }
+.note-card {
+  min-width: 0;
+  padding: 0.8rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.65rem;
+  background: var(--bg-primary);
+}
+.note-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+  margin-bottom: 0.4rem;
+}
+.note-card-title { overflow-wrap: anywhere; }
+.note-card-content { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.9rem; }
+.tiny { display: block; margin-top: 0.35rem; font-size: 0.7rem; color: var(--text-secondary); overflow-wrap: anywhere; }
+#search-notes-input { font-family: var(--font-sans); }
+:where(button, input, textarea, select, a, [tabindex]):focus-visible {
+  outline: 3px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+.btn, .nav-item { min-height: 40px; }
+.btn:hover { border-color: var(--accent-primary); }
+@media (max-width: 520px) {
+  main { padding: 0.65rem; padding-bottom: 5.5rem; }
+  .card { padding: 0.8rem; border-radius: 0.65rem; }
+  .top-bar { padding-left: 0.65rem; padding-right: 0.65rem; }
+  .top-bar-left, .top-bar-right { gap: 0.35rem; }
+  .top-bar-right { margin-left: auto; }
+  .nav-item { padding-left: 0.35rem; padding-right: 0.35rem; }
+  .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .chat-composer { align-items: stretch; }
+  .chat-composer .btn { min-width: 4rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

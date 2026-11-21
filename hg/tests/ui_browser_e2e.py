@@ -54,6 +54,8 @@ def main(out_dir):
                                                   "model_digest": DIGEST, "timeout_s": 10}), encoding="utf-8")
     (home / "config.json").chmod(0o600)
     Notebook(home).add("Xe máy thay dầu lần cuối ngày 2026-09-15 ở mốc 18.200 km.", origin="test")
+    xss_note = "Mẫu kiểm thử hiển thị <img src=x onerror=alert(1)><script>alert(2)</script> kết thúc."
+    Notebook(home).add(xss_note, origin="test")              # untrusted text must render as text
     clock = Clock()
     authority = CanonicalManifest.from_github(http_get=FakeGitHub().get, max_age_s=0, clock=clock)
     runtime = build_runtime(tmp / "state", [], authority=authority, issue_task_grants=True, clock=clock)
@@ -61,7 +63,7 @@ def main(out_dir):
                           release_report=lambda: {"result": "VERIFIED", "release_id": "e" * 64},
                           trust_report=lambda: {"result": "LOADED", "provenance": {"commit": "c" * 40}},
                           idempotency_path=tmp / "state" / "idem.sqlite3",
-                          chat=ChatService(home, release_id="e" * 64))
+                          chat=ChatService(home, release_id="e" * 64), notes_home=home)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     origin = f"http://127.0.0.1:{server.address[1]}"
     try:
@@ -94,6 +96,26 @@ def main(out_dir):
 
             page.click("#back-btn")                                   # settings -> chat (navigation stack)
             check("back_returns_to_chat", page.locator("#screen-chat.active").count() == 1)
+
+            # The chat screen hides the bottom nav by design (data-hide-bottom-nav), so a real browser
+            # cannot click it there; leave chat the way an owner would: back to the home screen.
+            check("chat_hides_bottom_nav", page.locator("#bottom-nav").is_hidden())
+            page.click("#back-btn")                                   # chat -> home (navigation stack)
+            check("back_returns_to_home_with_nav",
+                  page.locator("#screen-home.active").count() == 1 and page.locator("#bottom-nav").is_visible())
+            page.click("#bottom-nav [data-root-nav=tools]")
+            page.click("#screen-tools [data-nav-target=models]")   # home also has a Model button
+            page.locator("#model-summary", has_text="qwen3:1.7b").wait_for(timeout=10000)
+            check("model_screen_reports_pinned_model_and_listener",
+                  "qwen3:1.7b" in page.inner_text("#model-info")
+                  and "VERIFIED_PROCESS" not in page.inner_text("#model-info")
+                  and page.inner_text("#model-status") == "CHƯA ĐỦ ĐIỀU KIỆN",
+                  page.inner_text("#model-info"))
+            check("model_status_does_not_run_inference", len(ollama.chat_requests) == 0,
+                  len(ollama.chat_requests))
+            page.click("#bottom-nav [data-root-nav=chat]")
+            check("model_navigation_returns_to_chat", page.locator("#screen-chat.active").count() == 1)
+
             page.fill("#chat-input", "Thủ đô của Pháp là gì?")
             page.press("#chat-input", "Enter")
             check("enter_does_not_send", page.locator(".msg").count() == 0 and "\n" in page.input_value("#chat-input"))
@@ -117,6 +139,38 @@ def main(out_dir):
             check("note_answer_labelled_NOTE", label == "NOTE" and "[N1·" in text and "18.200 km" in text, text)
             page.screenshot(path=str(out / "ui-2-chat.png"), full_page=True)
 
+            page.click("#avatar-settings-btn")
+            page.click("#bottom-nav [data-root-nav=tools]")
+            page.click("[data-nav-target=memory]")
+            page.locator("#notes-output", has_text="18.200 km").wait_for(timeout=10000)
+            check("memory_screen_lists_active_notes",
+                  "18.200 km" in page.inner_text("#notes-output")
+                  and "2 ghi chú đang hoạt động" in page.inner_text("#notes-count"),
+                  page.inner_text("#notes-output"))
+            check("untrusted_note_rendered_as_text",
+                  "<img src=x onerror=alert(1)>" in page.inner_text("#notes-output")
+                  and page.locator("#notes-output img, #notes-output script").count() == 0,
+                  page.inner_text("#notes-output"))
+            page.click("#bottom-nav [data-root-nav=tools]")
+            page.click("[data-nav-target=search]")
+            page.fill("#search-notes-input", "thay dầu")
+            page.click("#btn-search-notes")
+            page.locator("#search-output", has_text="18.200 km").wait_for(timeout=10000)
+            check("search_screen_retrieves_note",
+                  "18.200 km" in page.inner_text("#search-output"), page.inner_text("#search-output"))
+            page.click("[data-nav-target=tools]")
+            page.click("#btn-load-tools")
+            page.locator("#tools-output", has_text="fs.write").wait_for(timeout=10000)
+            check("tools_screen_shows_gateway_registry",
+                  "fs.read" in page.inner_text("#tools-output")
+                  and "fs.write" in page.inner_text("#tools-output")
+                  and "out/" in page.inner_text("#tools-output"),
+                  page.inner_text("#tools-output"))
+            page.screenshot(path=str(out / "ui-3-memory-tools-search.png"), full_page=True)
+
+            check("token_never_in_url", all(token not in r["url"] for r in report["requests"]))
+            storage = json.dumps(page.context.storage_state(), ensure_ascii=False)
+            check("token_not_in_cookies_or_local_storage", token not in storage)
             check("all_requests_same_origin", all(r["url"].startswith(origin + "/") for r in report["requests"]),
                   sorted({r["url"].split("/")[2] for r in report["requests"]}))
             chat_posts = [r for r in report["requests"] if r["method"] == "POST" and r["url"] == origin + "/v1/chat"]

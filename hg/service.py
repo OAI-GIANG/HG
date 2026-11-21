@@ -180,12 +180,13 @@ def create_service(config, *, token, authority, release_report, assistant_home=N
     runtime = build_runtime(state, [], authority=authority, issue_task_grants=True, memory=True,
                             verifiers={"AC-READBACK": planned_write_readback_verifier(state / "root")},
                             writer_session=writer_session, recover_interrupted=True)
-    chat = ChatService(assistant_home or default_home(), release_id=config["release_id"])
+    chat_home = assistant_home or default_home()
+    chat = ChatService(chat_home, release_id=config["release_id"])
     return HGHTTPServer(runtime=runtime, token=token, host=config["host"], port=config["port"],
                         max_body_bytes=config["max_body_bytes"], release_report=release_report,
                         trust_report=lambda: trust_report(authority),
                         idempotency_path=state / "http-idempotency.sqlite3", chat=chat,
-                        writer_session=writer_session)
+                        notes_home=chat_home, writer_session=writer_session)
 
 
 def _start_liveness(state_dir: Path, release_id: str):

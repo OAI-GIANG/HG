@@ -1,0 +1,181 @@
+{
+  "checks": {
+    "page_loads_without_token": {
+      "ok": true,
+      "detail": "HG — trợ lý trên điện thoại (OAI-GIANG/HG)"
+    },
+    "no_token_refuses_to_send": {
+      "ok": true,
+      "detail": ""
+    },
+    "wrong_token_shows_401": {
+      "ok": true,
+      "detail": "Token sai hoặc thiếu (401). Vào Kết nối, dán đúng token của hg-runtime. [unauthorized]"
+    },
+    "right_token_health_ready": {
+      "ok": true,
+      "detail": "Token đúng, dịch vụ sẵn sàng."
+    },
+    "stale_warning_cleared_after_connect": {
+      "ok": true,
+      "detail": ""
+    },
+    "back_returns_to_chat": {
+      "ok": true,
+      "detail": ""
+    },
+    "chat_hides_bottom_nav": {
+      "ok": true,
+      "detail": ""
+    },
+    "back_returns_to_home_with_nav": {
+      "ok": true,
+      "detail": ""
+    },
+    "model_screen_reports_pinned_model_and_listener": {
+      "ok": true,
+      "detail": "{\n  \"configured\": true,\n  \"listener\": {\n    \"reason\": \"ollama_service_dir not configured\",\n    \"status\": \"UNVERIFIED\"\n  },\n  \"model\": \"qwen3:1.7b\",\n  \"model_check\": {\n    \"digest\": \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n    \"model\": \"qwen3:1.7b\",\n    \"pinned\": true,\n    \"size\": 1234,\n    \"status\": \"READY\"\n  },\n  \"pinned\": true,\n  \"policy\": \"local model only (owner decision Q5); no paid provider on this route\",\n  \"provider\": \"ollama\",\n  \"release_id\": \"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\",\n  \"status\": \"NOT_READY\"\n}"
+    },
+    "model_status_does_not_run_inference": {
+      "ok": true,
+      "detail": 0
+    },
+    "model_navigation_returns_to_chat": {
+      "ok": true,
+      "detail": ""
+    },
+    "enter_does_not_send": {
+      "ok": true,
+      "detail": ""
+    },
+    "general_answer_rendered": {
+      "ok": true,
+      "detail": "HG\nParis là thủ đô của Pháp.[?]\nANSWERED · ollama:qwen3:1.7b · 0.0 giây · 0 câu có nguồn · 1 câu model tự nói · biên nhận 74360833"
+    },
+    "note_answer_labelled_NOTE": {
+      "ok": true,
+      "detail": "HG\nBạn thay dầu xe lần cuối ngày 2026-09-15 ở mốc 18.200 km.[N1·19/11]\nN1 (19/11): Xe máy thay dầu lần cuối ngày 2026-09-15 ở mốc 18.200 km.\nANSWERED · ollama:qwen3:1.7b · 0.0 giây · 1 câu có nguồn · 0 câu model tự nói · biên nhận 38941297"
+    },
+    "memory_screen_lists_active_notes": {
+      "ok": true,
+      "detail": "auto:365bda8b826b\n19/11\n\nMẫu kiểm thử hiển thị  kết thúc.\n\nM-000002-144e0e\n\nauto:2673d9a4c9ef\n19/11\n\nXe máy thay dầu lần cuối ngày 2026-09-15 ở mốc 18.200 km.\n\nM-000001-ae6d6c"
+    },
+    "untrusted_note_rendered_as_text": {
+      "ok": false,
+      "detail": "auto:365bda8b826b\n19/11\n\nMẫu kiểm thử hiển thị  kết thúc.\n\nM-000002-144e0e\n\nauto:2673d9a4c9ef\n19/11\n\nXe máy thay dầu lần cuối ngày 2026-09-15 ở mốc 18.200 km.\n\nM-000001-ae6d6c"
+    },
+    "search_screen_retrieves_note": {
+      "ok": true,
+      "detail": "auto:2673d9a4c9ef\n19/11\n\nXe máy thay dầu lần cuối ngày 2026-09-15 ở mốc 18.200 km.\n\nM-000001-ae6d6c"
+    },
+    "tools_screen_shows_gateway_registry": {
+      "ok": true,
+      "detail": "fs.write\nWRITE · MEDIUM\n\nAtomically write UTF-8 text to a file under the adapter root.\n\nPhiên bản 1.2 · idempotent · tham số: content, path\n\nfs.read\nREAD · LOW\n\nRead a UTF-8 text file (at most MAX_BYTES) under the adapter root.\n\nPhiên bản 1.1 · idempotent · tham số: path\n\ncode.search\nREAD · LOW\n\nLiteral text search in UTF-8 files under a path (skips VCS/cache dirs).\n\nPhiên bản 1.1 · idempotent · tham số: path, pattern\n\ncode.symbols\nREAD · LOW\n\nIndex Python classes/functions (with qualified names and lines) and called names, via ast.\n\nPhiên bản 1.2 · idempotent · tham số: path\n\ncode.diff\nREAD · LOW\n\nUnified diff of a file under the root against provided text (the file is only read).\n\nPhiên bản 1.1 · idempotent · tham số: against, path\n\ntest.run\nEXECUTE · HIGH\n\nRun `python -m unittest discover` on a directory under the root (executes code).\n\nPhiên bản 1.1 · không idempotent · tham số: path\n\nurl.read\nREAD · LOW\n\nHTTP(S) GET of one URL; the whole body (at most 2 MB) or a known failure; UTF-8 text returned exactly.\n\nPhiên bản 1.1 · idempotent · tham số: url\n\nHTTP cho phép: fs.read, fs.write · phạm vi: out/"
+    },
+    "token_never_in_url": {
+      "ok": true,
+      "detail": ""
+    },
+    "token_not_in_cookies_or_local_storage": {
+      "ok": true,
+      "detail": ""
+    },
+    "all_requests_same_origin": {
+      "ok": true,
+      "detail": [
+        "127.0.0.1:43479"
+      ]
+    },
+    "chat_posts_reached_v1_chat": {
+      "ok": true,
+      "detail": 2
+    },
+    "model_called_twice": {
+      "ok": true,
+      "detail": 2
+    },
+    "no_unexpected_console_errors": {
+      "ok": false,
+      "detail": [
+        {
+          "type": "error",
+          "text": "Executing inline event handler violates the following Content Security Policy directive 'script-src 'self''. Either the 'unsafe-inline' keyword, a hash ('sha256-...'), or a nonce ('nonce-...') is required to enable inline execution. Note that hashes do not apply to event handlers, style attributes and javascript: navigations unless the 'unsafe-hashes' keyword is present. The action has been blocked."
+        }
+      ]
+    },
+    "no_csp_violations": {
+      "ok": false,
+      "detail": ""
+    }
+  },
+  "requests": [
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:43479/ui/"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:43479/ui/styles.css"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:43479/ui/app.js"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:43479/v1/health/ready"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:43479/v1/health/ready"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:43479/v1/tools"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:43479/v1/model"
+    },
+    {
+      "method": "POST",
+      "url": "http://127.0.0.1:43479/v1/chat"
+    },
+    {
+      "method": "POST",
+      "url": "http://127.0.0.1:43479/v1/chat"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:43479/v1/notes"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:43479/ui/x"
+    },
+    {
+      "method": "POST",
+      "url": "http://127.0.0.1:43479/v1/notes/search"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:43479/v1/tools"
+    }
+  ],
+  "console": [
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "type": "error",
+      "text": "Executing inline event handler violates the following Content Security Policy directive 'script-src 'self''. Either the 'unsafe-inline' keyword, a hash ('sha256-...'), or a nonce ('nonce-...') is required to enable inline execution. Note that hashes do not apply to event handlers, style attributes and javascript: navigations unless the 'unsafe-hashes' keyword is present. The action has been blocked."
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    }
+  ],
+  "csp_violations": [],
+  "result": "FAIL"
+}
