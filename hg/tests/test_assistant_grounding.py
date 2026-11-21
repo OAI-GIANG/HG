@@ -130,6 +130,70 @@ class SentenceCheckTests(unittest.TestCase):
         self.assertEqual(r["label"], "NONE")
 
 
+class V4FailureRootCauseTests(unittest.TestCase):
+    """AC-A6 v4 FAIL (2026-11-22, bc54040, ledger section 75): 14 answerable questions were abstained.
+
+    RC-1: the discriminative anchor treated question words ("bao" of "bao nhiêu", "tiền", "hết", "cỡ")
+    as topic, and "bao" folds onto "bảo" in sibling notes, so the right note was rejected.
+    RC-2: "ngày D tháng M" was not the same date as "D/M"; one- or two-digit keys kept their leading
+    zero ("09" != "9"). RC-4: discourse markers ("cụ thể", "chính xác", "đúng không") counted as topic.
+    Cases here are new examples, not v4 items."""
+
+    def test_question_words_are_not_discriminative_terms(self):
+        note = "Phí gửi xe tháng 10 là 150.000 đồng."
+        siblings = ["Bảo hiểm xe máy hết hạn tháng 3.", "Tiền chợ tuần này hết 900.000 đồng."]
+        for q in ("Phí gửi xe tháng 10 bao nhiêu tiền?", "Phi gui xe thang 10 het bao nhieu tien?",
+                  "Phí gửi xe tháng 10 là bao nhiêu?"):
+            with self.subTest(q=q):
+                self.assertIsNone(grounding.anchored(q, note, other_notes=siblings))
+
+    def test_size_question_with_sibling_still_discriminates_the_person(self):
+        bin_note = "Áo khoác của bé Bin cỡ 120, mua ở chợ Bến Thành."
+        na_note = "Áo khoác của bé Na cỡ 110, mua ở chợ Bến Thành."
+        q = "Áo khoác của bé Na cỡ bao nhiêu?"
+        self.assertIsNone(grounding.anchored(q, na_note, other_notes=[bin_note]))
+        self.assertIsNotNone(grounding.anchored(q, bin_note, other_notes=[na_note]))
+
+    def test_full_vietnamese_date_is_the_same_date_as_day_slash_month(self):
+        self.assertEqual(textvi.numbers("ngày 3 tháng 7"), {"--07-03"})
+        self.assertEqual(textvi.numbers("Ngay 3 thang 7 nam 2027"), {"2027-07-03"})
+        self.assertEqual(textvi.number_gap("tiêm ngày 3 tháng 7", "Bé tiêm phòng lúc 8 giờ ngày 03/07."), set())
+        self.assertEqual(textvi.number_gap("ngày 3 tháng 8", "ngày 03/07"), {"--08-03"})
+        self.assertIsNone(grounding.anchored("Bé tiêm phòng ngày 3 tháng 7 lúc mấy giờ?",
+                                             "Bé tiêm phòng lúc 8 giờ ngày 03/07 tại trạm y tế phường."))
+
+    def test_one_or_two_digit_keys_ignore_a_leading_zero_but_identifiers_do_not(self):
+        self.assertEqual(textvi.query_keys("tháng 8"), textvi.query_keys("tháng 08"))
+        self.assertIn("~8", textvi.document_keys("Tiền nước tháng 08 là 120.000 đồng."))
+        self.assertIsNone(grounding.anchored("Tiền nước tháng 8 là bao nhiêu?", "Tiền nước tháng 08 là 120.000 đồng."))
+        self.assertNotEqual(textvi.query_keys("mã 0420"), textvi.query_keys("mã 420"))
+
+    def test_discourse_markers_are_not_topic(self):
+        keys = textvi.topic_keys("Hẹn nha sĩ ngày 9 tháng 12 đúng không, cụ thể là mấy giờ?")
+        for k in ("đúng", "cụ", "thể", "ngày", "tháng"):
+            self.assertNotIn(k, keys)
+        self.assertIn("~9", keys)
+        self.assertNotIn("chính", textvi.topic_keys("Chính xác thì mật khẩu wifi nhà là gì?"))
+        # "cụ" alone is a person (great-grandparent) and stays a topic word.
+        self.assertIn("cụ", textvi.topic_keys("Sinh nhật cụ nội là ngày nào?"))
+
+    def test_kin_named_in_the_question_must_be_in_the_note(self):
+        """RC-5 (v4 u07): a note about one relative never answers for another (false NOTE)."""
+        ong_noi = "Ngày giỗ ông nội là 15/7 âm lịch."
+        ba_ngoai = "Ngày giỗ bà ngoại là 3/2 âm lịch."
+        q = "Ngày giỗ bà ngoại là ngày nào?"
+        self.assertIsNotNone(grounding.anchored(q, ong_noi))
+        self.assertIsNone(grounding.anchored(q, ba_ngoai, other_notes=[ong_noi]))
+        self.assertIsNotNone(grounding.anchored("Sinh nhật ông ngoại là ngày nào?", "Sinh nhật bố là ngày 14/8."))
+        wrong = grounding.check_sentence("Giỗ bà ngoại là ngày 15/7 âm lịch [N1].", {"N1": ong_noi}, question=q)
+        self.assertNotEqual(wrong["label"], "NOTE")
+        # Common synonyms on the note side still match: "má" is "mẹ", "ba"/"cha" are "bố".
+        self.assertIsNone(grounding.anchored("Số điện thoại của mẹ là gì?", "Số điện thoại của má là 0912 345 678."))
+        self.assertIsNone(grounding.anchored("Bố uống thuốc huyết áp lúc mấy giờ?", "Ba uống thuốc huyết áp lúc 7 giờ sáng."))
+        # "ông"/"bà" as a pronoun or title is not a kin requirement.
+        self.assertIsNone(grounding.anchored("Ông Tư hàng xóm số điện thoại là gì?",
+                                             "Số điện thoại ông Tư hàng xóm là 0903 111 222."))
+
 # AC-A2: fixed adversarial outputs. Each changes a number, date, name or negation of a note
 # while copying most of its words. HG must never label any of them NOTE.
 ADVERSARIAL = [

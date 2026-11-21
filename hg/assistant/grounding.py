@@ -157,6 +157,27 @@ def compare(sentence, note_text):
     return overlap, problems
 
 
+# Relatives a question can name (RC-5, AC-A6 v4 u07): like a proper name, the relative asked about must
+# be in the note. Each entry: the question form -> forms a note may use for the same person. Ambiguous
+# words stay out ("ba" is also "three", "chú"/"bác"/"cô" also "chú ý", "bác sĩ", "cô giáo").
+_KIN = {
+    "bố": ("bố", "ba", "cha", "tía"), "cha": ("bố", "ba", "cha", "tía"),
+    "mẹ": ("mẹ", "má", "mạ"), "vợ": ("vợ",), "chồng": ("chồng",),
+    "ông nội": ("ông nội",), "ông ngoại": ("ông ngoại",), "bà nội": ("bà nội",), "bà ngoại": ("bà ngoại",),
+}
+
+
+def _kin_gap(question, note_text):
+    """Relatives named in the question that the note does not name (as written, with diacritics)."""
+    q = " " + " ".join(textvi.words(question or "")) + " "
+    n = " " + " ".join(textvi.words(note_text or "")) + " "
+    missing = []
+    for kin, forms in _KIN.items():
+        if f" {kin} " in q and not any(f" {f} " in n for f in forms):
+            missing.append(kin)
+    return missing
+
+
 def anchored(question, note_text, *, other_notes=()):
     """Return missing discriminative topic terms, or None when this note is on-topic.
 
@@ -171,13 +192,19 @@ def anchored(question, note_text, *, other_notes=()):
     missing_numbers = textvi.number_gap(question or "", note_text)
     if missing_numbers:
         return "số " + ", ".join(sorted(missing_numbers))
+    missing_kin = _kin_gap(question, note_text)
+    if missing_kin:
+        return " ".join(missing_kin)
     other_keys = set()
     for other in other_notes or ():
         other_keys.update(textvi.document_keys(other))
     proper_names = _names(question or "")
     discriminative = []
-    for token in textvi.content_words(question or ""):
-        key = textvi.query_keys(token)[0]
+    # Only topic words discriminate. Question words, answer slots and discourse markers ("bao" of
+    # "bao nhiêu", "tiền" of "bao nhiêu tiền", "cỡ mấy") are not topic, and "bao" folds onto "bảo"
+    # of a sibling note (AC-A6 v4 FAIL, RC-1, ledger section 75).
+    for key in topic:
+        token = key[1:] if key.startswith("~") else key
         is_name = textvi.fold(token) in proper_names
         appears_elsewhere = key in other_keys
         if (is_name or appears_elsewhere) and key not in note_keys:

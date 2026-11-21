@@ -54,6 +54,10 @@ _SAFE_UNACCENTED_QUESTION = frozenset({"nhieu", "phai", "gom", "lam"})
 _SLOT_BEFORE = frozenset({"gì", "gi", "nào", "nao"})
 _SLOT_AFTER = frozenset({"mấy"})
 _TIME_INTERROGATIVE_HEADS = frozenset({"khi", "luc", "hoi", "gio"})
+# Discourse markers that frame a question but name no topic ("cụ thể là", "chính xác thì"). Only the
+# pair is dropped: "cụ" alone is a person (great-grandparent). Accented pairs match as written,
+# unaccented pairs only when both words were typed without diacritics.
+_DISCOURSE_PAIRS = frozenset({("cụ", "thể"), ("chính", "xác"), ("cu", "the"), ("chinh", "xac")})
 
 
 def nfc(text):
@@ -95,9 +99,16 @@ def content_words(text):
     return out
 
 
+def _canon_digits(word):
+    """A one- or two-digit number is a quantity or a date part, so '08' is '8' (as in numbers());
+    a longer zero-led run is an identifier and keeps its zeros ('0420' is not '420')."""
+    return str(int(word)) if word.isdigit() and len(word) <= 2 else word
+
+
 def _key(word):
     """An accented word matches only itself ('thủ' is not 'thứ'); a word typed without
     diacritics matches every accented form it could stand for ('thu' ~ 'thủ', 'thứ', 'thu')."""
+    word = _canon_digits(word)
     return word if word != fold(word) else "~" + word
 
 
@@ -122,9 +133,22 @@ def topic_keys(text):
                 drop.add(i + 2)
         if w in _SLOT_AFTER and i + 1 < len(raw):
             drop.add(i + 1)
+        # "ngày 12 tháng 4 (năm 2027)": the numbers carry the date (numbers() reads it as 12/04);
+        # a note may write "12/04", so "ngày", "tháng", "năm" of a full date are not topic words.
+        if (fold(w) == "ngay" and i + 3 < len(raw) and raw[i + 1].isdigit()
+                and fold(raw[i + 2]) == "thang" and raw[i + 3].isdigit()):
+            drop.update({i, i + 2})
+            if i + 5 < len(raw) and fold(raw[i + 4]) == "nam" and raw[i + 5].isdigit():
+                drop.add(i + 4)
+        if (w, nxt) in _DISCOURSE_PAIRS:
+            drop.update({i, i + 1})
+        if w == "đúng" and negations(nxt):          # tag question "..., đúng không?"
+            drop.add(i)
+    # "ông nội", "bà ngoại": a relative, not the pronoun "ông"/"bà" (RC-5, ledger section 75).
+    keep = {i for i, w in enumerate(raw) if w in ("ông", "bà") and i + 1 < len(raw) and raw[i + 1] in ("nội", "ngoại")}
     out = []
     for i, w in enumerate(raw):
-        if i in drop or is_stopword(w) or (len(w) == 1 and not w.isdigit()):
+        if i in drop or (is_stopword(w) and i not in keep) or (len(w) == 1 and not w.isdigit()):
             continue
         if w in QUESTION_WORDS or (w == fold(w) and w in _SAFE_UNACCENTED_QUESTION):
             continue
@@ -144,14 +168,14 @@ def document_keys(text):
     keys = []
     for w in content_words(text):
         keys.append(w)
-        keys.append("~" + fold(w))
+        keys.append("~" + fold(_canon_digits(w)))
     return keys
 
 
 def analyze(text):
     """Index terms for stored text: as-written and folded words, plus both kinds of adjacent pairs."""
     words_ = content_words(text)
-    folded = ["~" + fold(w) for w in words_]
+    folded = ["~" + fold(_canon_digits(w)) for w in words_]
     pairs = [f"{a}_{b}" for a, b in zip(words_, words_[1:])] + [f"{a}_{b}" for a, b in zip(folded, folded[1:])]
     return words_ + folded + pairs
 
@@ -196,6 +220,21 @@ def _number_values(token):
     return {str(int(p)) for p in parts if p}
 
 
+_FULL_DATE = re.compile(r"(?<!\w)(?:ngày|ngay)\s+(\d{1,2})\s+(?:tháng|thang)\s+(\d{1,2})"
+                        r"(?:\s+(?:năm|nam)\s+(\d{4}))?(?!\w)", re.IGNORECASE)
+
+
+def _full_dates(text, values):
+    """Collect "ngày D tháng M [năm Y]" as the date values of 'D/M[/Y]' and blank them out."""
+    def repl(m):
+        d, mo = int(m.group(1)), int(m.group(2))
+        if not (1 <= d <= 31 and 1 <= mo <= 12):
+            return m.group(0)
+        values.add(f"{int(m.group(3))}-{mo:02d}-{d:02d}" if m.group(3) else f"--{mo:02d}-{d:02d}")
+        return " "
+    return _FULL_DATE.sub(repl, text)
+
+
 def numbers(text):
     """Canonical values of every number, so '2026-09-15' == '15/09/2026', '18.200' == '18200',
     '8 giờ 30' == '8:30' and '0,5' == '0.5' -- and '5/9' != '9/5', '8:05' != '5:08',
@@ -208,6 +247,7 @@ def numbers(text):
     """
     text = nfc(text)
     values = set()
+    text = _full_dates(text, values)
     for m in _HOUR_MINUTE.finditer(text):
         values.add(f"{int(m.group(1))}:{int(m.group(2)):02d}")
     text = _HOUR_MINUTE.sub(" ", text)
