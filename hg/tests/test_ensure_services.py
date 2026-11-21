@@ -249,6 +249,59 @@ class EnsureServicesTests(unittest.TestCase):
         self.assertLessEqual((self.state / "ensure.log").stat().st_size, 16384)
         self.assertTrue(stat.S_IMODE(self.state.stat().st_mode) == 0o700)
 
+    # --- forensic events survive routine profile traffic (F-EV-1, 2026-11-22) ---
+    # Every login shell (the owner's or a Desktop Commander call) runs the profile hook and appends two routine
+    # lines. The 16 KiB ensure.log then drops the rare lines that P3 evidence depends on (ABSENT_VERIFIED,
+    # STARTED, boot-path lines for the D-03 post-reboot check). Those must survive in events.log.
+
+    def events(self):
+        p = self.state / "events.log"
+        return p.read_text(encoding="utf-8") if p.exists() else ""
+
+    def test_start_events_survive_routine_profile_lines_that_trim_the_main_log(self):
+        proc = self.run_script("profile")
+        self.assertEqual(proc.returncode, 0, proc.stderr + self.log())
+        self.assertIn("STARTED pids=", self.log())
+        routine = ("2026-11-22T02:03:28+0700 WAKE_LOCK_OK source=profile\n"
+                   "2026-11-22T02:03:29+0700 PRESENT pids=90001 source=profile\n")
+        with (self.state / "ensure.log").open("a", encoding="utf-8") as f:
+            f.write(routine * 200)
+        proc = self.run_script("profile")
+        self.assertEqual(proc.returncode, 0, proc.stderr + self.log())
+        self.assertNotIn("STARTED", self.log())  # precondition: the bounded main log alone has lost it
+        ev = self.events()
+        for line in ("ABSENT_VERIFIED source=profile", "SV_UP_OK service=desktop-commander-remote source=profile",
+                     "SV_UP_OK service=desktop-commander-watchdog source=profile", "STARTED pids="):
+            self.assertIn(line, ev)
+        self.assertNotIn("PRESENT", ev)
+        self.assertNotIn("WAKE_LOCK_OK source=profile", ev)
+
+    def test_boot_path_lines_are_kept_as_events_even_when_routine(self):
+        self.add_live_supervisor()
+        proc = self.run_script("boot")
+        self.assertEqual(proc.returncode, 0, proc.stderr + self.log())
+        ev = self.events()
+        self.assertIn("WAKE_LOCK_OK source=boot", ev)
+        self.assertIn("PRESENT pids=4242 source=boot", ev)
+
+    def test_profile_failures_are_events(self):
+        self.add_live_supervisor()
+        self.run_script("profile", FAKE_WAKE_FAIL="1")
+        self.assertIn("WAKE_LOCK_FAILED", self.events())
+        self.svdir.chmod(0o755)
+        self.run_script("profile")
+        self.assertIn("BLOCKED svdir_not_private source=profile", self.events())
+
+    def test_events_log_is_bounded_and_private(self):
+        self.state.mkdir(mode=0o700)
+        (self.state / "events.log").write_text("y" * 100000 + "\n", encoding="utf-8")
+        proc = self.run_script("boot")
+        self.assertEqual(proc.returncode, 0, proc.stderr + self.log())
+        p = self.state / "events.log"
+        self.assertLessEqual(p.stat().st_size, 65536)
+        self.assertEqual(stat.S_IMODE(p.stat().st_mode), 0o600)
+        self.assertIn("STARTED pids=", p.read_text(encoding="utf-8").splitlines()[-1])
+
     # --- the two entrypoints ---
 
     def test_profile_hook_returns_at_once_and_calls_the_entrypoint_in_the_background(self):
