@@ -195,9 +195,13 @@ class Notebook:
             index.add(r["memory_id"], f"{r['content']}")
             by_id[r["memory_id"]] = r
         hits = []
-        need = max(1, -(-len(unigrams) // 2))      # at least half of the query's content words
+        # At least half of the question's content words, not counting politeness fillers ("cho mình
+        # hỏi", final "nhỉ"/"vậy"), which no note contains (AC-A6 v5 RC-9). Question words still count:
+        # they keep a note that lacks the asked predicate out ("Chó Vàng nặng bao nhiêu ký?").
+        wanted = set(textvi.query_keys(textvi.strip_fillers(query))) or unigrams
+        need = max(1, -(-len(wanted) // 2))
         for mid, score in index.search(query, limit=limit * 3):
-            matched = unigrams & set(textvi.document_keys(by_id[mid]["content"]))
+            matched = wanted & set(textvi.document_keys(by_id[mid]["content"]))
             if len(matched) >= need:
                 hits.append(dict(by_id[mid], score=round(score, 4), matched=sorted(matched)))
         if hits:
