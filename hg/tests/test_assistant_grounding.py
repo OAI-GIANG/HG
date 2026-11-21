@@ -75,6 +75,60 @@ class SentenceCheckTests(unittest.TestCase):
         parts = grounding.split_sentences("Họp lúc 20 giờ. [N2] Khám răng ngày 2026-11-20 [N5].")
         self.assertEqual(parts, ["Họp lúc 20 giờ. [N2]", "Khám răng ngày 2026-11-20 [N5]."])
 
+    def test_discriminative_name_must_match_the_specific_note(self):
+        bin_note = "Giày thể thao của bé Bin cỡ 31, mua ở tiệm đầu đường Nguyễn Trãi."
+        na_note = "Giày thể thao của bé Na cỡ 28, mua ở tiệm đầu đường Nguyễn Trãi."
+        self.assertIsNotNone(grounding.anchored("Giày của bé Na cỡ mấy?", bin_note,
+                                                other_notes=[na_note]))
+        self.assertIsNone(grounding.anchored("Giày của bé Na cỡ mấy?", na_note,
+                                             other_notes=[bin_note]))
+
+    def test_discriminative_month_number_must_match(self):
+        september = "Phí quản lý chung cư tháng 9 là 620.000 đồng."
+        october = "Phí quản lý chung cư tháng 10 là 650.000 đồng."
+        self.assertIsNotNone(grounding.anchored("Phí quản lý tháng 10 là bao nhiêu?", september,
+                                                other_notes=[october]))
+        self.assertIsNone(grounding.anchored("Phí quản lý tháng 10 là bao nhiêu?", october,
+                                             other_notes=[september]))
+
+    def test_answer_slot_requires_the_right_kind_of_value(self):
+        note = {"N1": "Phí quản lý chung cư tháng 10 là 650.000 đồng."}
+        good = grounding.check_sentence("Phí quản lý là 650.000 đồng [N1].", note,
+                                        question="Phí quản lý tháng 10 là bao nhiêu tiền?")
+        bad = grounding.check_sentence("Phí quản lý là quầy lễ tân tầng trệt [N1].", note,
+                                       question="Phí quản lý tháng 10 là bao nhiêu tiền?")
+        self.assertEqual(good["label"], "NOTE")
+        self.assertEqual(bad["label"], "BADCITE")
+        self.assertIn("price", " ".join(bad["reasons"]))
+        # "Phí ... bao nhiêu?" is a monetary slot even when the question omits the word "tiền".
+        no_currency = grounding.check_sentence("Phí quản lý là 650.000 [N1].", note,
+                                                question="Phí quản lý tháng 10 là bao nhiêu?")
+        self.assertEqual(no_currency["label"], "BADCITE")
+
+    def test_time_date_person_and_place_slots_are_checked(self):
+        note = {"N1": "Hẹn cắt tóc cho bé Bin ở tiệm Tóc Mây, thợ Long, ngày 2026-11-21 lúc 9 giờ."}
+        self.assertEqual(grounding.check_sentence("Bé Bin hẹn ngày 2026-11-21 [N1].", note,
+                          question="Bé Bin hẹn ngày nào?")["label"], "NOTE")
+        self.assertEqual(grounding.check_sentence("Bé Bin hẹn lúc 9 giờ [N1].", note,
+                          question="Bé Bin hẹn mấy giờ?")["label"], "NOTE")
+        self.assertEqual(grounding.check_sentence("Thợ là Long [N1].", note,
+                          question="Thợ cắt tóc tên gì?")["label"], "NOTE")
+        self.assertEqual(grounding.check_sentence("Hẹn ở tiệm Tóc Mây [N1].", note,
+                          question="Hẹn cắt tóc ở đâu?")["label"], "NOTE")
+        wrong = grounding.check_sentence("Bé Bin hẹn tại tiệm Tóc Mây [N1].", note,
+                          question="Bé Bin hẹn ngày nào?")
+        self.assertEqual(wrong["label"], "BADCITE")
+
+    def test_location_preposition_is_a_place_answer(self):
+        note = {"N1": "Chìa khóa cổng để dưới chậu hoa giấy."}
+        r = grounding.check_sentence("Chìa khóa cổng để dưới chậu hoa giấy [N1].", note,
+                                     question="Chìa khóa cổng để ở đâu?")
+        self.assertEqual(r["label"], "NOTE")
+
+    def test_repeated_question_is_not_a_claim(self):
+        r = grounding.check_sentence("Ăn cay?", {}, question="Ăn cay có được không?")
+        self.assertEqual(r["label"], "NONE")
+
 
 # AC-A2: fixed adversarial outputs. Each changes a number, date, name or negation of a note
 # while copying most of its words. HG must never label any of them NOTE.

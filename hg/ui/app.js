@@ -436,6 +436,9 @@
           view.body.appendChild(el('span', 'reason', '↳ ' + s.reasons.join('; ')));
         }
       });
+      if (data.retraction) {
+        view.body.appendChild(el('span', 'reason', '↳ ' + data.retraction));
+      }
     } else if (data.outcome === 'MEMORY_ONLY') {
       view.body.appendChild(el('span', 'sentence', 'Không có model' + (data.error ? ' (' + data.error + ')' : '') +
         ': HG chỉ đưa nguyên văn ghi chú bên dưới, không tự viết câu trả lời.'));
