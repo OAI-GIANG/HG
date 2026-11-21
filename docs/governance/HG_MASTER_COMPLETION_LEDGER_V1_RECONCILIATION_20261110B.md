@@ -1394,3 +1394,33 @@ The 6 root-only skips were rerun as uid `nobody` (`test_deploy_scripts`, `test_f
   - `P1_DIRTY_CONTENT_BACKUP.tar.gz` `9c9aedec…`, 9.7 MB raw;
   - manifest `15ebb74f…` with per-file SHA-256.
 - No worktree was reset, cleaned, checked out or modified. A post-install snapshot gives a byte-identical worktree manifest (`4b388f43…`).
+
+## 74. Addendum 2026-11-22 +07 — G3-1 merged; F-D4/F-W1 Option A brought to `main` (WS-13)
+
+**G3-1.**
+- PR #206 squash-merged → `main` `27f9d33`, pinned head `797c654`, parent `8282c9e`. Recovery branch `recovery/main-pre-206-20261122` = `8282c9e`, created before the merge and confirmed by ls-remote.
+- CI 10/10 green:
+  - unittest 3.13/3.14 and root ownership oracle 3.13/3.14 in runs 44942994574 and 44943000491;
+  - rt06-anchor in run 44943000475.
+- The root job log shows `test_rejects_directory_owned_by_another_user ... ok`, `Ran 1 test`. G3-1: **VERIFIED on `main`**.
+
+**F-D4/F-W1 Option A (owner approval 2026-11-15).**
+- The implementation existed only as uncommitted changes in `~/.cache/hg-worktrees/hg-fd4-fw1-v1-20261115` (base `4a4cb37`), never pushed.
+- The 9-file patch was applied to `4a4cb37` in the cloud clone. Every resulting blob equals the device working-tree blob in `P1_DIRTY_CLASSIFICATION.json`: `978aa7e` V1_SCOPE, `5958b19` ask, `6afd5ba` grounding, `a7b752e` chat, `dbb9e64`/`9fcb61b`/`21fe466`/`5f6a943` tests, `e335fc5` app.js.
+- It was then cherry-picked onto `main` with no conflicts.
+- The device worktree was not modified.
+- Scope:
+  - discriminative anchors (names, numbers, words shared with sibling notes);
+  - answer-slot checks (money, time, date, person, place, count);
+  - prompt hygiene (no note dates, no numeric/date example);
+  - the "HG đính chính" retraction, kept in the ASK receipt, ChatService and web UI.
+- **Correction for OD-IR-20261109.** The 2026-11-15 records made a separate review a condition for WS-13. `test_no_mandatory_independent_review` failed on the V1_SCOPE sentence, which has been reworded.
+  - The holdout cleanliness rule from the owner's 2026-11-22 directive stays: a fresh `eval_vi_v4.json` (≥ 40 questions with injection cases) by an author who has not seen the implementation, SHA-256 frozen, one run, unchanged thresholds.
+  - The two 2026-11-15 device evidence notes stay in the P1 content backup and are not added to the repo.
+- **Tests (Python 3.13.18):**
+  - focused ask/grounding/chat/HTTP-UI: 115 OK with `-W error::ResourceWarning`;
+  - full `hg/tests`: 1079 OK (6 skipped), ResourceWarning count 0;
+  - `maep/tests` 385 OK; hooks 42 OK;
+  - `node --check hg/ui/app.js` OK; `git diff --check` clean.
+- **ResourceWarning (directive phase 5, item 2):** none remain on this branch under warnings-as-errors.
+- **Status:** IMPLEMENTED and UNIT_TESTED once merged. AC-A6 v4 is NOT_RUN. WS-13 stays open until the one frozen v4 run passes. Production is unchanged.
