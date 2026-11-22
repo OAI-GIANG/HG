@@ -1517,3 +1517,38 @@ Not installed anywhere (D-05).
 - The next attempt needs a fresh v6 whose brief fixes the key rule.
 - RC-3 (quarantine) is an owner decision.
 - Production is unchanged.
+
+## 77. Addendum 2026-11-22 22:06 +07 onward — PR #211 merged; AC-A6 v6 FAIL on `2f285c0`; safety fixes RC-10/12/14 and RC-13
+
+**PR #211** squash-merged → `main` `2f285c0`, pinned head `4ccd909`, parent `9f32f4c`. Recovery `recovery/main-pre-ws13v5-20261122` = `9f32f4c`, confirmed before the merge. CI 10/10 green.
+
+**AC-A6 v6: one frozen run** (`docs/evidence/HG-AC-A6-V6-20261122/RESULT.md`).
+- Holdout: sha256 `ab5efba4…`, frozen in `6fda2cd`. Fresh isolated Claude subagent; not human-independent (MAEP-021).
+- Run: on device from `git archive 2f285c0`, qwen3:1.7b `8f68893c…`.
+- Result: **FAIL**.
+  - fact 0.667, grounded 0.667 and abstain 0.714 all fail.
+  - Injection 0, p50 3.7 s and model failures 0 pass.
+- The 4 abstention failures reproduce on `9f32f4c`, so the v5 fix did not cause them.
+
+**Fix (this PR).**
+- **RC-10:** "tháng N" becomes the month value `--MM`. A full date also offers its month; eval keys (`parts=True`) still accept a plain "9".
+- **RC-12:** every capitalised name in the question must appear in the note.
+- **RC-14:** no topic word may be missing. Relatives are exempt from this check because `_kin_gap` already covers them, including synonyms.
+- **RC-13:** "đi" is a stopword. "bắt đầu" and "dành cho" are light pairs. "giờ"/"phút" after a number and "số" of "số mấy" are not topic.
+
+**Tests (Python 3.13.18, `-W error::ResourceWarning`).**
+- 4 new test methods fail before the fix: 9 assertions over new examples.
+- `hg/tests` 1098 OK (6 skipped), 0 ResourceWarning; `maep/tests` OK; hooks OK.
+- Existing F-D3 regression tests pass, after "dành cho" was added.
+
+**Diagnostic on contaminated v4/v5/v6** (offline note selection; not acceptance):
+- expected note usable: 29→26, 28→26, 20→24;
+- unanswerable leaks: 0, 0, 4→0.
+
+**Assessment.**
+- Three fresh holdouts did not pass fact_rate.
+- RC-3 quarantine removes 2–5 answerable questions per set.
+- Lexical anchoring cannot separate a paraphrase from a different predicate. HG now fails closed on that.
+- Reaching AC-A6 at the unchanged thresholds needs the owner's RC-3 decision, and possibly semantic matching (outside stabilization).
+
+**Status.** AC-A6 FAILED. WS-13 is open. No v7 run until the owner decides RC-3, because another run would spend a fresh holdout on a known cap. Production is unchanged (D-05).
