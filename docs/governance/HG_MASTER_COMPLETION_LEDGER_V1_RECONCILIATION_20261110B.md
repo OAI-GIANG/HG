@@ -1474,3 +1474,46 @@ Not installed anywhere (D-05).
 - Re-acceptance needs a new frozen holdout v5 and one run.
 - RC-3 awaits the owner's decision.
 - Production is unchanged.
+
+## 76. Addendum 2026-11-22 03:51 +07 onward — AC-A6 v5 FAIL on `9f32f4c`; RC-7/8/9 fixed; RC-6 kept strict (fail closed)
+
+**PR #210** squash-merged → `main` `9f32f4c`, pinned head `338d583`, parent `bc54040`. Recovery `recovery/main-pre-ws13rc-20261122` = `bc54040`, confirmed first. CI 10/10 green.
+
+**AC-A6 v5: one frozen run.** Details in `docs/evidence/HG-AC-A6-V5-20261122/RESULT.md`.
+- Holdout: sha256 `b9ab8484…`, frozen in `c74eb31`. Fresh isolated Claude subagent; not human-independent (MAEP-021).
+- Run: on device from `git archive 9f32f4c`, qwen3:1.7b `8f68893c…`.
+- Result:
+  - fact 0.636: **FAIL**;
+  - grounded 0.727, abstain 1.000, injection 0, p50 3.8 s: pass.
+- Of the 12 fact failures:
+  - 4 are holdout key defects caused by the integrator's brief ("720" vs "720.000"). The answers were correct and labelled NOTE. The official score is not changed;
+  - 3 are RC-3 quarantine;
+  - the rest are HG root causes.
+
+**Fix (this PR).**
+- `textvi.topic_keys` drops:
+  - unaccented sentence-final particles (vay/nhi/ha/ne, last words only);
+  - unaccented interrogative "may" next to a slot noun or before the end ("máy giặt" stays);
+  - "cho mình/tôi hỏi";
+  - written clock times ("8h30"; `numbers()` compares them).
+- "nhỉ" is a stopword.
+- `Notebook.search` computes its half-of-the-question threshold without politeness fillers (`textvi.strip_fillers`). Question words still count.
+
+**RC-6 (synonyms) was deliberately not fixed.**
+- A "dominating sibling" relaxation made 3 unanswerable v5 near-misses usable (water/electricity, swimming/piano, weight/vaccination).
+- Counting no question words in search made 1 more usable.
+- Both were reverted. Safety tests now pin that behaviour.
+
+**Tests.**
+- New tests that fail before the fix: 4 grounding/textvi, 1 ask-path.
+- Safety guards (pass before and after): dominating sibling, near-miss rejection, a weight question not answered from a vaccination note.
+- Python 3.13.18, `-W error::ResourceWarning`: `hg/tests` 1094 OK (6 skipped), 0 ResourceWarning; `maep/tests` OK; hooks OK.
+- Diagnostic on contaminated sets (not acceptance):
+  - v5 expected note usable 25/33 → 28/33, unanswerable leaks 0/13;
+  - v4 29/32, leaks 0/14.
+
+**Status.**
+- AC-A6: FAIL on `9f32f4c`. The fix is UNIT_TESTED. WS-13 stays open.
+- The next attempt needs a fresh v6 whose brief fixes the key rule.
+- RC-3 (quarantine) is an owner decision.
+- Production is unchanged.

@@ -25,7 +25,7 @@ _NUMBER = re.compile(r"\d+(?:[.,:/\-]\d+)*")
 # "be" "bé" (child), "ve" "vé" (ticket) — dropping those would lose the topic (finding F-D3).
 STOPWORDS = frozenset("""
 là và của có cho các những một này đó kia thì với trong để đã sẽ đang được bị
-ở tại về từ khi nào gì ai sao thế nhé nha ạ à ơi vậy rồi cũng lại mà nên hay hoặc
+ở tại về từ khi nào gì ai sao thế nhé nha nhỉ ạ à ơi vậy rồi cũng lại mà nên hay hoặc
 nhưng thêm bằng như theo vào ra lên xuống qua tôi mình bạn anh chị em ông bà họ
 chúng ta hãy xin vui lòng giúp cái con chiếc việc điều người lúc
 vâng dạ ừ ok okay
@@ -58,6 +58,15 @@ _TIME_INTERROGATIVE_HEADS = frozenset({"khi", "luc", "hoi", "gio"})
 # pair is dropped: "cụ" alone is a person (great-grandparent). Accented pairs match as written,
 # unaccented pairs only when both words were typed without diacritics.
 _DISCOURSE_PAIRS = frozenset({("cụ", "thể"), ("chính", "xác"), ("cu", "the"), ("chinh", "xac")})
+# Typed without diacritics (AC-A6 v5 RC-7, ledger section 76): a sentence-final particle ("vậy", "nhỉ",
+# "hả", "nè") is dropped only as the LAST word ("khoản vay" keeps "vay"); "may" is the interrogative
+# "mấy" only next to a slot noun or right before the end ("máy giặt" keeps "may").
+_FINAL_PARTICLES_UNACCENTED = frozenset({"vay", "nhi", "ha", "ne"})
+_SLOT_NOUNS_UNACCENTED = frozenset({"ngay", "gio", "thang", "nam", "tuan", "lan", "tuoi", "so", "tang", "phong",
+                                    "cai", "con", "nguoi"})
+_ASKER = frozenset({"mình", "tôi", "em", "tớ", "minh", "toi", "to"})
+# A written clock time ("8h30", "9g", "14h") is compared by numbers(); it is not a topic word (RC-8).
+_TIME_TOKEN = re.compile(r"^\d{1,2}[hg]\d{0,2}$")
 
 
 def nfc(text):
@@ -117,8 +126,22 @@ def topic_keys(text):
     negations, "bao" of "bao nhiêu", and answer-slot nouns ("tên gì", "mấy giờ", "liều bao nhiêu")."""
     raw = words(text)
     drop = set()
+    end = len(raw)
+    while end > 0 and raw[end - 1] in _FINAL_PARTICLES_UNACCENTED:
+        end -= 1
+        drop.add(end)
     for i, w in enumerate(raw):
         nxt = raw[i + 1] if i + 1 < len(raw) else ""
+        if w == "may":                                   # unaccented "mấy"?
+            prev = raw[i - 1] if i > 0 else ""
+            if i + 1 >= end or prev in _SLOT_NOUNS_UNACCENTED:
+                drop.add(i)
+            elif nxt in _SLOT_NOUNS_UNACCENTED:
+                drop.update({i, i + 1})
+        if fold(w) == "cho" and nxt in _ASKER and i + 2 < len(raw) and fold(raw[i + 2]) == "hoi":
+            drop.update({i, i + 1, i + 2})               # "cho mình hỏi ..."
+        if _TIME_TOKEN.match(w):
+            drop.add(i)
         is_bao_nhieu = w == "bao" and fold(nxt) == "nhieu"
         if is_bao_nhieu or w in _SLOT_BEFORE:
             # Only a noun DIRECTLY before the interrogative is a slot ("tên gì", "ngày nào"):
@@ -156,6 +179,22 @@ def topic_keys(text):
             continue
         out.append(_key(w))
     return out
+
+
+def strip_fillers(text):
+    """The question without politeness fillers ("cho mình hỏi") and unaccented sentence-final particles
+    ("vay", "nhi", "ha", "ne" as the last words). Question words stay: they are part of how much of a
+    question a note must match in search (AC-A6 v5 RC-9, ledger section 76)."""
+    raw = words(text)
+    drop = set()
+    end = len(raw)
+    while end > 0 and raw[end - 1] in _FINAL_PARTICLES_UNACCENTED:
+        end -= 1
+        drop.add(end)
+    for i, w in enumerate(raw):
+        if fold(w) == "cho" and i + 2 < len(raw) and raw[i + 1] in _ASKER and fold(raw[i + 2]) == "hoi":
+            drop.update({i, i + 1, i + 2})
+    return " ".join(w for i, w in enumerate(raw) if i not in drop)
 
 
 def query_keys(text):

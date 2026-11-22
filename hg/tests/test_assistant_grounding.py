@@ -194,6 +194,57 @@ class V4FailureRootCauseTests(unittest.TestCase):
         self.assertIsNone(grounding.anchored("Ông Tư hàng xóm số điện thoại là gì?",
                                              "Số điện thoại ông Tư hàng xóm là 0903 111 222."))
 
+class V5FailureRootCauseTests(unittest.TestCase):
+    """AC-A6 v5 FAIL (2026-11-22, 9f32f4c, ledger section 76). New examples, not v5 items.
+
+    RC-6 (not fixed, by choice): a topic word shared with a sibling note rejects the right note when the
+    note uses a synonym ("xe" vs "ô tô Vios"; "sinh nhật" vs "Bố sinh ngày ..."). Relaxing it let
+    unanswerable near-misses through, so the strict rule stays (fail closed).
+    RC-7: unaccented sentence-final particles and "may" (mấy) counted as topic ("ngay may vay").
+    RC-8: a written time ("8h30") counted as a topic word although numbers() already compares it.
+    RC-9: search needed half of ALL content words, so fillers ("cho mình hỏi", "nhỉ", "bao nhiêu")
+    pushed the right note out of the candidates."""
+
+    def test_near_miss_notes_stay_rejected_for_unanswerable_questions(self):
+        """Safety over recall: a note that lacks the asked predicate, which a sibling has, is rejected
+        (accented and unaccented). A relaxation tried for v5 RC-6 let these through and was reverted."""
+        electricity = "Tiền điện tháng 10 là 650.000 đồng."
+        water9 = "Tiền nước tháng 9 là 160.000 đồng."
+        for q in ("Tiền nước tháng 10 là bao nhiêu?", "tien nuoc thang 10 het bao nhieu"):
+            with self.subTest(q=q):
+                self.assertIsNotNone(grounding.anchored(q, electricity, other_notes=[water9]))
+        piano = "Bé Na học piano lúc 17 giờ thứ Ba."
+        pool = "Hồ bơi chung cư mở cửa từ 6 giờ sáng."
+        self.assertIsNotNone(grounding.anchored("Bé Na học bơi lúc mấy giờ?", piano, other_notes=[pool]))
+
+    def test_a_dominating_sibling_still_rejects_the_candidate(self):
+        bin_note = "Mũ bảo hiểm của bé Bin màu xanh, cỡ S."
+        na_note = "Mũ bảo hiểm của bé Na màu đỏ, cỡ M."
+        q = "mu bao hiem cua be na co gi"
+        self.assertIsNotNone(grounding.anchored(q, bin_note, other_notes=[na_note]))
+        self.assertIsNone(grounding.anchored(q, na_note, other_notes=[bin_note]))
+
+    def test_unaccented_final_particles_and_may_are_not_topic(self):
+        keys = textvi.topic_keys("cho Vang di tiem ngay may vay")
+        for k in ("~may", "~vay"):
+            self.assertNotIn(k, keys)
+        self.assertNotIn("~nhi", textvi.topic_keys("hop phu huynh luc may gio nhi"))
+        # "vay" inside a question is the topic word "vay" (loan), not a particle.
+        self.assertIn("~vay", textvi.topic_keys("khoan vay ngan hang con bao nhieu"))
+        # "may" naming a machine stays topic.
+        self.assertIn("~may", textvi.topic_keys("may giat bao hanh den khi nao"))
+
+    def test_written_time_is_not_a_topic_word(self):
+        self.assertNotIn("~9h15", textvi.topic_keys("Cuộc hẹn 9h15 sáng thứ Sáu là gì?"))
+        self.assertIsNone(grounding.anchored("Lịch 9h15 sáng thứ Sáu là việc gì?",
+                                             "Lịch nha sĩ lúc 9 giờ 15 sáng thứ Sáu ở phòng khám Ánh Dương."))
+
+    def test_filler_phrases_are_not_topic(self):
+        keys = textvi.topic_keys("Cho mình hỏi tiền gas tháng 07 là bao nhiêu nhỉ?")
+        for k in ("~cho", "hỏi", "nhỉ"):
+            self.assertNotIn(k, keys)
+        self.assertIn("~7", keys)
+
 # AC-A2: fixed adversarial outputs. Each changes a number, date, name or negation of a note
 # while copying most of its words. HG must never label any of them NOTE.
 ADVERSARIAL = [
