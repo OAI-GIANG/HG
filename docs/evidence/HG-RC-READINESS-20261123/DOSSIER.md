@@ -11,11 +11,13 @@ owner approval after the conditions in §7 are met.
 | Commit | `4eaac81132ae57028cf2432eec911a01b6ecf1fd` (#113) | ledger §15 |
 | Release id | `030a88d534bdec086c10b87a4732322d72791260178c1129b0538bb3b42bc7d5` | ledger §15, G6 record |
 | Switched in | 2026-11-10 18:22 +07, `~/hg-v1-evidence/switch-20261110T112210Z` | ledger §15 |
-| State at the last read in this mission | LIVE/READY, trust LOADED, boot id unchanged | `~/hg-evidence/P0-BASELINE-20261122/PRODUCTION_BASELINE.json` (phone) |
+| Read 2026-11-23 02:57:49 +07 (read-only) | live LIVE; ready READY, release `030a88d5…`, integrity VERIFIED, trust LOADED (`trust_commit` = main `4b1f311`) | `~/hg-evidence/P5-READINESS-20261123/PRODUCTION_READ.json` |
+| Reconciliation with the P0 baseline (2026-11-22 02:16) | boot id `1b823ef0…`, service config `349c8d0a…`, `hg` pointer `6739742c…` and release pointer: all unchanged | same file |
+| Service run script | sha256 `50a162a7…`; names release `030a88d5…` | same file |
+| Note | runit had restarted `hg-runtime` and `ollama` at about 02:55 on the same boot, when Termux was reopened; nothing in this mission restarted them | `sv status` uptime 139 s at 02:57:49 |
 | Rollback for that switch | `sh deploy/termux/switch_service.sh --restore ~/hg-v1-evidence/switch-20261110T112210Z` | ledger §15 |
 
-A fresh read of production (sv status, `GET /v1/health/ready`, release pointer, manifest hash) is required
-immediately before any switch; it needs the phone online.
+Production must be read again immediately before any switch.
 
 ## 2. Release candidates
 
@@ -59,9 +61,10 @@ the build. Status: **PENDING** (built after merge).
 | `maep/tests` | 385 OK | cloud run 2026-11-23 |
 | `.claude/hooks` | 42 OK | cloud run 2026-11-23 |
 | `hg selfcheck` / `hg bench` (guard commit `07e2695`) | PASS / exit 0 | cloud run 2026-11-23 |
-| AC-A6 assistant quality | **FAILED** at v7 (0.765); v8 not run yet | `docs/evidence/HG-AC-A6-V7-20261123/` |
-| Staging cutover + rollback rehearsal for RC-B | **NOT_RUN** (needs the phone) | — |
-| Production hash reconciliation | **NOT_RUN** (needs the phone) | — |
+| AC-A6 assistant quality on `4b1f311` | **PASS** at v8: fact 0.844, grounded 0.812, abstain 0.857, injection 0 | `docs/evidence/HG-AC-A6-V8-20261123/` |
+| v8 wrong answers (q34 NOTE, q42 MODEL) | fixed in this PR (RC-16, RC-17); a fresh v9 runs on this PR's merge SHA | same |
+| Staging cutover + rollback rehearsal for RC-B | **NOT_RUN** (after RC-B is built) | — |
+| Production read and reconciliation | **VERIFIED** read-only, 2026-11-23 02:57 (§1) | `PRODUCTION_READ.json` |
 
 ## 5. Rollback plan
 
