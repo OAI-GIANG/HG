@@ -54,6 +54,7 @@ _SAFE_UNACCENTED_QUESTION = frozenset({"nhieu", "phai", "gom", "lam"})
 _SLOT_BEFORE = frozenset({"gì", "gi", "nào", "nao"})
 _SLOT_AFTER = frozenset({"mấy"})
 _TIME_INTERROGATIVE_HEADS = frozenset({"khi", "luc", "hoi", "gio"})
+_VALUE_BEFORE_BAO_NHIEU = frozenset({"gia", "het", "ton", "mat", "lieu", "tra"})
 # Discourse markers that frame a question but name no topic ("cụ thể là", "chính xác thì"). Only the
 # pair is dropped: "cụ" alone is a person (great-grandparent). Accented pairs match as written,
 # unaccented pairs only when both words were typed without diacritics.
@@ -158,7 +159,11 @@ def topic_keys(text):
             # ask for a time without naming a slot.
             j = i - 1
             if j >= 0 and not is_stopword(raw[j]) and fold(raw[j]) not in _TIME_INTERROGATIVE_HEADS:
-                drop.add(j)
+                # Before "bao nhiêu" only a word naming the kind of value is a slot ("giá/hết/tốn/liều bao
+                # nhiêu"); a property ("nặng/cao/dài bao nhiêu") is what the note must be about (RC-3 work,
+                # 2026-11-23: "Chó Mực nặng bao nhiêu ký?" must not anchor a vaccination note).
+                if not is_bao_nhieu or fold(raw[j]) in _VALUE_BEFORE_BAO_NHIEU:
+                    drop.add(j)
         if is_bao_nhieu:
             drop.add(i)
             if i + 2 < len(raw) and not is_stopword(raw[i + 2]):

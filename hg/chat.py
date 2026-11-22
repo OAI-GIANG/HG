@@ -35,6 +35,7 @@ from pathlib import Path
 
 from maep.core import MAEPError
 from hg.assistant import config as cfg
+from hg.assistant import guard
 from hg.assistant.ask import append_receipt, ask, safe
 from hg.assistant.home import Busy, HomeError, ensure_home
 from hg.assistant.notes import Notebook
@@ -162,9 +163,15 @@ class ChatService:
         for note in receipt["notes"]:
             record = records.get(note["memory_id"])
             same = record is not None and hashlib.sha256(record["content"].encode("utf-8")).hexdigest() == note["sha256"]
+            content, sanitized = (record["content"] if same else None), 0
+            if same and note.get("derived"):
+                # RC-3: show what the model saw (the derived copy), re-derived and matched to its hash.
+                cut = guard.sanitize(record["content"])
+                ok = cut is not None and cut["derived_sha256"] == note["derived"]["derived_sha256"]
+                content, sanitized = (cut["content"], len(cut["removed"])) if ok else (None, 0)
             out.append({"ref": note["ref"], "memory_id": note["memory_id"],
                         "created_at": record["created_at"] if same else None,
-                        "content": safe(record["content"]) if same else None})
+                        "content": safe(content) if content is not None else None, "sanitized": sanitized})
         return out
 
     def _response(self, receipt, notes, display, calls, receipts, check, listener):
