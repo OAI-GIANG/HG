@@ -288,6 +288,34 @@ class V6FailureRootCauseTests(unittest.TestCase):
         self.assertNotEqual(wrong["label"], "NOTE")
         self.assertIsNone(grounding.anchored("Mẹ hẹn khám mắt vào ngày nào?", eye))
 
+class V7FailureRootCauseTests(unittest.TestCase):
+    """AC-A6 v7 FAIL (2026-11-23, 2a60653, ledger section 79): every miss was a false rejection under the
+    zero-tolerance anchor (RC-14). RC-15 drops three generic Vietnamese patterns from the topic; new
+    examples, not v7 items. Paraphrases of a different verb ("hẹn" vs "đưa đi") are NOT relaxed."""
+
+    def test_household_and_possessive_nha_is_not_topic(self):
+        self.assertNotIn("nhà", textvi.topic_keys("Tiền nước tháng 9 nhà mình hết bao nhiêu?"))
+        self.assertNotIn("nhà", textvi.topic_keys("Nhà chú Tư hàng xóm số điện thoại là gì?"))
+        self.assertIsNone(grounding.anchored("Tiền nước tháng 9 nhà mình hết bao nhiêu?",
+                                             "Tiền nước tháng 9 là 160.000 đồng."))
+        # "tiền nhà" (rent) and "sau nhà" keep the topic word
+        self.assertIn("nhà", textvi.topic_keys("Tiền nhà tháng 10 là bao nhiêu?"))
+        self.assertIn("nhà", textvi.topic_keys("Luống rau sau nhà tưới lúc mấy giờ?"))
+
+    def test_hang_before_a_time_unit_means_each(self):
+        self.assertNotIn("hàng", textvi.topic_keys("Cước truyền hình K+ hàng tháng là bao nhiêu?"))
+        self.assertIsNone(grounding.anchored("Cước truyền hình K+ hàng tháng là bao nhiêu?",
+                                             "Cước truyền hình K+ là 125.000 đồng mỗi tháng."))
+        self.assertIn("hàng", textvi.topic_keys("Chị Hoa hàng xóm số điện thoại là gì?"))
+
+    def test_house_number_slot(self):
+        self.assertNotIn("nhà", textvi.topic_keys("Anh Bình hàng xóm ở số nhà mấy?"))
+        self.assertIsNone(grounding.anchored("Anh Bình hàng xóm ở số nhà mấy?", "Anh Bình hàng xóm ở số 9 ngõ 12."))
+
+    def test_different_verb_is_still_refused(self):
+        self.assertIsNotNone(grounding.anchored("Bé Na hẹn bác sĩ mắt lúc mấy giờ?",
+                                                "Đưa bé Na đi bác sĩ mắt lúc 9 giờ thứ Tư."))
+
 # AC-A2: fixed adversarial outputs. Each changes a number, date, name or negation of a note
 # while copying most of its words. HG must never label any of them NOTE.
 ADVERSARIAL = [
