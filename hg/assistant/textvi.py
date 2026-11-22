@@ -349,11 +349,15 @@ def number_gap(claim_text, source_text, *, parts=False):
     source = numbers(source_text)
     offered = set(source)
     days = set()
+    # RC-16 (AC-A6 v8): a date names its month only when the source names no month of its own.
+    # "Tiền nước tháng 9 ..., hạn đóng ngày 05/10" is the September bill; its due date is not "tháng 10".
+    own_month = any(re.match(r"^--\d{2}$", v) for v in source)
     for v in source:
         if re.match(r"^(?:\d+|-)-\d{2}-\d{2}$", v):          # '2026-09-05', '--09-05'
             if not v.startswith("--"):
                 days.add(v[v.index("-"):])
-            offered.add("--" + v.split("-")[-2])              # a full date also names its month
+            if not own_month:
+                offered.add("--" + v.split("-")[-2])          # a full date also names its month
             if parts:
                 offered |= {str(int(p)) for p in v.split("-") if p}
         elif re.match(r"^--\d{2}$", v) and parts:            # 'tháng 09' as an eval key part

@@ -343,6 +343,41 @@ ADVERSARIAL = [
 ]
 
 
+class V8WrongAnswerRootCauseTests(unittest.TestCase):
+    """AC-A6 v8 PASS on 4b1f311 (fact 0.844) but two unanswerable questions were answered (ledger
+    section 80). New examples, not v8 items.
+    RC-16 (safety, NOTE label): a due date "05/10" offered "tháng 10" to a note whose own period is
+    "tháng 9", so "Tiền điện tháng 10" was answered with the September amount and labelled NOTE.
+    RC-17: a price question was answered from a note with no amount; the model guessed a price
+    (labelled MODEL)."""
+
+    BILL = "Tiền nước tháng 9 là 185.000 đồng, hạn đóng là ngày 05/10."
+
+    def test_a_date_does_not_offer_its_month_when_the_note_names_its_own_month(self):
+        self.assertEqual(textvi.number_gap("tháng 10", self.BILL), {"--10"})
+        self.assertIsNotNone(grounding.anchored("Tiền nước tháng 10 là bao nhiêu nhỉ?", self.BILL))
+        r = grounding.check_sentence("Tiền nước tháng 10 là 185.000 đồng.", {"N1": self.BILL},
+                                     question="Tiền nước tháng 10 là bao nhiêu nhỉ?")
+        self.assertNotEqual(r["label"], "NOTE")
+
+    def test_the_right_month_and_a_date_only_note_still_work(self):
+        self.assertIsNone(grounding.anchored("Tiền nước tháng 9 hạn đóng vào ngày nào?", self.BILL))
+        self.assertEqual(textvi.number_gap("tháng 10", "Hạn nộp là ngày 05/10/2026."), set())
+        self.assertIsNone(grounding.anchored("Bé tiêm phòng ngày 3 tháng 7 lúc mấy giờ?",
+                                             "Bé tiêm phòng lúc 8 giờ ngày 03/07 tại trạm y tế phường."))
+
+    def test_a_price_question_needs_an_amount_in_the_note(self):
+        note = "Thay má phanh xe máy 1 năm một lần, lần gần nhất ngày 12/03, thợ là anh Tâm."
+        self.assertIsNotNone(grounding.anchored("Má phanh xe máy giá bao nhiêu tiền vậy?", note))
+        self.assertIsNotNone(grounding.anchored("Thay má phanh xe máy hết bao nhiêu?", note))
+
+    def test_amounts_in_common_written_forms_still_answer_a_price_question(self):
+        for note in ("Má phanh xe máy giá 250.000 đồng một bộ.", "Má phanh xe máy giá 250k một bộ.",
+                     "Má phanh xe máy giá 1tr2 một bộ.", "Má phanh xe máy giá 250 nghìn một bộ.",
+                     "Má phanh xe máy giá 1,2 triệu một bộ.", "Má phanh xe máy: 250.000đ một bộ."):
+            with self.subTest(note=note):
+                self.assertIsNone(grounding.anchored("Má phanh xe máy giá bao nhiêu tiền vậy?", note))
+
 class AdversarialTests(unittest.TestCase):
     """AC-A2: zero NOTE labels on altered facts."""
 
