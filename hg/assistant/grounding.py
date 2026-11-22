@@ -167,6 +167,10 @@ _KIN = {
 }
 
 
+_KIN_WORDS = frozenset(w for k, forms in _KIN.items() for f in (k,) + forms for w in f.split()) | frozenset(
+    textvi.fold(w) for k, forms in _KIN.items() for f in (k,) + forms for w in f.split())
+
+
 def _kin_gap(question, note_text):
     """Relatives named in the question that the note does not name (as written, with diacritics)."""
     q = " " + " ".join(textvi.words(question or "")) + " "
@@ -191,10 +195,17 @@ def anchored(question, note_text, *, other_notes=()):
     note_keys = set(textvi.document_keys(note_text))
     missing_numbers = textvi.number_gap(question or "", note_text)
     if missing_numbers:
-        return "số " + ", ".join(sorted(missing_numbers))
+        return "số " + ", ".join(sorted(f"tháng {int(v[2:])}" if re.match(r"^--\d{2}$", v) else v
+                                        for v in missing_numbers))
     missing_kin = _kin_gap(question, note_text)
     if missing_kin:
         return " ".join(missing_kin)
+    # Every capitalised name of the question must be in the note, even one that is also a function
+    # word ("Bi" ~ "bị", v6 RC-12, ledger section 77).
+    note_all = {textvi.fold(w) for w in textvi.words(note_text)}
+    missing_names = sorted(n for n in _names(question or "") if n not in note_all)
+    if missing_names:
+        return " ".join(missing_names)
     other_keys = set()
     for other in other_notes or ():
         other_keys.update(textvi.document_keys(other))
@@ -211,12 +222,16 @@ def anchored(question, note_text, *, other_notes=()):
             discriminative.append(token)
     if discriminative:
         return " ".join(dict.fromkeys(discriminative))
-    missing = [k for k in topic if k not in note_keys]
-    allowed = 0 if len(topic) <= 2 else 1 if len(topic) <= 6 else 2
-    for a, b in zip(topic, topic[1:]):
-        if a not in note_keys and b not in note_keys:
-            return f"{a.lstrip('~')} {b.lstrip('~')}"
-    if len(missing) > allowed:
+    # No topic word may be missing (v6 RC-14, ledger section 77). Tolerating one let a different
+    # predicate through ("khám răng" anchored "khám mắt", "nặng bao nhiêu" anchored a vaccination note)
+    # and HG then labelled the substituted answer NOTE. Light words, question words, fillers and the
+    # parts of a written date or time are not topic words, so this is strict only on content.
+    # Relatives are checked by _kin_gap (with their synonyms "ba"/"cha", "má"); a function word kept as
+    # topic ("bà" of "bà nội") counts when the note has it anywhere.
+    note_words = set(textvi.words(note_text))
+    present = note_keys | note_words | {"~" + textvi.fold(w) for w in note_words}
+    missing = [k for k in topic if k not in present and k.lstrip("~") not in _KIN_WORDS]
+    if missing:
         return " ".join(k.lstrip("~") for k in missing)
     return None
 
