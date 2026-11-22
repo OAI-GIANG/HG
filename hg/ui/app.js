@@ -449,6 +449,10 @@
     (data.notes || []).forEach((n) => {
       view.body.appendChild(el('span', 'note-item', n.ref + ' (' + shortDate(n.created_at) + '): ' +
         (n.content === null ? '[ghi chú đã đổi sau khi trả lời]' : n.content)));
+      if (n.sanitized) {
+        view.body.appendChild(el('span', 'reason', '↳ đã cách ly ' + n.sanitized +
+          ' đoạn chứa câu lệnh nhắm vào AI — model chỉ thấy phần còn lại; ghi chú gốc giữ nguyên.'));
+      }
     });
     if (data.quarantined && data.quarantined.length) {
       view.body.appendChild(el('span', 'note-item', '⚠ ' + data.quarantined.length +

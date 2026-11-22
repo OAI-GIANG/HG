@@ -1552,3 +1552,50 @@ Not installed anywhere (D-05).
 - Reaching AC-A6 at the unchanged thresholds needs the owner's RC-3 decision, and possibly semantic matching (outside stabilization).
 
 **Status.** AC-A6 FAILED. WS-13 is open. No v7 run until the owner decides RC-3, because another run would spend a fresh holdout on a known cap. Production is unchanged (D-05).
+
+## 78. Addendum 2026-11-23 00:21 +07 onward — owner decision: RC-3 controlled quarantine APPROVED; production NOT APPROVED
+
+**Owner decisions (2026-11-23 00:21 +07).**
+- **RC-3 approved:**
+  - original notes are never deleted, edited or overwritten, and originals and evidence are preserved;
+  - HG builds a derived copy without the sentences that command, control or manipulate an AI, keeping the remaining valid information;
+  - each cut records its provenance, the cut content, the reason, and the hashes before and after;
+  - note content never becomes an instruction that outranks HG governance.
+- Then a holdout v7 is built and run, with target ≥ 0.80 at the unchanged thresholds.
+- **Production:** NOT approved. The RC is to be rebuilt from `07b2bcd` with a readiness dossier; deployment is proposed only.
+- **Dirty worktrees:** preserved and catalogued.
+- **Unchanged:** Termux, D-04, D2, and #205/#77/#64.
+
+**PR #212** squash-merged → `main` `07b2bcd`, pinned head `8b79402`, parent `2f285c0`. Recovery `recovery/main-pre-ws13v6-20261122` = `2f285c0`, confirmed before the merge. CI 10/10 green.
+
+**RC-3 implementation (this PR).**
+- `guard.sanitize(text)` cuts a note into bracketed asides and sentences, drops the segments `guard.directives` flags, and re-checks the remainder. It returns `None` — the whole note stays quarantined, failing closed — when:
+  - no single segment carries the directive (the signal only shows across segments);
+  - the remainder still triggers the guard;
+  - nothing informative is left.
+- `ask.select_notes` uses the derived copy for search, anchoring and the model payload. The stored note is never written.
+- The ASK receipt keeps `sha256` = the stored note's hash and adds `derived` = {`original_sha256`, `derived_sha256`, `removed` (each segment's text and signals), `reason`}.
+- The CLI and web chat show what the model saw and how many segments were cut. ChatService re-derives the copy and matches it by hash.
+- Owner trust (`hg note trust`) still sends the whole note.
+
+**Search.** `Notebook.search` now counts half of the question's *topic* words, so question words no longer push short right notes out (v6 q19). It is no longer the safety net.
+
+**Property slot.** Before "bao nhiêu", only a word naming the kind of value (giá, hết, tốn, mất, liều, trả) is a slot. A property (nặng, cao, dài…) must be in the note. This blocks "Chó Mực nặng bao nhiêu ký?" from anchoring a vaccination note, which the existing safety test caught.
+
+**Tests (Python 3.13.18, `-W error::ResourceWarning`).**
+- New, failing before the change:
+  - guard: 3 tests;
+  - ask path: derived copy sent, directive absent from the payload, receipt hashes and cut segment, `notes.jsonl` byte-identical before and after;
+  - ChatService: shows the derived copy and the cut count;
+  - UI contract.
+- `test_owner_can_lift_the_quarantine_for_one_note` was updated to the approved policy: before trust only the derived copy is sent and the persona sentence never reaches the model; after trust the whole note is sent.
+- Whole-directive notes stay quarantined, and their existing tests are unchanged and pass.
+- `hg/tests` 1104 OK (6 skipped), 0 ResourceWarning; `maep/tests` OK; hooks OK; `node --check` OK.
+
+**Diagnostic on contaminated v4/v5/v6** (offline note selection; not acceptance):
+- expected note usable: 26→28/32, 26→29/33, 24→30/30;
+- quarantined answerable questions: 2/3/5 → 0;
+- unanswerable leaks: 0/0/0.
+- The misses left are paraphrases the note does not share; they fail closed.
+
+**Status.** RC-3: IMPLEMENTED and UNIT_TESTED. Acceptance is the v7 holdout, run once on this PR's merge SHA. Production is unchanged.

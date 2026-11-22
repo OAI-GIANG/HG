@@ -180,6 +180,55 @@ def is_directive(text):
     return bool(directives(text))
 
 
+# ---------------------------------------------------------------- RC-3 controlled quarantine
+# Owner decision 2026-11-23: instead of withholding a whole note that addresses an AI, HG may use a
+# DERIVED copy without the segments that command, control or manipulate an AI, keeping the rest. The
+# original note is never changed (the caller keeps it); every cut is recorded with its reason and the
+# hashes before and after. When no safe cut exists the whole note stays quarantined (fail closed).
+
+DERIVATION_REASON = ("AI-directed segment removed from a derived copy; the original note is unchanged "
+                     "(RC-3, owner decision 2026-11-23)")
+_BRACKETED = re.compile(r"\[[^\]]*\]|\([^)]*\)|\{[^}]*\}|<[^>]*>")
+_SENTENCE_BREAK = re.compile(r"(?<=[.!?;…])\s+|\n+")
+
+
+def segments(text):
+    """The text cut into bracketed asides and sentences, in their original order."""
+    out, pos = [], 0
+    for m in _BRACKETED.finditer(text or ""):
+        out.extend(_SENTENCE_BREAK.split(text[pos:m.start()]))
+        out.append(m.group(0))
+        pos = m.end()
+    out.extend(_SENTENCE_BREAK.split((text or "")[pos:]))
+    return [seg.strip() for seg in out if seg and seg.strip()]
+
+
+def _sha(text):
+    import hashlib
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def sanitize(text):
+    """A derived copy of a note without its AI-directed segments, or None (keep the whole note quarantined).
+
+    None when: no single segment carries a directive (the signal only shows across segments, so there is
+    no safe cut); the remainder still triggers the guard; or nothing informative is left."""
+    removed, kept = [], []
+    for seg in segments(text):
+        found = directives(seg)
+        if found:
+            removed.append({"text": seg, "directives": found})
+        else:
+            kept.append(seg)
+    if not removed:
+        return None
+    derived = " ".join(kept).strip()
+    if not derived or directives(derived) or not textvi.content_words(derived):
+        return None
+    return {"content": derived, "removed": removed, "original_sha256": _sha(text),
+            "derived_sha256": _sha(derived), "reason": DERIVATION_REASON}
+
+
 # ---------------------------------------------------------------- held-out measurement
 RECALL_MIN = 0.75              # fixed 2026-10-29 before any held-out data was run
 FALSE_POSITIVE_MAX = 0.05

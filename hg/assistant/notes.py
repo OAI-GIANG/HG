@@ -195,10 +195,12 @@ class Notebook:
             index.add(r["memory_id"], f"{r['content']}")
             by_id[r["memory_id"]] = r
         hits = []
-        # At least half of the question's content words, not counting politeness fillers ("cho mình
-        # hỏi", final "nhỉ"/"vậy"), which no note contains (AC-A6 v5 RC-9). Question words still count:
-        # they keep a note that lacks the asked predicate out ("Chó Vàng nặng bao nhiêu ký?").
-        wanted = set(textvi.query_keys(textvi.strip_fillers(query))) or unigrams
+        # At least half of the question's TOPIC words: fillers ("cho mình hỏi", "nhỉ") and question words
+        # ("hết bao nhiêu tiền") are in no note, so counting them kept short right notes out (v5 RC-9,
+        # v6 q19). Search is not the safety net: grounding.anchored rejects any note that lacks a topic word
+        # ("Chó Vàng nặng bao nhiêu ký?" never anchors a vaccination note, v6 RC-14).
+        wanted = (set(textvi.topic_keys(query)) or set(textvi.query_keys(textvi.strip_fillers(query)))
+                  or unigrams)
         need = max(1, -(-len(wanted) // 2))
         for mid, score in index.search(query, limit=limit * 3):
             matched = wanted & set(textvi.document_keys(by_id[mid]["content"]))

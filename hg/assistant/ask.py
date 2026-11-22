@@ -75,10 +75,20 @@ def select_notes(question, notebook, *, limit=5):
     trusted = notebook.trusted_ids()
     flags = {r["memory_id"]: guard.directives(r["content"]) for r in records if r["memory_id"] not in trusted}
     flags = {k: v for k, v in flags.items() if v}
-    clean = [r for r in records if r["memory_id"] not in flags]
+    # RC-3 (owner decision 2026-11-23): a flagged note with a safe cut is used as its derived copy (the
+    # AI-directed segments removed, the stored note untouched); without a safe cut it stays quarantined.
+    derived = {}
+    for r in records:
+        if r["memory_id"] in flags:
+            cut = guard.sanitize(r["content"])
+            if cut is not None:
+                derived[r["memory_id"]] = dict(r, content=cut["content"], derived=cut)
+    flags = {k: v for k, v in flags.items() if k not in derived}
+    visible = [derived.get(r["memory_id"], r) for r in records]
+    clean = [r for r in visible if r["memory_id"] not in flags]
     usable, off_topic = [], []
     for hit in notebook.search(question, limit=limit, records=clean):
-        siblings = [r["content"] for r in records if r["memory_id"] != hit["memory_id"]]
+        siblings = [r["content"] for r in visible if r["memory_id"] != hit["memory_id"]]
         missing = grounding.anchored(question, hit["content"], other_notes=siblings)
         (off_topic if missing else usable).append(
             dict(hit, missing_topic=missing) if missing else dict(hit, _other_notes=siblings))
@@ -210,15 +220,16 @@ def ask(question, *, notebook, router_factory, listener=None, model_check=None, 
         for ref, r in refs.items():
             line = " ".join(r["content"].split())
             out(f"  {ref} ({_date(r)}) {safe(line[:90])}{'…' if len(line) > 90 else ''}")
+            if r.get("derived"):
+                out(f"    ↳ đã cách ly {len(r['derived']['removed'])} đoạn chứa câu lệnh nhắm vào AI — chỉ phần còn "
+                    "lại được gửi cho model; ghi chú gốc giữ nguyên")
         for r in quarantined:
             line = " ".join(r["content"].split())
             out(f"  ⚠ {r['memory_id']} ({_date(r)}) {safe(line[:90])}{'…' if len(line) > 90 else ''}")
             out("    ↳ chứa câu lệnh nhắm vào AI — HG không gửi cho model (nếu an toàn: hg note trust "
                 f"{r['memory_id']})")
     receipt = {"question": question,
-               "notes": [{"ref": ref, "memory_id": r["memory_id"], "score": r["score"],
-                          "sha256": hashlib.sha256(r["content"].encode("utf-8")).hexdigest()}
-                         for ref, r in refs.items()],
+               "notes": [_note_entry(ref, r) for ref, r in refs.items()],
                "quarantined": [{"memory_id": r["memory_id"], "directives": r["directives"]} for r in quarantined],
                "off_topic": [{"memory_id": r["memory_id"], "missing_topic": r["missing_topic"]} for r in off_topic],
                "notes_ledger": notes_hash, "listener": listener, "model_check": model_check, "release": release,
@@ -292,6 +303,18 @@ def ask(question, *, notebook, router_factory, listener=None, model_check=None, 
     receipt.update(outcome=outcome, error=error, seconds=round(seconds, 3))
     _receipt_written(append_receipt(notebook.home, "ASK", receipt, clock=clock), on_receipt)
     return EXIT[outcome], receipt
+
+
+def _note_entry(ref, r):
+    """Receipt entry of a used note. "sha256" is always the STORED note's hash (ChatService re-reads the
+    note by it); a derived copy (RC-3) adds what was cut, why, and the hashes before and after."""
+    if r.get("derived"):
+        d = r["derived"]
+        return {"ref": ref, "memory_id": r["memory_id"], "score": r["score"], "sha256": d["original_sha256"],
+                "derived": {"original_sha256": d["original_sha256"], "derived_sha256": d["derived_sha256"],
+                            "removed": d["removed"], "reason": d["reason"]}}
+    return {"ref": ref, "memory_id": r["memory_id"], "score": r["score"],
+            "sha256": hashlib.sha256(r["content"].encode("utf-8")).hexdigest()}
 
 
 def _receipt_written(event, on_receipt):

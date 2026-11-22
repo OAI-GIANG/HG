@@ -362,6 +362,9 @@ class UISourceContractTests(unittest.TestCase):
         self.assertIn("if (data.retraction)", self.js)
         self.assertIn("↳ ' + data.retraction", self.js)
 
+    def test_derived_note_marker_is_rendered(self):
+        self.assertIn("n.sanitized", self.js)
+
     def test_screens_and_root_navigation(self):
         for screen in ("home", "chat", "models", "memory", "files", "tools",
                        "tasks", "search", "diagnostics", "settings"):
