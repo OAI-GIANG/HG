@@ -62,6 +62,13 @@ _DISCOURSE_PAIRS = frozenset({("cụ", "thể"), ("chính", "xác"), ("cu", "the
                              ("bắt", "đầu"), ("bat", "dau"),        # "bắt đầu lúc ..." (v6 RC-13)
                              ("dành", "cho"), ("danh", "cho")})     # "dành cho khách" (preposition)
 _TIME_UNITS = frozenset({"giờ", "phút", "gio", "phut"})
+# RC-15 (AC-A6 v7, ledger section 79): three generic patterns that name no topic.
+#   "nhà mình", "nhà bác Sáu": the household / possessive "nhà" before a person ("tiền nhà", "sau nhà" stay)
+#   "hàng tháng", "hàng ngày": "each" before a time unit ("hàng xóm" stays)
+#   "số nhà mấy": the house-number slot
+_HOUSEHOLD_OWNERS = frozenset({"mình", "tôi", "em", "tớ", "bác", "chú", "cô", "dì", "ông", "bà", "anh", "chị",
+                               "cậu", "mợ", "thím"})
+_PERIODS = frozenset({"thang", "ngay", "tuan", "nam", "quy"})
 # Typed without diacritics (AC-A6 v5 RC-7, ledger section 76): a sentence-final particle ("vậy", "nhỉ",
 # "hả", "nè") is dropped only as the LAST word ("khoản vay" keeps "vay"); "may" is the interrogative
 # "mấy" only next to a slot noun or right before the end ("máy giặt" keeps "may").
@@ -152,6 +159,13 @@ def topic_keys(text):
             drop.add(i)
         if w in ("mấy", "may") and i > 0 and raw[i - 1] in ("số", "so") and (w == "mấy" or i in drop):
             drop.add(i - 1)
+        if w == "nhà" and nxt in _HOUSEHOLD_OWNERS:
+            drop.add(i)
+        if fold(w) == "hang" and fold(nxt) in _PERIODS:
+            drop.add(i)
+        if (w in ("mấy", "may") and i > 1 and fold(raw[i - 1]) == "nha" and fold(raw[i - 2]) == "so"
+                and (w == "mấy" or raw[i - 1] == "nha")):
+            drop.update({i, i - 1, i - 2})
         is_bao_nhieu = w == "bao" and fold(nxt) == "nhieu"
         if is_bao_nhieu or w in _SLOT_BEFORE:
             # Only a noun DIRECTLY before the interrogative is a slot ("tên gì", "ngày nào"):
