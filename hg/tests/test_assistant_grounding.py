@@ -245,6 +245,49 @@ class V5FailureRootCauseTests(unittest.TestCase):
             self.assertNotIn(k, keys)
         self.assertIn("~7", keys)
 
+class V6FailureRootCauseTests(unittest.TestCase):
+    """AC-A6 v6 FAIL (2026-11-22, 2f285c0, ledger section 77). New examples, not v6 items.
+
+    RC-10 (safety): "tháng 10" was matched by "ngày 10" in a note about another month.
+    RC-12 (safety): a capitalised name that is also a stopword ("Bi" ~ "bị") was never checked.
+    RC-13: light words ("đi", "bắt đầu"), the slot "số" of "số mấy" and "giờ"/"phút" after a number
+    counted as topic and rejected the right note.
+    RC-14 (safety): one missing topic word was tolerated, so "khám răng" anchored a note about
+    "khám mắt" and HG labelled the substituted answer NOTE."""
+
+    def test_month_number_is_not_a_day_number(self):
+        note = "Tiền gửi xe tháng 9 là 180.000 đồng, nộp trước ngày 10."
+        self.assertTrue(textvi.number_gap("tháng 10", note))
+        self.assertIsNotNone(grounding.anchored("Tiền gửi xe tháng 10 là bao nhiêu?", note))
+        self.assertEqual(textvi.number_gap("tháng 10", "Hạn nộp là ngày 05/10/2026."), set())
+        self.assertEqual(textvi.number_gap("tháng 9", note), set())
+        # eval keys (parts=True): a plain "9" key is still found in "tháng 9"
+        self.assertEqual(textvi.number_gap("9", "tháng 9", parts=True), set())
+
+    def test_every_capitalised_name_must_be_in_the_note(self):
+        na = "Lớp học vẽ của bé Na vào 15 giờ thứ Tư."
+        self.assertIsNotNone(grounding.anchored("Lớp học vẽ của bé Bi vào lúc mấy giờ?", na))
+        bi = "Lớp học vẽ của bé Bi vào 16 giờ thứ Năm."
+        self.assertIsNone(grounding.anchored("Lớp học vẽ của bé Bi vào lúc mấy giờ?", bi, other_notes=[na]))
+
+    def test_light_words_and_time_units_are_not_topic(self):
+        keys = textvi.topic_keys("Ông nội đi tái khám bắt đầu lúc 9 giờ 30 phút phải không?")
+        for k in ("đi", "bắt", "đầu", "giờ", "phút"):
+            self.assertNotIn(k, keys)
+        self.assertNotIn("số", textvi.topic_keys("Mã tủ khóa ở phòng gym là số mấy?"))
+        self.assertIsNone(grounding.anchored("Mã tủ khóa ở phòng gym là số mấy?", "Mã tủ khóa phòng gym: 5521."))
+        self.assertIsNone(grounding.anchored("Bà nội đi đo đường huyết lúc mấy giờ?",
+                                             "Bà nội đo đường huyết lúc 6 giờ sáng.",
+                                             other_notes=["Bố đi công tác Đà Nẵng ngày 3/12."]))
+
+    def test_no_missing_topic_word_is_tolerated(self):
+        eye = "Mẹ hẹn khám mắt lúc 9 giờ sáng thứ Hai tại phòng khám Ánh Sáng."
+        self.assertIsNotNone(grounding.anchored("Mẹ hẹn khám răng vào ngày nào?", eye))
+        wrong = grounding.check_sentence("Mẹ hẹn khám răng lúc 9 giờ sáng thứ Hai [N1].", {"N1": eye},
+                                         question="Mẹ hẹn khám răng vào ngày nào?")
+        self.assertNotEqual(wrong["label"], "NOTE")
+        self.assertIsNone(grounding.anchored("Mẹ hẹn khám mắt vào ngày nào?", eye))
+
 # AC-A2: fixed adversarial outputs. Each changes a number, date, name or negation of a note
 # while copying most of its words. HG must never label any of them NOTE.
 ADVERSARIAL = [

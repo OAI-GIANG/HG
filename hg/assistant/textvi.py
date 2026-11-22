@@ -25,7 +25,7 @@ _NUMBER = re.compile(r"\d+(?:[.,:/\-]\d+)*")
 # "be" "bé" (child), "ve" "vé" (ticket) — dropping those would lose the topic (finding F-D3).
 STOPWORDS = frozenset("""
 là và của có cho các những một này đó kia thì với trong để đã sẽ đang được bị
-ở tại về từ khi nào gì ai sao thế nhé nha nhỉ ạ à ơi vậy rồi cũng lại mà nên hay hoặc
+ở tại về từ đi khi nào gì ai sao thế nhé nha nhỉ ạ à ơi vậy rồi cũng lại mà nên hay hoặc
 nhưng thêm bằng như theo vào ra lên xuống qua tôi mình bạn anh chị em ông bà họ
 chúng ta hãy xin vui lòng giúp cái con chiếc việc điều người lúc
 vâng dạ ừ ok okay
@@ -57,7 +57,10 @@ _TIME_INTERROGATIVE_HEADS = frozenset({"khi", "luc", "hoi", "gio"})
 # Discourse markers that frame a question but name no topic ("cụ thể là", "chính xác thì"). Only the
 # pair is dropped: "cụ" alone is a person (great-grandparent). Accented pairs match as written,
 # unaccented pairs only when both words were typed without diacritics.
-_DISCOURSE_PAIRS = frozenset({("cụ", "thể"), ("chính", "xác"), ("cu", "the"), ("chinh", "xac")})
+_DISCOURSE_PAIRS = frozenset({("cụ", "thể"), ("chính", "xác"), ("cu", "the"), ("chinh", "xac"),
+                             ("bắt", "đầu"), ("bat", "dau"),        # "bắt đầu lúc ..." (v6 RC-13)
+                             ("dành", "cho"), ("danh", "cho")})     # "dành cho khách" (preposition)
+_TIME_UNITS = frozenset({"giờ", "phút", "gio", "phut"})
 # Typed without diacritics (AC-A6 v5 RC-7, ledger section 76): a sentence-final particle ("vậy", "nhỉ",
 # "hả", "nè") is dropped only as the LAST word ("khoản vay" keeps "vay"); "may" is the interrogative
 # "mấy" only next to a slot noun or right before the end ("máy giặt" keeps "may").
@@ -142,6 +145,12 @@ def topic_keys(text):
             drop.update({i, i + 1, i + 2})               # "cho mình hỏi ..."
         if _TIME_TOKEN.match(w):
             drop.add(i)
+        # "9 giờ 30 phút": the clock words of a written time (numbers() compares it), and the slot "số"
+        # of "số mấy" (which number) are not topic words (v6 RC-13, ledger section 77).
+        if w in _TIME_UNITS and i > 0 and raw[i - 1].isdigit():
+            drop.add(i)
+        if w in ("mấy", "may") and i > 0 and raw[i - 1] in ("số", "so") and (w == "mấy" or i in drop):
+            drop.add(i - 1)
         is_bao_nhieu = w == "bao" and fold(nxt) == "nhieu"
         if is_bao_nhieu or w in _SLOT_BEFORE:
             # Only a noun DIRECTLY before the interrogative is a slot ("tên gì", "ngày nào"):
@@ -263,6 +272,20 @@ _FULL_DATE = re.compile(r"(?<!\w)(?:ngày|ngay)\s+(\d{1,2})\s+(?:tháng|thang)\s
                         r"(?:\s+(?:năm|nam)\s+(\d{4}))?(?!\w)", re.IGNORECASE)
 
 
+_MONTH = re.compile(r"(?<!\w)(?:tháng|thang)\s+(\d{1,2})(?![\w/.\-:])", re.IGNORECASE)
+
+
+def _months(text, values):
+    """'tháng 10' is the month value '--10', never the plain number 10 ("ngày 10" is not "tháng 10")."""
+    def repl(m):
+        mo = int(m.group(1))
+        if not 1 <= mo <= 12:
+            return m.group(0)
+        values.add(f"--{mo:02d}")
+        return " "
+    return _MONTH.sub(repl, text)
+
+
 def _full_dates(text, values):
     """Collect "ngày D tháng M [năm Y]" as the date values of 'D/M[/Y]' and blank them out."""
     def repl(m):
@@ -287,6 +310,7 @@ def numbers(text):
     text = nfc(text)
     values = set()
     text = _full_dates(text, values)
+    text = _months(text, values)
     for m in _HOUR_MINUTE.finditer(text):
         values.add(f"{int(m.group(1))}:{int(m.group(2)):02d}")
     text = _HOUR_MINUTE.sub(" ", text)
@@ -310,8 +334,11 @@ def number_gap(claim_text, source_text, *, parts=False):
         if re.match(r"^(?:\d+|-)-\d{2}-\d{2}$", v):          # '2026-09-05', '--09-05'
             if not v.startswith("--"):
                 days.add(v[v.index("-"):])
+            offered.add("--" + v.split("-")[-2])              # a full date also names its month
             if parts:
                 offered |= {str(int(p)) for p in v.split("-") if p}
+        elif re.match(r"^--\d{2}$", v) and parts:            # 'tháng 09' as an eval key part
+            offered.add(str(int(v[2:])))
         elif ":" in v and parts:                              # '18:30'
             offered |= {str(int(p)) for p in v.split(":")}
     return {v for v in numbers(claim_text) - offered if not (v.startswith("--") and v[1:] in days)}
