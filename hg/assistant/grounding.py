@@ -233,7 +233,15 @@ def anchored(question, note_text, *, other_notes=()):
     missing = [k for k in topic if k not in present and k.lstrip("~") not in _KIN_WORDS]
     if missing:
         return " ".join(k.lstrip("~") for k in missing)
+    # RC-17 (AC-A6 v8): a price question needs an amount in the note, or the model guesses one.
+    if "price" in answer_slots(question) and not _AMOUNT.search(textvi.fold(textvi.nfc(note_text).lower())):
+        return "số tiền"
     return None
+
+
+# An amount of money as notes write it: "185.000 đồng", "250.000đ", "250k", "1tr2", "250 nghìn", "1,2 triệu".
+_AMOUNT = re.compile(r"(?<![\w.,])\d[\d.,]*\s*(?:dong|d|k|nghin|ngan|trieu|tr\d*|ty|ti|vnd|usd)(?![a-z])|"
+                     r"(?<![\w.,])\d{1,3}(?:[.,]\d{3})+(?![\d.,]*\d)|\$\s*\d")
 
 
 def answer_slots(question):
