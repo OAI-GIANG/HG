@@ -1699,6 +1699,10 @@ Offline note selection on v4–v8 (diagnostic only, contaminated sets):
   phrase `nồi chiên không dầu` as non-negated noun, and narrow Vietnamese
   conversational scaffolding. Three new tests fail before changes and pass after.
   The changed branch MUST receive full regressions and CI before acceptance.
+  Post-fix adversarial review found that a contrary `nồi chiên có dầu` answer could
+  incorrectly get NOTE. A fourth synthetic test failed first; `grounding.compare` now
+  requires explicit product variants to agree, both directions. No first-fix commit
+  may merge without this safeguard and rerun regressions.
 - **Status:** AC-A6 remains FAILED. v9 is contaminated and must never be reused
   for acceptance. A new frozen v10 is needed on the final code. Production GO-LIVE
   is NOT approved. No listener or Android production configuration change.

@@ -404,6 +404,17 @@ class V9FollowupRootCauseTests(unittest.TestCase):
                                                question="Nồi chiên SunStar còn bảo hành không?")
         self.assertNotEqual(unsupported["label"], "NOTE")
 
+    def test_oil_free_product_variant_must_not_be_confused_with_oily_variant(self):
+        question = "Nồi chiên SunStar giao ngày nào?"
+        oil_free = {"N1": "Nồi chiên không dầu SunStar giao ngày 22/11."}
+        oil_using = {"N1": "Nồi chiên có dầu SunStar giao ngày 22/11."}
+        wrong_oily = grounding.check_sentence("Nồi chiên có dầu SunStar giao ngày 22/11.",
+                                             oil_free, question=question)
+        wrong_oil_free = grounding.check_sentence("Nồi chiên không dầu SunStar giao ngày 22/11.",
+                                                oil_using, question=question)
+        self.assertNotEqual(wrong_oily["label"], "NOTE")
+        self.assertNotEqual(wrong_oil_free["label"], "NOTE")
+
     def test_question_particles_and_date_day_slot_are_not_topics(self):
         phone = "Thợ Sơn sửa điều hòa, số liên lạc 0980 123 456."
         self.assertIsNone(grounding.anchored("Số liên lạc thợ Sơn là gì nè?", phone))

@@ -50,6 +50,16 @@ threshold or relax a cross-topic/number/name guard:
    `nhắc giùm`, and `mùng mấy`; this produced false missing-topic refusals.
    Narrowly remove these patterns, retaining meaningful different actions and topics.
 
+**Adversarial post-fix review (mandatory security gate):** The first narrow product-noun
+fix revealed a *new* false NOTE when an answer asserted `nồi chiên có dầu` while its
+source asserted `nồi chiên không dầu`. A fourth independent synthetic safety regression
+was added; it **failed on the first fix** (`negative-security-before.log`). The corrected
+`grounding.compare` checks explicitly asserted product variants against source variants
+in both directions. This regression and the original three all PASS in
+`negative-security-after.log`; no weakened acceptance threshold or v9 rerun.
+The first fix commit is NOT acceptable for merge; only a further commit that includes
+this guard and has full green regression/CI may be merged.
+
 **Not touched:** synonyms such as buy vs order, appointment vs transport, or access-code
 paraphrases; these could cause false NOTE attribution if relaxed blindly.
 

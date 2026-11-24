@@ -106,6 +106,14 @@ def _units(text):
 
 _CLAUSE_BREAK = re.compile(r"[,.;:!?…()\n]+|\b(?:nhưng|còn|mà|song|tuy|but|while)\b", re.IGNORECASE)
 
+# A named product variant is a factual attribute, not a standalone negated predicate.
+# An answer that EXPLICITLY asserts a variant must be supported by the SAME variant
+# in the note. A generic "nồi chiên" answer can still cite a specific product note.
+_PRODUCT_OIL_FREE = re.compile(r"\bnồi\s+chiên\s+không\s+dầu\b", re.IGNORECASE)
+_PRODUCT_OIL_USING = re.compile(r"\bnồi\s+chiên\s+(?:có|dùng|cần|sử\s+dụng)\s+dầu\b", re.IGNORECASE)
+
+
+
 
 def _negated_clauses(text):
     """For every negation, the folded content words after it up to the end of its clause."""
@@ -140,6 +148,14 @@ def compare(sentence, note_text):
     note_words = textvi.folded_set(note_text)
     overlap = len(claim & note_keys) / len(claim)
     problems = []
+    asserted_product_kinds = {kind for kind, rx in
+                              (("oil_free", _PRODUCT_OIL_FREE), ("oil_using", _PRODUCT_OIL_USING))
+                              if rx.search(sentence)}
+    source_product_kinds = {kind for kind, rx in
+                            (("oil_free", _PRODUCT_OIL_FREE), ("oil_using", _PRODUCT_OIL_USING))
+                            if rx.search(note_text)}
+    if asserted_product_kinds and asserted_product_kinds != source_product_kinds:
+        problems.append("loại sản phẩm không đúng hoặc không có trong ghi chú")
     missing_numbers = textvi.number_gap(sentence, note_text)
     if missing_numbers:
         problems.append("số/ngày không có trong ghi chú: " + ", ".join(sorted(missing_numbers)))
