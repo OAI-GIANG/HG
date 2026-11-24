@@ -186,7 +186,9 @@ class Notebook:
         if type(limit) is not int or limit < 1:
             raise NoteError(f"limit must be a whole number >= 1, not {limit!r}")
         records = self.active() if records is None else records
-        unigrams = set(textvi.query_keys(query))
+        event = textvi.event_question(query)
+        search_query = event[0] if event else query
+        unigrams = set(textvi.query_keys(search_query))
         if not unigrams:
             return []
         index = Index(analyzer=textvi.analyze, query_analyzer=textvi.analyze_query)
@@ -199,10 +201,10 @@ class Notebook:
         # ("hết bao nhiêu tiền") are in no note, so counting them kept short right notes out (v5 RC-9,
         # v6 q19). Search is not the safety net: grounding.anchored rejects any note that lacks a topic word
         # ("Chó Vàng nặng bao nhiêu ký?" never anchors a vaccination note, v6 RC-14).
-        wanted = (set(textvi.topic_keys(query)) or set(textvi.query_keys(textvi.strip_fillers(query)))
+        wanted = (set(textvi.topic_keys(search_query)) or set(textvi.query_keys(textvi.strip_fillers(search_query)))
                   or unigrams)
         need = max(1, -(-len(wanted) // 2))
-        for mid, score in index.search(query, limit=limit * 3):
+        for mid, score in index.search(search_query, limit=limit * 3):
             matched = wanted & set(textvi.document_keys(by_id[mid]["content"]))
             if len(matched) >= need:
                 hits.append(dict(by_id[mid], score=round(score, 4), matched=sorted(matched)))

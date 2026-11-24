@@ -106,6 +106,22 @@ def words(text):
     return WORD.findall(nfc(text).lower())
 
 
+# A neutral event frame is optional only when it directly introduces the requested
+# time or place. Status questions ("có diễn ra không?") keep the predicate.
+_EVENT_QUESTION = re.compile(
+    r"^(?P<subject>[^.!?…;:,\n]+?)\s+(?:diễn ra|dien ra)\s+"
+    r"(?P<slot>ở đâu|o dau|tại đâu|tai dau|khi nào|khi nao|ngày nào|ngay nao|"
+    r"lúc mấy giờ|luc may gio|mấy giờ|may gio)\s*\??$"
+)
+
+
+def event_question(text):
+    match = _EVENT_QUESTION.fullmatch(nfc(text).lower().strip())
+    if match and len(topic_keys(match["subject"])) >= 2:
+        return match["subject"], fold(match["slot"])
+    return None
+
+
 def content_words(text):
     """Words that carry topic: no function syllables, no single letters (digits kept)."""
     out = []
