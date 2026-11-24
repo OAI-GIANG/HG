@@ -42,7 +42,7 @@ OLDCOMMIT="$(python3 -I -B "$HERE/staging_probe.py" field "$(python3 -I -B "$HER
 [ -d "$STG" ] || { mkdir -m 700 "$STG" && : > "$STG/.hg-staging"; }
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
 EV="$STG/rehearsal-$TS"
-mkdir -m 700 "$EV"
+mkdir -m 700 "$EV" || refuse "cannot create a fresh evidence directory"
 exec >> "$EV/rehearsal.log" 2>&1
 say() { echo "[$(date +%T)] $*"; }
 RSVPID=""
@@ -79,11 +79,16 @@ finish() {
   if diff "$EV/.prod-before.cmp" "$EV/.prod-after.cmp" > "$EV/prod-diff.txt"; then R_PROD=UNCHANGED; else R_PROD=CHANGED; fi
   rm -f "$EV/.prod-before.cmp" "$EV/.prod-after.cmp"
   echo "REHEARSAL_RESULT candidate=$C release=${NEW:-UNKNOWN} production_release=$OLD switch=$R_SWITCH j2=$R_J2 j1=$R_J1 restore=$R_RESTORE interruption=$R_INTERRUPT production=$R_PROD last_step=$STEP"
-  (cd "$EV" && sha256sum $(ls | grep -v '^SHA256SUMS$') > SHA256SUMS)
   echo "EVIDENCE_DIR=$EV"
   if [ "$rc" -eq 0 ] && { [ "$R_SWITCH" != SWITCH_OK ] || [ "$R_J2" != CLOSED_VERIFIED ] || [ "$R_J1" != ANSWERED_NO_ACTION ] \
       || [ "$R_RESTORE" != RESTORED ] || [ "$R_INTERRUPT" != ROLLBACK_READY_VERIFIED ] || [ "$R_PROD" != UNCHANGED ]; }; then rc=1; fi
   [ "$rc" -eq 0 ] && echo REHEARSAL_PASS || echo REHEARSAL_FAIL
+  # The log is now complete. Keep seal diagnostics off it unless the seal fails.
+  if ! (cd "$EV" && sha256sum -- ./* > .SHA256SUMS.tmp &&
+        mv .SHA256SUMS.tmp SHA256SUMS) 2>/dev/null; then
+    echo "REHEARSAL_SEAL_FAILED"
+    exit 1
+  fi
   exit "$rc"
 }
 trap finish EXIT

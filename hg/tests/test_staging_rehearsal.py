@@ -55,9 +55,9 @@ class FakeTermux:
         (sv / "run").write_text(f'#!/bin/sh\ncd "{self.home}/hg-releases/{rid}"\n'
                                 f'exec python3 -B -u -m hg serve --config "{self.conf}"\n')
 
-    def run(self, *args):
+    def run(self, *args, script=SCRIPT):
         env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(self.home), "PREFIX": str(self.prefix)}
-        return subprocess.run([POSIX_SH, str(SCRIPT), *args], env=env, capture_output=True, text=True, timeout=60)
+        return subprocess.run([POSIX_SH, str(script), *args], env=env, capture_output=True, text=True, timeout=60)
 
 
 class ProbeTests(unittest.TestCase):
@@ -181,6 +181,28 @@ class RehearsalRefusalTests(unittest.TestCase):
     def test_refuses_without_a_production_run_script(self):
         (self.fake.prefix / "var" / "service" / "hg-runtime" / "run").unlink()
         self.assertRefused(self.fake.run(f"{self.fake.home}/stg", COMMIT), "no production run script")
+
+    def test_failed_rehearsal_seals_the_log_after_recording_its_verdict(self):
+        scripts = self.tmp / "scripts"
+        scripts.mkdir()
+        for source in (SCRIPT, PROBE):
+            shutil.copyfile(source, scripts / source.name)
+        (scripts / "deploy_smoke.py").write_text("print('[200, {}]')\n", encoding="utf-8")
+        (scripts / "build_release.sh").write_text("exit 1\n", encoding="utf-8")
+
+        stage = self.fake.home / "stg"
+        result = self.fake.run(str(stage), COMMIT, "18867", script=scripts / SCRIPT.name)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        (evidence,) = stage.glob("rehearsal-*")
+        log = (evidence / "rehearsal.log").read_text(encoding="utf-8")
+        self.assertIn("REHEARSAL_RESULT", log)
+        self.assertIn(f"EVIDENCE_DIR={evidence}", log)
+        self.assertTrue(log.endswith("REHEARSAL_FAIL\n"), log)
+        manifest = (evidence / "SHA256SUMS").read_text(encoding="utf-8")
+        self.assertIn("rehearsal.log", manifest)
+        first_check = subprocess.run(["sha256sum", "-c", "SHA256SUMS"], cwd=evidence,
+                                     capture_output=True, text=True, timeout=10)
+        self.assertEqual(first_check.returncode, 0, first_check.stdout + first_check.stderr)
 
     def test_isolation_is_exported_before_the_first_staging_write(self):
         text = SCRIPT.read_text(encoding="utf-8")
