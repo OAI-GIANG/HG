@@ -1,0 +1,16 @@
+{
+  "job_id": "40328",
+  "attempt": "one-shot fixture only",
+  "android_app_wide_recovery_proven": false,
+  "initial_jobs": "No jobs found",
+  "isolated_tree_stopped_before_schedule": true,
+  "schedule_exit": 0,
+  "schedule_message": "",
+  "fixture_restarted_by_job": true,
+  "new_supervisor": 24425,
+  "new_child": 24434,
+  "cancel_request_exit": 0,
+  "final_jobs": "No jobs found",
+  "production_and_watchdog_pids_match": true,
+  "staging_service_down_after_probe": true
+}

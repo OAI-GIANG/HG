@@ -1,0 +1,32 @@
+{
+  "candidate": "40254e60802bc59e40cd739d6ae4081241af4acd",
+  "release": "95df7ed9e62f83fe32807a625da4952d191342d1babd2ba19945132dff676153",
+  "initial_state": "new isolated state",
+  "production_scope": "read-only checks",
+  "full_android_app_stop": "not exercised",
+  "job_id": "41577",
+  "initial_ready": {
+    "status": "READY",
+    "release_id": "95df7ed9e62f83fe32807a625da4952d191342d1babd2ba19945132dff676153",
+    "integrity": "VERIFIED",
+    "trust": "LOADED",
+    "idempotency": "USABLE"
+  },
+  "schedule_exit": 0,
+  "job_entered_utc": "2026-11-24T15:08:27Z",
+  "isolated_tree_stopped": true,
+  "job_observed_loss_utc": "2026-11-24T15:08:28Z",
+  "recovered_ready": {
+    "status": "READY",
+    "release_id": "95df7ed9e62f83fe32807a625da4952d191342d1babd2ba19945132dff676153",
+    "integrity": "VERIFIED",
+    "trust": "LOADED",
+    "idempotency": "USABLE"
+  },
+  "new_supervisor": 25296,
+  "cancel_exit": 0,
+  "final_jobs": "No jobs found",
+  "port_closed_after_cleanup": true,
+  "production_pids_unchanged": true,
+  "release_manifest_sha256": "0489e75c66cd67a4a0da396b57ba4d1d13866650aae2d2a3b21e4bad9b463c11"
+}
