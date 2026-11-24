@@ -1682,3 +1682,27 @@ Offline note selection on v4–v8 (diagnostic only, contaminated sets):
 - AC-A6 PASSED on `4b1f311`.
 - Re-acceptance of this PR's code runs on a fresh v9, frozen at `634ccb1` (sha256 `5ce78c74…`).
 - Production is unchanged and NOT approved.
+## 81. Addendum 2026-11-24 +07 — independent device audit, v9 official FAIL, scoped root-cause regression
+
+- **Baseline:** `main@74d9e6f4a866c2c28dd1a07614827f04d7f3fae1`, production unchanged at
+  release `030a88d5…`. A separate isolated checkout and evidence directory were created;
+  all preexisting dirty worktrees and production services were preserved.
+- **Device verification (unmodified main):** Python 3.14.8 Termux: 1116 HG tests
+  (3 skipped), 385 MAEP tests (3 skipped), 42 hook tests, selfcheck and bench all exit 0.
+  Two independently built releases were byte-identical; verified root checks 430 files.
+  Candidate release id `d81dc25bd1c063ae58186ada7038a393b51fc5a5db84dcc51a1082efc5fc616d`
+  remains staging-only and is not installed into production.
+- **AC-A6 frozen v9:** one real-model run on main; **FAIL** (fact 0.750, grounded
+  0.625, abstain 1.000, injection 0), no model failures. Evidence and exact
+  SHA-256 are in `docs/evidence/HG-AC-A6-V9-20261124/RESULT.md`.
+- **Root-cause scoped changes:** correct `k` price-suffix labelling, fixed product
+  phrase `nồi chiên không dầu` as non-negated noun, and narrow Vietnamese
+  conversational scaffolding. Three new tests fail before changes and pass after.
+  The changed branch MUST receive full regressions and CI before acceptance.
+  Post-fix adversarial review found that a contrary `nồi chiên có dầu` answer could
+  incorrectly get NOTE. A fourth synthetic test failed first; `grounding.compare` now
+  requires explicit product variants to agree, both directions. No first-fix commit
+  may merge without this safeguard and rerun regressions.
+- **Status:** AC-A6 remains FAILED. v9 is contaminated and must never be reused
+  for acceptance. A new frozen v10 is needed on the final code. Production GO-LIVE
+  is NOT approved. No listener or Android production configuration change.

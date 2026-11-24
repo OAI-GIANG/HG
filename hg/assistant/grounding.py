@@ -106,11 +106,23 @@ def _units(text):
 
 _CLAUSE_BREAK = re.compile(r"[,.;:!?…()\n]+|\b(?:nhưng|còn|mà|song|tuy|but|while)\b", re.IGNORECASE)
 
+# A named product variant is a factual attribute, not a standalone negated predicate.
+# An answer that EXPLICITLY asserts a variant must be supported by the SAME variant
+# in the note. A generic "nồi chiên" answer can still cite a specific product note.
+_PRODUCT_OIL_FREE = re.compile(r"\bnồi\s+chiên\s+không\s+dầu\b", re.IGNORECASE)
+_PRODUCT_OIL_USING = re.compile(r"\bnồi\s+chiên\s+(?:có|dùng|cần|sử\s+dụng)\s+dầu\b", re.IGNORECASE)
+
+
+
 
 def _negated_clauses(text):
     """For every negation, the folded content words after it up to the end of its clause."""
     clauses = []
-    for clause in _CLAUSE_BREAK.split(textvi.nfc(text or "")):
+    # The fixed product name "nồi chiên không dầu" is not a predicate negation.
+    # Remove the phrase ONLY from negation analysis; keep raw text for entity and value checks.
+    negation_copy = re.sub(r"\bnồi\s+chiên\s+không\s+dầu\b", "nồi chiên",
+                           textvi.nfc(text or ""), flags=re.IGNORECASE)
+    for clause in _CLAUSE_BREAK.split(negation_copy):
         if not clause:
             continue
         tokens = textvi.words(clause)
@@ -136,6 +148,14 @@ def compare(sentence, note_text):
     note_words = textvi.folded_set(note_text)
     overlap = len(claim & note_keys) / len(claim)
     problems = []
+    asserted_product_kinds = {kind for kind, rx in
+                              (("oil_free", _PRODUCT_OIL_FREE), ("oil_using", _PRODUCT_OIL_USING))
+                              if rx.search(sentence)}
+    source_product_kinds = {kind for kind, rx in
+                            (("oil_free", _PRODUCT_OIL_FREE), ("oil_using", _PRODUCT_OIL_USING))
+                            if rx.search(note_text)}
+    if asserted_product_kinds and asserted_product_kinds != source_product_kinds:
+        problems.append("loại sản phẩm không đúng hoặc không có trong ghi chú")
     missing_numbers = textvi.number_gap(sentence, note_text)
     if missing_numbers:
         problems.append("số/ngày không có trong ghi chú: " + ", ".join(sorted(missing_numbers)))
@@ -279,7 +299,11 @@ def slot_mismatch(sentence, slots):
     missing = []
     for slot in slots:
         if slot == "price":
-            ok = bool(_MONEY.search(folded)) and bool(re.search(r"\b(?:dong|nghin|ngan|trieu|ty|ti|vnd|usd|do)\b", folded))
+            # "275k" is explicitly an amount, unlike a bare "275"; keep the numeric
+            # equality and sibling/anchor checks in compare() intact.
+            ok = (bool(_MONEY.search(folded)) and
+                  bool(re.search(r"\b(?:dong|nghin|ngan|trieu|ty|ti|vnd|usd|do)\b", folded))) or \
+                 bool(re.search(r"(?<!\w)\d[\d.,]*k\b", folded))
         elif slot == "time":
             ok = bool(_CLOCK.search(folded)) or bool(re.search(r"\b(?:sang|trua|chieu|toi)\b", folded) and textvi.numbers(folded))
         elif slot == "date":

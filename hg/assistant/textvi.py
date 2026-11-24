@@ -58,7 +58,8 @@ _VALUE_BEFORE_BAO_NHIEU = frozenset({"gia", "het", "ton", "mat", "lieu", "tra"})
 # Discourse markers that frame a question but name no topic ("cụ thể là", "chính xác thì"). Only the
 # pair is dropped: "cụ" alone is a person (great-grandparent). Accented pairs match as written,
 # unaccented pairs only when both words were typed without diacritics.
-_DISCOURSE_PAIRS = frozenset({("cụ", "thể"), ("chính", "xác"), ("cu", "the"), ("chinh", "xac"),
+_DISCOURSE_PAIRS = frozenset({("nhắc", "giùm"), ("nhac", "gium"),
+                             ("cụ", "thể"), ("chính", "xác"), ("cu", "the"), ("chinh", "xac"),
                              ("bắt", "đầu"), ("bat", "dau"),        # "bắt đầu lúc ..." (v6 RC-13)
                              ("dành", "cho"), ("danh", "cho")})     # "dành cho khách" (preposition)
 _TIME_UNITS = frozenset({"giờ", "phút", "gio", "phut"})
@@ -72,7 +73,7 @@ _PERIODS = frozenset({"thang", "ngay", "tuan", "nam", "quy"})
 # Typed without diacritics (AC-A6 v5 RC-7, ledger section 76): a sentence-final particle ("vậy", "nhỉ",
 # "hả", "nè") is dropped only as the LAST word ("khoản vay" keeps "vay"); "may" is the interrogative
 # "mấy" only next to a slot noun or right before the end ("máy giặt" keeps "may").
-_FINAL_PARTICLES_UNACCENTED = frozenset({"vay", "nhi", "ha", "ne"})
+_FINAL_PARTICLES_UNACCENTED = frozenset({"vay", "nhi", "ha", "ne", "nè"})
 _SLOT_NOUNS_UNACCENTED = frozenset({"ngay", "gio", "thang", "nam", "tuan", "lan", "tuoi", "so", "tang", "phong",
                                     "cai", "con", "nguoi"})
 _ASKER = frozenset({"mình", "tôi", "em", "tớ", "minh", "toi", "to"})
@@ -191,6 +192,8 @@ def topic_keys(text):
             drop.update({i, i + 2})
             if i + 5 < len(raw) and fold(raw[i + 4]) == "nam" and raw[i + 5].isdigit():
                 drop.add(i + 4)
+        if w == "mùng" and nxt == "mấy":
+            drop.add(i)  # "mùng mấy" asks for a day value, not a topic
         if (w, nxt) in _DISCOURSE_PAIRS:
             drop.update({i, i + 1})
         if w == "đúng" and negations(nxt):          # tag question "..., đúng không?"
@@ -222,6 +225,8 @@ def strip_fillers(text):
     for i, w in enumerate(raw):
         if fold(w) == "cho" and i + 2 < len(raw) and raw[i + 1] in _ASKER and fold(raw[i + 2]) == "hoi":
             drop.update({i, i + 1, i + 2})
+        if i + 1 < len(raw) and (w, raw[i + 1]) in {("nhắc", "giùm"), ("nhac", "gium")}:
+            drop.update({i, i + 1})
     return " ".join(w for i, w in enumerate(raw) if i not in drop)
 
 

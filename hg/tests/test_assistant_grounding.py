@@ -378,6 +378,56 @@ class V8WrongAnswerRootCauseTests(unittest.TestCase):
             with self.subTest(note=note):
                 self.assertIsNone(grounding.anchored("Má phanh xe máy giá bao nhiêu tiền vậy?", note))
 
+
+class V9FollowupRootCauseTests(unittest.TestCase):
+    """Fresh regression examples for AC-A6 v9 diagnostics; NOT v9 replay or acceptance."""
+
+    def test_short_k_price_must_be_grounded_and_numbers_still_discriminate(self):
+        note = {"N1": "Dịch vụ vệ sinh điều hòa của anh Phúc giá 275k mỗi lần."}
+        question = "Dịch vụ vệ sinh điều hòa giá bao nhiêu?"
+        good = grounding.check_sentence("Dịch vụ vệ sinh điều hòa giá 275k.", note, question=question)
+        self.assertEqual(good["label"], "NOTE")
+        wrong = grounding.check_sentence("Dịch vụ vệ sinh điều hòa giá 375k.", note, question=question)
+        self.assertNotEqual(wrong["label"], "NOTE")
+        bare = grounding.check_sentence("Dịch vụ vệ sinh điều hòa giá 275.", note, question=question)
+        self.assertNotEqual(bare["label"], "NOTE")
+
+    def test_product_name_khong_dau_is_not_a_negative_statement(self):
+        note = {"N1": "Nồi chiên không dầu SunStar giao ngày 22/11, bảo hành 12 tháng."}
+        question = "Nồi chiên SunStar giao ngày nào?"
+        good = grounding.check_sentence("Nồi chiên SunStar giao ngày 22/11.", note, question=question)
+        self.assertEqual(good["label"], "NOTE")
+        wrong = grounding.check_sentence("Nồi chiên SunStar giao ngày 23/11.", note, question=question)
+        self.assertNotEqual(wrong["label"], "NOTE")
+        other = {"N1": "Nồi chiên SunStar không còn được bảo hành, giao ngày 22/11."}
+        unsupported = grounding.check_sentence("Nồi chiên SunStar còn được bảo hành.", other,
+                                               question="Nồi chiên SunStar còn bảo hành không?")
+        self.assertNotEqual(unsupported["label"], "NOTE")
+
+    def test_oil_free_product_variant_must_not_be_confused_with_oily_variant(self):
+        question = "Nồi chiên SunStar giao ngày nào?"
+        oil_free = {"N1": "Nồi chiên không dầu SunStar giao ngày 22/11."}
+        oil_using = {"N1": "Nồi chiên có dầu SunStar giao ngày 22/11."}
+        wrong_oily = grounding.check_sentence("Nồi chiên có dầu SunStar giao ngày 22/11.",
+                                             oil_free, question=question)
+        wrong_oil_free = grounding.check_sentence("Nồi chiên không dầu SunStar giao ngày 22/11.",
+                                                oil_using, question=question)
+        self.assertNotEqual(wrong_oily["label"], "NOTE")
+        self.assertNotEqual(wrong_oil_free["label"], "NOTE")
+
+    def test_question_particles_and_date_day_slot_are_not_topics(self):
+        phone = "Thợ Sơn sửa điều hòa, số liên lạc 0980 123 456."
+        self.assertIsNone(grounding.anchored("Số liên lạc thợ Sơn là gì nè?", phone))
+        date = "Hội trại gia đình tổ chức ngày 13/02."
+        self.assertIsNone(grounding.anchored("Hội trại gia đình mùng mấy tháng mấy?", date))
+        reminder = "Mã hộp dụng cụ ở nhà kho là 3481."
+        self.assertIsNone(grounding.anchored("Mã hộp dụng cụ ở nhà kho là mấy, nhắc giùm mình với?", reminder))
+        # Distinct events/actions remain discriminative despite these fillers.
+        self.assertIsNotNone(grounding.anchored("Chị Hoa mua xe máy ở đâu?",
+                                                 "Chị Hoa đặt xe máy tại đại lý Tây Hồ."))
+        self.assertIsNotNone(grounding.anchored("Bé Na khám răng ngày nào?",
+                                                 "Bé Na khám mắt ngày 13/02."))
+
 class AdversarialTests(unittest.TestCase):
     """AC-A2: zero NOTE labels on altered facts."""
 
