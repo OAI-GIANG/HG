@@ -261,6 +261,7 @@ def _strict_anchor(question, note_text, *, other_notes):
 
 _EVENT_LOCATION = re.compile(r"^(?:ở|tại|o|tai)\s+(?!(?:sao|đâu|dau|đây|đó|đấy)\b)(?=\w)", re.I)
 _EVENT_TIME = re.compile(r"^(?:(?:vao|luc)\s+)?(?:\d|ngay\b|thang\b|thu\b|chu nhat\b)")
+_EVENT_CLAUSE_END = re.compile(r"[,;](?=\s)|\s+thay\s+(?:cho|vì|vi)\s+", re.I)
 
 
 def _event_source(question, note_text, other_notes):
@@ -273,7 +274,7 @@ def _event_source(question, note_text, other_notes):
     for sentence in split_sentences(note_text):
         if sentence.rstrip().endswith("?"):
             continue
-        clause = re.split(r"[,;](?=\s)", sentence, maxsplit=1)[0]
+        clause = _EVENT_CLAUSE_END.split(sentence, maxsplit=1)[0]
         if _strict_anchor(subject, clause, other_notes=other_notes):
             continue
         words = list(textvi.WORD.finditer(clause.lower()))
@@ -287,12 +288,13 @@ def _event_source(question, note_text, other_notes):
         # followed by some other event or location must not satisfy the question.
         subject_end = words[len(subject_words) - 1].end()
         remainder = clause[subject_end:].lstrip(" \t:")
+        if {"hay", "hoặc", "hoac"}.intersection(textvi.words(remainder)):
+            continue
         if slot in {"o dau", "tai dau"}:
             location = _EVENT_LOCATION.match(remainder)
             if location:
                 place = textvi.words(remainder[location.end():])
-                if not {"hay", "hoặc", "hoac"}.intersection(place):
-                    sources.append((clause, (textvi.words(clause[:subject_end]), place)))
+                sources.append((clause, (textvi.words(clause[:subject_end]), place)))
         else:
             slot_type = "time" if "gio" in slot else "date"
             if _EVENT_TIME.match(textvi.fold(remainder.lower())) and not slot_mismatch(remainder, (slot_type,)):

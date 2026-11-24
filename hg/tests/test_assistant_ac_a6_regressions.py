@@ -25,6 +25,19 @@ class VietnameseEvidenceRegressionTests(AskBase):
         self.assertEqual(receipt["outcome"], "ANSWERED")
         self.assertEqual(receipt["sentences"][0]["label"], "NOTE")
 
+    def test_event_date_cannot_cite_a_replaced_date_as_current(self):
+        question = "Lễ gắn biển Gốm Sứ diễn ra khi nào?"
+        for punctuation in (",", ""):
+            note = f"Lễ gắn biển Gốm Sứ vào ngày 19/08{punctuation} thay cho ngày 18/08."
+            good = grounding.check_sentence("Lễ gắn biển Gốm Sứ vào ngày 19/08 [N1].", {"N1": note},
+                                            question=question)
+            wrong = grounding.check_sentence("Lễ gắn biển Gốm Sứ vào ngày 18/08 [N1].", {"N1": note},
+                                             question=question)
+            self.assertEqual(good["label"], "NOTE")
+            self.assertNotEqual(wrong["label"], "NOTE")
+        pending = "Lễ gắn biển Gốm Sứ vào ngày 19/08 hoặc 20/08."
+        self.assertIsNotNone(grounding.anchored(question, pending))
+
     def test_event_frame_does_not_license_other_events_or_unrelated_locations(self):
         for source in (
             "Buổi tập Sao Mai tại sân Dẻ Gai.",
