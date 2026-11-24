@@ -1,0 +1,25 @@
+[
+  {
+    "log": "rehearsal.log",
+    "original_entries": 24,
+    "verbatim_match": 23,
+    "prefix_matches_original_seal": true,
+    "original_log_sha256": "16cb6e695ed20f639869af164f04dbfc772b32562a36bcc56579380345ae6df5",
+    "final_log_sha256": "4553a8b7a72050c1abd8218970118beda04c98f6f02ba08b9cdd0f5347a9a4d8",
+    "appended_lines": [
+      "EVIDENCE_DIR=/data/data/com.termux/files/home/hg-staging-phase1-40254e6-20261124/rehearsal-20261124T133832Z",
+      "REHEARSAL_PASS"
+    ]
+  },
+  {
+    "log": "drill.log",
+    "original_entries": 8,
+    "verbatim_match": 7,
+    "prefix_matches_original_seal": true,
+    "original_log_sha256": "7205a0e20e5d564fbf86cd19e5968f0befd9dbcb4060538eaca9412ade4a3650",
+    "final_log_sha256": "e7e65be84ae1b1156f52dad6b9a8780c1836eb79ff76281a135eea6cb5e4b79f",
+    "appended_lines": [
+      "2026-11-20T00:03:06+07:00 DRILL_DONE"
+    ]
+  }
+]

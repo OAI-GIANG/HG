@@ -1,0 +1,18 @@
+{
+  "isolated_child_restarted": {
+    "supervisor": 12113,
+    "before": 12248,
+    "after": 12402
+  },
+  "isolated_tree_without_trigger": {
+    "seconds_without_service": 12,
+    "restarted": false
+  },
+  "manual_external_fixture_start": {
+    "supervisor": 12463,
+    "child": 12466
+  },
+  "sampled_production_and_watchdog_pids_unchanged": true,
+  "staging_service_torn_down": true,
+  "android_wide_recovery": "UNVERIFIED; fixture process group only"
+}

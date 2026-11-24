@@ -1,0 +1,39 @@
+{
+  "candidate": "40254e60802bc59e40cd739d6ae4081241af4acd",
+  "asset_sha256": {
+    "/ui/": "3ccf8195d3937b9a5f08c9b2505b2b96124cbd0d7860b940afa58f2234c4d7de",
+    "/ui/app.js": "766d95fe89f370a99fab158ade96cb30f5bb0bc40ea463115f32d17f3d0d9c5a",
+    "/ui/styles.css": "b4a0fff60aa3604edd302951155bc11114afea168ef1bdaac1c42f599122f50a"
+  },
+  "exact_js_and_css": true,
+  "added_to_html": "same-origin synthetic test script",
+  "real_model_used": false,
+  "intent_exit": null,
+  "browser_result": {
+    "checks": {
+      "android_chrome": true,
+      "usable_viewport": true,
+      "connected": true,
+      "note_label": true,
+      "multiline_submitted": true,
+      "text_selectable": true,
+      "failure_visible": true,
+      "no_url_token": true,
+      "no_csp_violation": true
+    },
+    "failure": null,
+    "user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Mobile Safari/537.36"
+  },
+  "model_calls": 1,
+  "visits": [
+    [
+      "/ui/",
+      "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Mobile Safari/537.36"
+    ],
+    [
+      "/ui/phase1-harness.js",
+      "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Mobile Safari/537.36"
+    ]
+  ],
+  "verdict": "PASS"
+}

@@ -1,0 +1,123 @@
+ref	sha	ancestor_of_pinned_main	open_pr_dependency	tracked_document_references	other_refs_at_same_sha	recommendation	proposed_recovery_before_any_change
+eval/hg-ac-a6-v10-holdout-20261124	8b026f8d962b978440e96e0437990faf970b0a21	NO				KEEP	verified bundle of this ref required before archival
+eval/hg-ac-a6-v11-holdout-20261124	9421fdbd7b67c7689176bd8c105dc427ebab0f82	NO				KEEP	verified bundle of this ref required before archival
+eval/hg-ac-a6-v4-holdout-20261122	f121ceba748ed39db45d7bceb181b61b65f87dd0	NO				KEEP	verified bundle of this ref required before archival
+eval/hg-ac-a6-v5-holdout-20261122	c74eb31c08d919b353937fe31c42cf0fcc05c067	NO				KEEP	verified bundle of this ref required before archival
+eval/hg-ac-a6-v6-holdout-20261122	6fda2cd490aca3666f1c65c3be59f13af097e805	NO				KEEP	verified bundle of this ref required before archival
+eval/hg-ac-a6-v7-holdout-20261123	e0bbde2b45827a89a4b25e2e9af46d37ef3efce9	NO				KEEP	verified bundle of this ref required before archival
+eval/hg-ac-a6-v8-holdout-20261123	4aff8d4257274a4277d3f8f16e7a09b955cb9ed9	NO				KEEP	verified bundle of this ref required before archival
+eval/hg-ac-a6-v9-holdout-20261123	634ccb1baef26adcbd0f191c6b0cbdf8e9c09b79	NO		docs/evidence/HG-AC-A6-V9-20261124/RESULT.md		KEEP	verified bundle of this ref required before archival
+feat/listener-attestation-hg-la-2-20261031	73a45f059d51d91c6063580e1a4a86268d377611	NO	#205:base,#77:head	docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261109.md		KEEP	verified bundle of this ref required before archival
+fix/pr77-l5-partial-scope-20261118	d4564fb7dfffe61114f8163bd93051036a6970c6	NO	#205:head	docs/evidence/HG-UI-STABILIZATION-20261118/SECTION-65.md;docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.csv;docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	verified bundle of this ref required before archival
+hg-brain	d71b771987bbdfba41edb68d27ef0ba722bafabc	YES			hg-creativity-research;hg-memory-knowledge;hg-security-verification;hg-tools-automation;recovery/main-pre-maep-20261023	ARCHIVE_REVIEW	same SHA on main
+hg-creativity-research	d71b771987bbdfba41edb68d27ef0ba722bafabc	YES			hg-brain;hg-memory-knowledge;hg-security-verification;hg-tools-automation;recovery/main-pre-maep-20261023	ARCHIVE_REVIEW	same SHA on main
+hg-memory-knowledge	d71b771987bbdfba41edb68d27ef0ba722bafabc	YES			hg-brain;hg-creativity-research;hg-security-verification;hg-tools-automation;recovery/main-pre-maep-20261023	ARCHIVE_REVIEW	same SHA on main
+hg-security-verification	d71b771987bbdfba41edb68d27ef0ba722bafabc	YES			hg-brain;hg-creativity-research;hg-memory-knowledge;hg-tools-automation;recovery/main-pre-maep-20261023	ARCHIVE_REVIEW	same SHA on main
+hg-tools-automation	d71b771987bbdfba41edb68d27ef0ba722bafabc	YES			hg-brain;hg-creativity-research;hg-memory-knowledge;hg-security-verification;recovery/main-pre-maep-20261023	ARCHIVE_REVIEW	same SHA on main
+main	4e02d62cb8e48bb4cc958be322727b91efae6e88	YES	#217:base,#77:base		recovery/stt-pre-pr217-20261124	KEEP	same SHA on main
+probe/failing-ci-20261023	d87207b60b795f2781011c60829941f39bfa72e9	NO				KEEP_PENDING_DEPENDENCY_REVIEW	verified bundle of this ref required before archival
+recovery/main-post-198-20261118	804bcb5becab8257ea61cf84d75ef3e942a546ce	YES			recovery/main-pre-199-20261118	KEEP	same SHA on main
+recovery/main-post-199-20261118	bad9bf4e538d669433793f86b10e734ba18a8c18	YES				KEEP	same SHA on main
+recovery/main-post-pr196-20261113	4a4cb370680812aa2dcea4df5001f1ce8f3268b5	YES			recovery/main-pre-198-20261118	KEEP	same SHA on main
+recovery/main-pre-198-20261118	4a4cb370680812aa2dcea4df5001f1ce8f3268b5	YES			recovery/main-post-pr196-20261113	KEEP	same SHA on main
+recovery/main-pre-199-20261118	804bcb5becab8257ea61cf84d75ef3e942a546ce	YES			recovery/main-post-198-20261118	KEEP	same SHA on main
+recovery/main-pre-204-20261119	13a56be75a62a56f2123c755aea97a6d1c9cd79a	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-206-20261122	8282c9ef64e58be65f699a6611b4860b4403dcad	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-207-20261120	47e076ea9eb1d994bd64273eb4af0af880009d81	YES				KEEP	same SHA on main
+recovery/main-pre-208-20261122	2201ab998951fd5e48159657bc589d38f86113fb	YES				KEEP	same SHA on main
+recovery/main-pre-ask-note-input-20261112	803e3e735079a9be0499f3616ca134b1193dda9a	NO		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	verified bundle of this ref required before archival
+recovery/main-pre-assistant-precheck-20261112	8d480489a580d89725cb4f698f13b5010c2d332f	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-check-input-20261112	3eee3a71ca1ff9260a878a52ec531650906340e4	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-cli-counts-20261113	6035359ea2546604d88f316a3583a1712148be74	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md	recovery/main-pre-guard-port-20261113	KEEP	same SHA on main
+recovery/main-pre-compat-test-20261026	f3dac34749f4f32724fa29b7f9f39938f6e8cb64	YES				KEEP	same SHA on main
+recovery/main-pre-config-values-20261112	a4fdd5e56326eb2ee3b0d526df618ad94c42825d	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-context-fence-20261112	52c2c6e73372f49ffb5bf4a771ea95aaa4397d88	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-eval-spec-20261112	8bf957af49e3075aed08317d5e175ece5718aa56	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-fd4a-20261122	27f9d33ca7e5cd5514e31ef0e04fe6ec41d81a48	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-forget-reason-20261113	96d8ac1f76dec61823f71fc02bb2bae34ccb0c26	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-guard-20261123	4b1f31121984c6f5f601768378d2fa59f88c01bc	YES				KEEP	same SHA on main
+recovery/main-pre-guard-invisible-20261112	0d773ea6847ddf51945508a6dc63886c85a64e01	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-guard-port-20261113	6035359ea2546604d88f316a3583a1712148be74	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md	recovery/main-pre-cli-counts-20261113	KEEP	same SHA on main
+recovery/main-pre-guard-port-d7b0db5-20261113	d7b0db51f0ed99c51eceba73ac8531829427528e	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-hardening-20261028	72a428d25f75341a280fe5580c2e5df30617e28c	YES				KEEP	same SHA on main
+recovery/main-pre-ir-20261109	2521edc22d7f0de52d574fbee6c25cd13d1e0aa0	YES				KEEP	same SHA on main
+recovery/main-pre-json-depth-20261112	ad596e3279e0c4ae21c50ee7af08ddbdad116783	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md	recovery/main-pre-research-20261112	KEEP	same SHA on main
+recovery/main-pre-log-window-anchor-20261112	ad3eac79360291f4d9a0f7939f0596cfb703e066	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-maep-20261023	d71b771987bbdfba41edb68d27ef0ba722bafabc	YES			hg-brain;hg-creativity-research;hg-memory-knowledge;hg-security-verification;hg-tools-automation	KEEP	same SHA on main
+recovery/main-pre-memory-replay-20261112	b865658b19e0da598813e9a60620b5ce998d2822	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-n3-20261026	7692a720ac1ffb629e7208d293d6c898ce71ed97	YES				KEEP	same SHA on main
+recovery/main-pre-notes-presence-20261112	b67155340491a0a8df4525b3c8eac088ec957f54	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-number-identity-20261112	796ca0774852a8fa3818e34f467ad81aac321d15	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-operator-read-20261112	71cb6bd5d0e09b628df385289554f6d1bd89d9e6	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-pr101-20261110	bf1802faa2969fe6a8485cfceb641ba27309717a	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-pr102-20261110	f774734969c20742c054933eb97d7bf98f0120c1	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-pr104-20261110	6f9daa7cc2958fae5c34bc078ef6ae3ba99e9000	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-pr106-20261110	ea90bd897d5910d29e92c790c6d75c3eb7bb68b7	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-pr109-20261110	c9e0394cc842ac21aa80491923ceb716339c8e6d	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-pr111-20261110	36de1b38811e3ee8e8df21b0ad5faa49b8814b53	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-pr113-20261110	5ef8054fd3b7c38411d28808e91be4e879393875	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-pr115-20261110	34c10fbef8193d1ac0080d1f1e08df5e300aac32	YES				KEEP	same SHA on main
+recovery/main-pre-pr116-20261110	8fa4bc3027d28dd6e53c4c56d77343cb7f3e8022	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-pr118-20261110	2fb4889a19ac6d7e181e076afc0379beece5f556	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-pr119-20261113	dc94e2ad2762e3f68c298fa0bb9d6a866fa9e0e3	YES				KEEP	same SHA on main
+recovery/main-pre-pr120-20261111	e465db2ef8143d013d6195abfa077f5010b3fd1c	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-pr122-20261111	bfd6f65ce5d7ee3afa2b6355aa5c751876dca870	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-pr124-20261111	8d90280f0b8f8057c4b343edca8009cc854c427a	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-pr126-20261111	66a00cee3f8042c5d1c148273c686e58152dc84a	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-pr128-20261111	65c56a0230719aaf653393e4d5c4bbfb494535f6	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-pr130-20261111	cd3e79abbe2dd38ad0bf5e66f5749b199476606a	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-pr132-20261111	bd7103047de9cd9ea2062e00456131921fb4b314	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-pr134-20261111	1ed162ace1c08dc55c06f2078dbba9315af7b947	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-pr136-20261111	e1a7ea56ea2f0c4fae106825533b99f8659cc4b9	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-pr138-20261111	c609a5d532acbc11e61f41ca579d48dcd624b2f6	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-pr140-20261111	1ab6615e36d8bd0f3013c18bb1cdf2f0a0d2c6a4	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-pr142-20261111	4fa0e15fb91c49e34fe408437f27b3e72bdd8203	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-pr144-20261111	3b944e5063fe3d40d65524d5b72a480535bbf52a	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-pr145-20261111	99072e9b66c751aa9119a33126bc26c3084e5cea	YES				KEEP	same SHA on main
+recovery/main-pre-pr146-20261112	5cb1c6d8916bcfff289c9590123808af08576a8b	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-pr148-20261112	c94260a929cee24c4d0ee07deea983aa881b99fd	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-pr151-20261112	49234bd2d319ce4a1899e6669786aa4db1b2f828	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-pr194-20261113	cfe376c0f7fca49f9ec50a345a6eab6203569463	YES				KEEP	same SHA on main
+recovery/main-pre-pr195-20261113	94344cd410ed6e31f4a2c4734bc96cf8e94d0a3c	YES				KEEP	same SHA on main
+recovery/main-pre-pr196-20261113	21c42a8f6c41d3d04401a8ca3ed81b2115de66b0	YES				KEEP	same SHA on main
+recovery/main-pre-pr57-20261028	0ef9d8dd6df68e365b35f511f4ca913a8982d679	YES				KEEP	same SHA on main
+recovery/main-pre-pr88-20261110	163be5dc5fe5a7b386ee8465a5d6b2f44adfa5be	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110.md		KEEP	same SHA on main
+recovery/main-pre-pr96-20261110	f61f3e57bae46e2bf699d3121112b4eda7b1d4ea	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-pr99-20261110	f86ac2b45554886dd50594e0995b957ac5ce6134	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-rc3-20261123	07b2bcdb2e6f33bbec7d0b6c86cdd31d90522308	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-repair-history-20261112	50e0117c157440f358f765fdde3bf5c3b5bafba5	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-research-20261112	ad596e3279e0c4ae21c50ee7af08ddbdad116783	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md	recovery/main-pre-json-depth-20261112	KEEP	same SHA on main
+recovery/main-pre-router-budget-20261112	b31d188323eff7096444fa247e953592874e0aa7	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-router-consumer-20261112	91b0dadc2f4a14f7b440a65643e9a7f2d06657c7	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-rt01-20261023	ea2bdf14aef03cc17e33634b26ebc0b72ada6688	YES				KEEP	same SHA on main
+recovery/main-pre-stabilization-record-20261113	62ab167070db1f52b1d7f3330156fb51b3b7b71b	YES				KEEP	same SHA on main
+recovery/main-pre-summarize-anchor-20261112	fc784693fd98c515c94e9f0bdfe2722d708769c1	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-v1-ac-a6-record-20261029	9634f419f228f6bf10f5d047aec7f52f1d959db7	YES				KEEP	same SHA on main
+recovery/main-pre-v1-assistant-20261028	37f1627e3c96835be3ae1dc2ba002fd2a46ff2e8	YES		docs/V1_SCOPE.md		KEEP	same SHA on main
+recovery/main-pre-v1-chat-ui-20261029	9b119375aece071946d9a6a4ec71635c2aeae95b	YES				KEEP	same SHA on main
+recovery/main-pre-v1-deploy-fixes-20261029	927d018854c61753befcb5ff298dc347a7baef24	YES		docs/V1_SCOPE.md		KEEP	same SHA on main
+recovery/main-pre-v1-fd3-20261029	5d62051333e15d88c886a5c6b282578037726486	YES		docs/V1_SCOPE.md		KEEP	same SHA on main
+recovery/main-pre-ws04-permission-20261112	6237231be3f5cf8eab55afaea930c647b4c905c8	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-ws13rc-20261122	bc540408bf9552dcd72a74bde7d1cd966d9de29c	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-ws13v5-20261122	9f32f4c1732d12476254921b33149124f7efd4ff	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-ws13v6-20261122	2f285c03a51658feaf404de8f9afa0b1d42617b9	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/main-pre-ws13v7-20261123	2a60653afc8ab814f52aae355472d0900dc72ff1	YES		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	same SHA on main
+recovery/stt-hg-android-broker-ci-pre-sync-20261113	aba365f586ffbb5695f616b65aff02ac0a82dc5e	NO		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	verified bundle of this ref required before archival
+recovery/stt-maep-v1-pre-ci-u1-20261025	8dda6d4a5cfb63614ee684e72d03bf9d5eea224b	NO		docs/evidence/HG-MAEP-BLOCKER-ELIMINATION-20261028/WP0-BASELINE-FORENSIC-REPORT.md		KEEP	verified bundle of this ref required before archival
+recovery/stt-maep-v1-pre-composition-20261026	280e56ad823b69aee921a66edbcac85a7c87d5d8	NO				KEEP	verified bundle of this ref required before archival
+recovery/stt-maep-v1-pre-pr1-20261023	f7f00a75c6a1b1363993c2fb9bc023171f080038	YES				KEEP	same SHA on main
+recovery/stt-maep-v1-pre-sqlite-port-20261028	2b9a0872684b6ccec879d30864ebacce662235e2	NO		docs/evidence/HG-MAEP-BLOCKER-ELIMINATION-20261028/FINAL-MAEP-CLOSURE-REPORT.md;docs/evidence/HG-MAEP-BLOCKER-ELIMINATION-20261028/WP4-IMPLEMENTATION-AND-TEST-REPORT.md		KEEP	verified bundle of this ref required before archival
+recovery/stt-pre-pr216-20261124	74d9e6f4a866c2c28dd1a07614827f04d7f3fae1	YES				KEEP	same SHA on main
+recovery/stt-pre-pr217-20261124	4e02d62cb8e48bb4cc958be322727b91efae6e88	YES			main	KEEP	same SHA on main
+stt/claude-setup-20261026	6d96f4bb206bbccff6c61c3d09d08c82fb4ac3d6	NO				KEEP_PENDING_DEPENDENCY_REVIEW	verified bundle of this ref required before archival
+stt/execution-host-audit-only-20261024	0f25cb5c9cdecb8130cf1bb88fbe85ee3a8c7c44	NO				KEEP_PENDING_DEPENDENCY_REVIEW	verified bundle of this ref required before archival
+stt/hg-ac-a6-issue-218-20261124	40254e60802bc59e40cd739d6ae4081241af4acd	NO	#219:head			KEEP	verified bundle of this ref required before archival
+stt/hg-ac-a6-issue-218-evidence-20261124	889a117612601c9b1ff6f591fa9b7aafc3cf5911	NO				KEEP	verified bundle of this ref required before archival
+stt/hg-ac-a6-v10-evidence-20261124	9c694267079f6a739258bc3b31192cff99396094	NO	#217:head,#219:base			KEEP	verified bundle of this ref required before archival
+stt/hg-capability-convergence-v1-20261110	0feca8a0ae0ab4a908cb8514b5c185bc84621137	NO		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110.md;docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP_PENDING_DEPENDENCY_REVIEW	verified bundle of this ref required before archival
+stt/hg-master-completion-v2-20261119	d56cec43b48f7761a0e131ac2ae150711d0e0f13	NO		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP_PENDING_DEPENDENCY_REVIEW	verified bundle of this ref required before archival
+stt/hg-master-go-live-v3-execution-20261111	272300a7663176b19d01ce792d26fe2cbc5f71d0	NO		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP_PENDING_DEPENDENCY_REVIEW	verified bundle of this ref required before archival
+stt/hg-memory-continuity-r3.1-port-20261111	8e3fd7a6c432bbd8e8e2aca374016156743c5643	NO		docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP_PENDING_DEPENDENCY_REVIEW	verified bundle of this ref required before archival
+stt/maep-v1-20261022	c7b4051feb533bd8172bc228a7d021b5e7f01da2	NO	#64:base	docs/V1_SCOPE.md;docs/architecture/ARCHITECTURE_FINAL_DESIGN_GATE_REVIEW_V1.md;docs/architecture/HG_SERVICE_V1.md;docs/architecture/adr/ADR-012.md;docs/evidence/HG-MAEP-BLOCKER-ELIMINATION-20261028/FINAL-MAEP-CLOSURE-REPORT.md;docs/evidence/HG-MAEP-BLOCKER-ELIMINATION-20261028/WP0-BASELINE-FORENSIC-REPORT.md;docs/evidence/HG-MAEP-BLOCKER-ELIMINATION-20261028/WP1-SAFETY-BLOCK-INVESTIGATION.md;docs/evidence/HG-MAEP-BLOCKER-ELIMINATION-20261028/WP2-RUNTIME-PROVENANCE-REPORT.md;docs/evidence/HG-MAEP-BLOCKER-ELIMINATION-20261028/WP4-IMPLEMENTATION-AND-TEST-REPORT.md;docs/evidence/HG-MAEP-BLOCKER-ELIMINATION-20261028/live-followup-20261028/PHONE-LIVE-VERIFICATION-UPDATE-20261028.md;docs/governance/HG_MASTER_COMPLETION_LEDGER_V1.csv;docs/governance/HG_MASTER_COMPLETION_LEDGER_V1.md;docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261109.csv;docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261109.md;docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261109B.md;docs/governance/HG_MASTER_COMPLETION_LEDGER_V1_RECONCILIATION_20261110B.md		KEEP	verified bundle of this ref required before archival
+stt/policy-resource-templates-20261028	ec8b78179e264b92b2edf748036448a32f1608bb	NO	#64:head			KEEP	verified bundle of this ref required before archival
+stt/s03-cross-store-recovery-20261106	71566ea55ee3641febe15eba3cd351cb0c443859	YES		docs/governance/OWNER_DECISION_OD-IR-20261109.md		KEEP_PENDING_DEPENDENCY_REVIEW	same SHA on main
