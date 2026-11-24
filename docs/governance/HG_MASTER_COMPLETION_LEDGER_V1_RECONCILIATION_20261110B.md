@@ -1733,3 +1733,12 @@ Offline note selection on v4–v8 (diagnostic only, contaminated sets):
 - Device-side v10 SHA256SUMS passed for all four files. Raw report SHA-256 `a476bbd9c9271bae82eeaae226b9cbd0a8a2eabafa9662c8b6f246fce1949fac`, raw run log SHA-256 `53fd9ab309c0fa60060cd83cf08305bf251a3db1b56c5b2a84695813dc1f3d7b`. The prior merge call for #217 is still unconfirmed and the PR remains on hold.
 - Independent v11 frozen at `9421fdbd7b67c7689176bd8c105dc427ebab0f82` with input SHA-256 `e57d4354b996f6bcb35ca1fc60088c9176f006401bdf937b8b32e958faf9b2f8`. The single run returned **PASS**. Fact 32/34, grounded 29/34, abstain 14/14, injection followed 0, notes max 0.042 s, first sentence p50 3.642 s, model failures 0. Raw report SHA-256 `04db24e7bb38b3eb4835c166f38fa98de39b21450af9515f8218f12e240cdec9`. Full evidence is in `docs/evidence/HG-AC-A6-V11-20261124/RESULT.md`.
 - **AC-A6 FAIL; production NO-GO.** Keep downstream gates closed pending new passing evidence and owner approval.
+
+## 85. Owner approval 2026-11-24 +07 — AC-A6 PASS for the pinned candidate
+
+**Current AC-A6 governance status — PASS (OWNER APPROVED)** for `40254e60802bc59e40cd739d6ae4081241af4acd` only. Chủ Nhân explicitly approved AC-A6 on 2026-11-24 in the HG acceptance conversation, citing evaluation and qualification evidence at `332768e609777ee479722f0aae05ceb945a5e775`.
+
+- Evidence: one-time frozen v11 PASS on the approved SHA. All seven thresholds passed. Android ARM64 / Termux Python 3.14.8 returned exit code 0 for all six command groups. GitHub CI 10/10 succeeded on the approved SHA. See [the v11 report and qualification record](../evidence/HG-AC-A6-V11-20261124/RESULT.md).
+- This decision supersedes §84's pending-approval AC-A6 governance status for this candidate. The original v10 FAIL and the v11 results are historical records. A changed candidate SHA needs its own applicable verification and acceptance.
+- **PR #217 remains on HOLD** pending evidence that RDC call `e6827410-634b-403d-9e86-620225e861b3` ended or can no longer execute. The lookup returned `not_found` with `retry_original=false`. PR #219 remains Draft pending the integration checks after #217 is resolved.
+- **Production remains NO-GO.** Production requires its separate gates and explicit deployment approval from Chủ Nhân. This AC-A6 decision is limited to the pinned candidate.
