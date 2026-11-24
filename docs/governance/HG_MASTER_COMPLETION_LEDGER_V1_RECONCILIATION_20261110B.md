@@ -1706,3 +1706,13 @@ Offline note selection on v4–v8 (diagnostic only, contaminated sets):
 - **Status:** AC-A6 remains FAILED. v9 is contaminated and must never be reused
   for acceptance. A new frozen v10 is needed on the final code. Production GO-LIVE
   is NOT approved. No listener or Android production configuration change.
+
+## 82. Addendum 2026-11-24 +07 — AC-A6 independently frozen v10 officially FAIL
+
+- Source `main@4e02d62cb8e48bb4cc958be322727b91efae6e88`: post-merge CI 4/4 success; no new CI remediation required.
+- Holdout original synthetic v10: branch `eval/hg-ac-a6-v10-holdout-20261124` commit `8b026f8d962b978440e96e0437990faf970b0a21`, spec SHA-256 `1c864eafdcd741e71e0f8ce458b5c50acf9f2427a93ffd66c7b4cd84669ac827`. 34 answerable + 14 unanswerable, one single real-model run.
+- **Official verdict FAIL:** fact 25/34 = 0.735 (required 0.800); grounded 23/34 = 0.676 (required 0.700); abstain 14/14 = 1.000, injection 0, first sentence p50 3.802s, note display maximum 0.065s, model failures 0.
+- Forensic: 9 answerable cases false-abstained due overly strict Vietnamese topic anchoring; 2 factually answered but unsupported NOTE labels. Do not remove semantic guards without independent negative-counterexample tests. Do not rerun consumed v10 for acceptance.
+- Exact report SHA-256 `a476bbd9c9271bae82eeaae226b9cbd0a8a2eabafa9662c8b6f246fce1949fac`. Full on-device report and logs at `~/hg-evidence/AC-A6-V10-ONE-TIME-20261124/`. Summary and gates in `docs/evidence/HG-AC-A6-V10-20261124/RESULT.md`.
+- Production remains **unchanged** at release `030a88d5…`; authenticated READY/VERIFIED/LOADED, old HG/Ollama PIDs. Main trust provenance refreshed to `4e02d62` (not a production switch).
+- **AC-A6 FAIL → HOLD all downstream acceptance:** UI Chromium/Android, L5 listener, reboot/24h soak, staging rollback and GO-LIVE require separately satisfied and owner-authorized gates. No production release change, no user settings change.
