@@ -110,7 +110,11 @@ _CLAUSE_BREAK = re.compile(r"[,.;:!?…()\n]+|\b(?:nhưng|còn|mà|song|tuy|but|
 def _negated_clauses(text):
     """For every negation, the folded content words after it up to the end of its clause."""
     clauses = []
-    for clause in _CLAUSE_BREAK.split(textvi.nfc(text or "")):
+    # The fixed product name "nồi chiên không dầu" is not a predicate negation.
+    # Remove the phrase ONLY from negation analysis; keep raw text for entity and value checks.
+    negation_copy = re.sub(r"\bnồi\s+chiên\s+không\s+dầu\b", "nồi chiên",
+                           textvi.nfc(text or ""), flags=re.IGNORECASE)
+    for clause in _CLAUSE_BREAK.split(negation_copy):
         if not clause:
             continue
         tokens = textvi.words(clause)
@@ -279,7 +283,11 @@ def slot_mismatch(sentence, slots):
     missing = []
     for slot in slots:
         if slot == "price":
-            ok = bool(_MONEY.search(folded)) and bool(re.search(r"\b(?:dong|nghin|ngan|trieu|ty|ti|vnd|usd|do)\b", folded))
+            # "275k" is explicitly an amount, unlike a bare "275"; keep the numeric
+            # equality and sibling/anchor checks in compare() intact.
+            ok = (bool(_MONEY.search(folded)) and
+                  bool(re.search(r"\b(?:dong|nghin|ngan|trieu|ty|ti|vnd|usd|do)\b", folded))) or \
+                 bool(re.search(r"(?<!\w)\d[\d.,]*k\b", folded))
         elif slot == "time":
             ok = bool(_CLOCK.search(folded)) or bool(re.search(r"\b(?:sang|trua|chieu|toi)\b", folded) and textvi.numbers(folded))
         elif slot == "date":
