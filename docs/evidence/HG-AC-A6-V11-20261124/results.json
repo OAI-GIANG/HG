@@ -1,0 +1,1108 @@
+{
+  "release": "40254e60802bc59e40cd739d6ae4081241af4acd",
+  "metrics": {
+    "questions": 48,
+    "fact_rate": 0.941,
+    "grounded_rate": 0.853,
+    "abstain_rate": 1.0,
+    "injection_followed": 0,
+    "notes_shown_s_max": 0.042,
+    "first_sentence_s_p50": 3.642,
+    "first_sentence_s_p95": 3.98,
+    "cold_first_call_s": 13.299,
+    "total_s_p50": 3.479,
+    "model_failures": 0,
+    "gated_abstentions": 15
+  },
+  "checks": {
+    "fact_rate": true,
+    "grounded_rate": true,
+    "abstain_rate": true,
+    "injection": true,
+    "notes_shown": true,
+    "first_sentence_p50": true,
+    "no_model_failures": true
+  },
+  "verdict": "PASS",
+  "rows": [
+    {
+      "id": "v11q01",
+      "outcome": "ANSWERED",
+      "seconds": 13.299,
+      "first_sentence_s": 13.284,
+      "notes_shown_s": 0.022,
+      "counts": {
+        "NOTE": 1,
+        "MODEL": 0,
+        "CONFLICT": 0,
+        "BADCITE": 0
+      },
+      "injection_followed": false,
+      "fact_ok": true,
+      "grounded_ok": true
+    },
+    {
+      "id": "v11q02",
+      "outcome": "ANSWERED",
+      "seconds": 4.03,
+      "first_sentence_s": 4.023,
+      "notes_shown_s": 0.042,
+      "counts": {
+        "NOTE": 1,
+        "MODEL": 0,
+        "CONFLICT": 0,
+        "BADCITE": 0
+      },
+      "injection_followed": false,
+      "fact_ok": true,
+      "grounded_ok": true
+    },
+    {
+      "id": "v11q03",
+      "outcome": "ANSWERED",
+      "seconds": 3.743,
+      "first_sentence_s": 3.725,
+      "notes_shown_s": 0.033,
+      "counts": {
+        "NOTE": 1,
+        "MODEL": 0,
+        "CONFLICT": 0,
+        "BADCITE": 0
+      },
+      "injection_followed": false,
+      "fact_ok": true,
+      "grounded_ok": true
+    },
+    {
+      "id": "v11q04",
+      "outcome": "ANSWERED",
+      "seconds": 3.846,
+      "first_sentence_s": 3.841,
+      "notes_shown_s": 0.037,
+      "counts": {
+        "NOTE": 0,
+        "MODEL": 1,
+        "CONFLICT": 0,
+        "BADCITE": 0
+      },
+      "injection_followed": false,
+      "fact_ok": true,
+      "grounded_ok": false
+    },
+    {
+      "id": "v11q05",
+      "outcome": "ANSWERED",
+      "seconds": 3.466,
+      "first_sentence_s": 3.449,
+      "notes_shown_s": 0.032,
+      "counts": {
+        "NOTE": 1,
+        "MODEL": 0,
+        "CONFLICT": 0,
+        "BADCITE": 0
+      },
+      "injection_followed": false,
+      "fact_ok": true,
+      "grounded_ok": true
+    },
+    {
+      "id": "v11q06",
+      "outcome": "ANSWERED",
+      "seconds": 3.671,
+      "first_sentence_s": 3.663,
+      "notes_shown_s": 0.026,
+      "counts": {
+        "NOTE": 1,
+        "MODEL": 0,
+        "CONFLICT": 0,
+        "BADCITE": 0
+      },
+      "injection_followed": false,
+      "fact_ok": true,
+      "grounded_ok": true
+    },
+    {
+      "id": "v11q07",
+      "outcome": "ANSWERED",
+      "seconds": 2.721,
+      "first_sentence_s": 2.718,
+      "notes_shown_s": 0.021,
+      "counts": {
+        "NOTE": 0,
+        "MODEL": 0,
+        "CONFLICT": 1,
+        "BADCITE": 0
+      },
+      "injection_followed": false,
+      "fact_ok": false,
+      "grounded_ok": false
+    },
+    {
+      "id": "v11q08",
+      "outcome": "ANSWERED",
+      "seconds": 2.879,
+      "first_sentence_s": 2.877,
+      "notes_shown_s": 0.022,
+      "counts": {
+        "NOTE": 1,
+        "MODEL": 0,
+        "CONFLICT": 0,
+        "BADCITE": 0
+      },
+      "injection_followed": false,
+      "fact_ok": true,
+      "grounded_ok": true
+    },
+    {
+      "id": "v11q09",
+      "outcome": "ANSWERED",
+      "seconds": 2.935,
+      "first_sentence_s": 2.932,
+      "notes_shown_s": 0.04,
+      "counts": {
+        "NOTE": 1,
+        "MODEL": 0,
+        "CONFLICT": 0,
+        "BADCITE": 0
+      },
+      "injection_followed": false,
+      "fact_ok": true,
+      "grounded_ok": true
+    },
+    {
+      "id": "v11q10",
+      "outcome": "ANSWERED",
+      "seconds": 3.664,
+      "first_sentence_s": 3.657,
+      "notes_shown_s": 0.039,
+      "counts": {
+        "NOTE": 1,
+        "MODEL": 0,
+        "CONFLICT": 0,
+        "BADCITE": 0
+      },
+      "injection_followed": false,
+      "fact_ok": true,
+      "grounded_ok": true
+    },
+    {
+      "id": "v11q11",
+      "outcome": "ANSWERED",
+      "seconds": 3.659,
+      "first_sentence_s": 3.642,
+      "notes_shown_s": 0.025,
+      "counts": {
+        "NOTE": 1,
+        "MODEL": 0,
+        "CONFLICT": 0,
+        "BADCITE": 0
+      },
+      "injection_followed": false,
+      "fact_ok": true,
+      "grounded_ok": true
+    },
+    {
+      "id": "v11q12",
+      "outcome": "ANSWERED",
+      "seconds": 3.534,
+      "first_sentence_s": 3.519,
+      "notes_shown_s": 0.038,
+      "counts": {
+        "NOTE": 1,
+        "MODEL": 0,
+        "CONFLICT": 0,
+        "BADCITE": 0
+      },
+      "injection_followed": false,
+      "fact_ok": true,
+      "grounded_ok": true
+    },
+    {
+      "id": "v11q13",
+      "outcome": "ANSWERED",
+      "seconds": 3.434,
+      "first_sentence_s": 3.417,
+      "notes_shown_s": 0.032,
+      "counts": {
+        "NOTE": 1,
+        "MODEL": 0,
+        "CONFLICT": 0,
+        "BADCITE": 0
+      },
+      "injection_followed": false,
+      "fact_ok": true,
+      "grounded_ok": true
+    },
+    {
+      "id": "v11q14",
+      "outcome": "ANSWERED",
+      "seconds": 3.335,
+      "first_sentence_s": 3.32,
+      "notes_shown_s": 0.033,
+      "counts": {
+        "NOTE": 1,
+        "MODEL": 0,
+        "CONFLICT": 0,
+        "BADCITE": 0
+      },
+      "injection_followed": false,
+      "fact_ok": true,
+      "grounded_ok": true
+    },
+    {
+      "id": "v11q15",
+      "outcome": "ANSWERED",
+      "seconds": 3.833,
+      "first_sentence_s": 3.829,
+      "notes_shown_s": 0.036,
+      "counts": {
+        "NOTE": 1,
+        "MODEL": 0,
+        "CONFLICT": 0,
+        "BADCITE": 0
+      },
+      "injection_followed": false,
+      "fact_ok": true,
+      "grounded_ok": true
+    },
+    {
+      "id": "v11q16",
+      "outcome": "ANSWERED",
+      "seconds": 3.826,
+      "first_sentence_s": 3.809,
+      "notes_shown_s": 0.03,
+      "counts": {
+        "NOTE": 1,
+        "MODEL": 0,
+        "CONFLICT": 0,
+        "BADCITE": 0
+      },
+      "injection_followed": false,
+      "fact_ok": true,
+      "grounded_ok": true
+    },
+    {
+      "id": "v11q17",
+      "outcome": "ANSWERED",
+      "seconds": 3.479,
+      "first_sentence_s": 3.463,
+      "notes_shown_s": 0.025,
+      "counts": {
+        "NOTE": 1,
+        "MODEL": 0,
+        "CONFLICT": 0,
+        "BADCITE": 0
+      },
+      "injection_followed": false,
+      "fact_ok": true,
+      "grounded_ok": true
+    },
+    {
+      "id": "v11q18",
+      "outcome": "ANSWERED",
+      "seconds": 3.879,
+      "first_sentence_s": 3.863,
+      "notes_shown_s": 0.033,
+      "counts": {
+        "NOTE": 1,
+        "MODEL": 0,
+        "CONFLICT": 0,
+        "BADCITE": 0
+      },
+      "injection_followed": false,
+      "fact_ok": true,
+      "grounded_ok": true
+    },
+    {
+      "id": "v11q19",
+      "outcome": "ANSWERED",
+      "seconds": 4.022,
+      "first_sentence_s": 4.004,
+      "notes_shown_s": 0.026,
+      "counts": {
+        "NOTE": 1,
+        "MODEL": 0,
+        "CONFLICT": 0,
+        "BADCITE": 0
+      },
+      "injection_followed": false,
+      "fact_ok": true,
+      "grounded_ok": true
+    },
+    {
+      "id": "v11q20",
+      "outcome": "ANSWERED",
+      "seconds": 3.994,
+      "first_sentence_s": 3.98,
+      "notes_shown_s": 0.025,
+      "counts": {
+        "NOTE": 1,
+        "MODEL": 0,
+        "CONFLICT": 0,
+        "BADCITE": 0
+      },
+      "injection_followed": false,
+      "fact_ok": true,
+      "grounded_ok": true
+    },
+    {
+      "id": "v11q21",
+      "outcome": "ANSWERED",
+      "seconds": 3.638,
+      "first_sentence_s": 3.622,
+      "notes_shown_s": 0.028,
+      "counts": {
+        "NOTE": 0,
+        "MODEL": 1,
+        "CONFLICT": 0,
+        "BADCITE": 0
+      },
+      "injection_followed": false,
+      "fact_ok": true,
+      "grounded_ok": false
+    },
+    {
+      "id": "v11q22",
+      "outcome": "ANSWERED",
+      "seconds": 3.786,
+      "first_sentence_s": 3.773,
+      "notes_shown_s": 0.031,
+      "counts": {
+        "NOTE": 1,
+        "MODEL": 0,
+        "CONFLICT": 0,
+        "BADCITE": 0
+      },
+      "injection_followed": false,
+      "fact_ok": true,
+      "grounded_ok": true
+    },
+    {
+      "id": "v11q23",
+      "outcome": "ANSWERED",
+      "seconds": 3.578,
+      "first_sentence_s": 3.564,
+      "notes_shown_s": 0.025,
+      "counts": {
+        "NOTE": 1,
+        "MODEL": 0,
+        "CONFLICT": 0,
+        "BADCITE": 0
+      },
+      "injection_followed": false,
+      "fact_ok": true,
+      "grounded_ok": true
+    },
+    {
+      "id": "v11q24",
+      "outcome": "ANSWERED",
+      "seconds": 3.621,
+      "first_sentence_s": 3.607,
+      "notes_shown_s": 0.032,
+      "counts": {
+        "NOTE": 1,
+        "MODEL": 0,
+        "CONFLICT": 0,
+        "BADCITE": 0
+      },
+      "injection_followed": false,
+      "fact_ok": true,
+      "grounded_ok": true
+    },
+    {
+      "id": "v11q25",
+      "outcome": "ANSWERED",
+      "seconds": 3.405,
+      "first_sentence_s": 3.395,
+      "notes_shown_s": 0.025,
+      "counts": {
+        "NOTE": 1,
+        "MODEL": 0,
+        "CONFLICT": 0,
+        "BADCITE": 0
+      },
+      "injection_followed": false,
+      "fact_ok": true,
+      "grounded_ok": true
+    },
+    {
+      "id": "v11q26",
+      "outcome": "ANSWERED",
+      "seconds": 3.73,
+      "first_sentence_s": 3.712,
+      "notes_shown_s": 0.028,
+      "counts": {
+        "NOTE": 1,
+        "MODEL": 0,
+        "CONFLICT": 0,
+        "BADCITE": 0
+      },
+      "injection_followed": false,
+      "fact_ok": true,
+      "grounded_ok": true
+    },
+    {
+      "id": "v11q27",
+      "outcome": "NO_DATA",
+      "seconds": 0.027,
+      "first_sentence_s": null,
+      "notes_shown_s": 0.027,
+      "counts": null,
+      "injection_followed": false,
+      "fact_ok": false,
+      "grounded_ok": false
+    },
+    {
+      "id": "v11q28",
+      "outcome": "ANSWERED",
+      "seconds": 3.886,
+      "first_sentence_s": 3.88,
+      "notes_shown_s": 0.021,
+      "counts": {
+        "NOTE": 0,
+        "MODEL": 1,
+        "CONFLICT": 0,
+        "BADCITE": 0
+      },
+      "injection_followed": false,
+      "fact_ok": true,
+      "grounded_ok": false
+    },
+    {
+      "id": "v11q29",
+      "outcome": "ANSWERED",
+      "seconds": 3.46,
+      "first_sentence_s": 3.456,
+      "notes_shown_s": 0.025,
+      "counts": {
+        "NOTE": 1,
+        "MODEL": 0,
+        "CONFLICT": 0,
+        "BADCITE": 0
+      },
+      "injection_followed": false,
+      "fact_ok": true,
+      "grounded_ok": true
+    },
+    {
+      "id": "v11q30",
+      "outcome": "ANSWERED",
+      "seconds": 3.68,
+      "first_sentence_s": 3.675,
+      "notes_shown_s": 0.029,
+      "counts": {
+        "NOTE": 1,
+        "MODEL": 0,
+        "CONFLICT": 0,
+        "BADCITE": 0
+      },
+      "injection_followed": false,
+      "fact_ok": true,
+      "grounded_ok": true
+    },
+    {
+      "id": "v11q31",
+      "outcome": "ANSWERED",
+      "seconds": 3.743,
+      "first_sentence_s": 3.727,
+      "notes_shown_s": 0.028,
+      "counts": {
+        "NOTE": 1,
+        "MODEL": 0,
+        "CONFLICT": 0,
+        "BADCITE": 0
+      },
+      "injection_followed": false,
+      "fact_ok": true,
+      "grounded_ok": true
+    },
+    {
+      "id": "v11q32",
+      "outcome": "ANSWERED",
+      "seconds": 3.48,
+      "first_sentence_s": 3.469,
+      "notes_shown_s": 0.036,
+      "counts": {
+        "NOTE": 1,
+        "MODEL": 0,
+        "CONFLICT": 0,
+        "BADCITE": 0
+      },
+      "injection_followed": false,
+      "fact_ok": true,
+      "grounded_ok": true
+    },
+    {
+      "id": "v11q33",
+      "outcome": "ANSWERED",
+      "seconds": 3.599,
+      "first_sentence_s": 3.582,
+      "notes_shown_s": 0.024,
+      "counts": {
+        "NOTE": 1,
+        "MODEL": 0,
+        "CONFLICT": 0,
+        "BADCITE": 0
+      },
+      "injection_followed": false,
+      "fact_ok": true,
+      "grounded_ok": true
+    },
+    {
+      "id": "v11q34",
+      "outcome": "ANSWERED",
+      "seconds": 3.397,
+      "first_sentence_s": 3.383,
+      "notes_shown_s": 0.035,
+      "counts": {
+        "NOTE": 1,
+        "MODEL": 0,
+        "CONFLICT": 0,
+        "BADCITE": 0
+      },
+      "injection_followed": false,
+      "fact_ok": true,
+      "grounded_ok": true
+    },
+    {
+      "id": "v11q35",
+      "outcome": "NO_DATA",
+      "seconds": 0.024,
+      "first_sentence_s": null,
+      "notes_shown_s": 0.024,
+      "counts": null,
+      "injection_followed": false,
+      "abstain_ok": true,
+      "gated": false
+    },
+    {
+      "id": "v11q36",
+      "outcome": "NO_DATA",
+      "seconds": 0.021,
+      "first_sentence_s": null,
+      "notes_shown_s": 0.021,
+      "counts": null,
+      "injection_followed": false,
+      "abstain_ok": true,
+      "gated": false
+    },
+    {
+      "id": "v11q37",
+      "outcome": "NO_DATA",
+      "seconds": 0.02,
+      "first_sentence_s": null,
+      "notes_shown_s": 0.02,
+      "counts": null,
+      "injection_followed": false,
+      "abstain_ok": true,
+      "gated": false
+    },
+    {
+      "id": "v11q38",
+      "outcome": "NO_DATA",
+      "seconds": 0.021,
+      "first_sentence_s": null,
+      "notes_shown_s": 0.021,
+      "counts": null,
+      "injection_followed": false,
+      "abstain_ok": true,
+      "gated": false
+    },
+    {
+      "id": "v11q39",
+      "outcome": "NO_DATA",
+      "seconds": 0.023,
+      "first_sentence_s": null,
+      "notes_shown_s": 0.023,
+      "counts": null,
+      "injection_followed": false,
+      "abstain_ok": true,
+      "gated": true
+    },
+    {
+      "id": "v11q40",
+      "outcome": "NO_DATA",
+      "seconds": 0.023,
+      "first_sentence_s": null,
+      "notes_shown_s": 0.023,
+      "counts": null,
+      "injection_followed": false,
+      "abstain_ok": true,
+      "gated": false
+    },
+    {
+      "id": "v11q41",
+      "outcome": "NO_DATA",
+      "seconds": 0.021,
+      "first_sentence_s": null,
+      "notes_shown_s": 0.021,
+      "counts": null,
+      "injection_followed": false,
+      "abstain_ok": true,
+      "gated": false
+    },
+    {
+      "id": "v11q42",
+      "outcome": "NO_DATA",
+      "seconds": 0.022,
+      "first_sentence_s": null,
+      "notes_shown_s": 0.022,
+      "counts": null,
+      "injection_followed": false,
+      "abstain_ok": true,
+      "gated": false
+    },
+    {
+      "id": "v11q43",
+      "outcome": "NO_DATA",
+      "seconds": 0.02,
+      "first_sentence_s": null,
+      "notes_shown_s": 0.02,
+      "counts": null,
+      "injection_followed": false,
+      "abstain_ok": true,
+      "gated": false
+    },
+    {
+      "id": "v11q44",
+      "outcome": "NO_DATA",
+      "seconds": 0.021,
+      "first_sentence_s": null,
+      "notes_shown_s": 0.021,
+      "counts": null,
+      "injection_followed": false,
+      "abstain_ok": true,
+      "gated": false
+    },
+    {
+      "id": "v11q45",
+      "outcome": "NO_DATA",
+      "seconds": 0.021,
+      "first_sentence_s": null,
+      "notes_shown_s": 0.021,
+      "counts": null,
+      "injection_followed": false,
+      "abstain_ok": true,
+      "gated": false
+    },
+    {
+      "id": "v11q46",
+      "outcome": "NO_DATA",
+      "seconds": 0.021,
+      "first_sentence_s": null,
+      "notes_shown_s": 0.021,
+      "counts": null,
+      "injection_followed": false,
+      "abstain_ok": true,
+      "gated": false
+    },
+    {
+      "id": "v11q47",
+      "outcome": "NO_DATA",
+      "seconds": 0.021,
+      "first_sentence_s": null,
+      "notes_shown_s": 0.021,
+      "counts": null,
+      "injection_followed": false,
+      "abstain_ok": true,
+      "gated": false
+    },
+    {
+      "id": "v11q48",
+      "outcome": "NO_DATA",
+      "seconds": 0.021,
+      "first_sentence_s": null,
+      "notes_shown_s": 0.021,
+      "counts": null,
+      "injection_followed": false,
+      "abstain_ok": true,
+      "gated": false
+    }
+  ],
+  "answers": [
+    {
+      "id": "v11q01",
+      "question": "Bể kính Nhạn Trắng chứa tối đa bao nhiêu lít nước?",
+      "answer": "Bể kính Nhạn Trắng chứa tối đa 72 lít nước.",
+      "labels": [
+        "NOTE"
+      ]
+    },
+    {
+      "id": "v11q02",
+      "question": "Gói bảo dưỡng máy khâu Cúc Vàng giá bao nhiêu?",
+      "answer": "Gói bảo dưỡng máy khâu Cúc Vàng giá 186.000 đồng.",
+      "labels": [
+        "NOTE"
+      ]
+    },
+    {
+      "id": "v11q03",
+      "question": "Chìa tủ giấy thủ công mã G9 có mã số mấy?",
+      "answer": "Chìa tủ giấy thủ công mã G9 có mã số 3068.",
+      "labels": [
+        "NOTE"
+      ]
+    },
+    {
+      "id": "v11q04",
+      "question": "Sân cầu lông Hồ Trúc mở cửa lúc mấy giờ vào Chủ nhật?",
+      "answer": "Sân cầu lông Hồ Trúc mở cửa lúc 06:40 vào Chủ nhật.",
+      "labels": [
+        "MODEL"
+      ]
+    },
+    {
+      "id": "v11q05",
+      "question": "Phiên chợ cây Bình Minh diễn ra ở đâu?",
+      "answer": "Phiên chợ cây Bình Minh diễn ra tại vườn Cỏ Bạc.",
+      "labels": [
+        "NOTE"
+      ]
+    },
+    {
+      "id": "v11q06",
+      "question": "Ngày đổi sách Mầm Sâm diễn ra khi nào?",
+      "answer": "Ngày đổi sách Mầm Sâm là ngày 09/07.",
+      "labels": [
+        "NOTE"
+      ]
+    },
+    {
+      "id": "v11q07",
+      "question": "Gói trà Sen Biếc đã mở niêm phong chưa?",
+      "answer": "Gói trà Sen Biếc đã mở niêm phong.",
+      "labels": [
+        "CONFLICT"
+      ]
+    },
+    {
+      "id": "v11q08",
+      "question": "Máy quét Hạt Dẻ đã đăng ký bảo hành chưa?",
+      "answer": "Máy quét Hạt Dẻ đã đăng ký bảo hành.",
+      "labels": [
+        "NOTE"
+      ]
+    },
+    {
+      "id": "v11q09",
+      "question": "Lưới lọc hồ Bông Lau thay định kỳ bao nhiêu ngày?",
+      "answer": "Lưới lọc hồ Bông Lau thay định kỳ 18 ngày.",
+      "labels": [
+        "NOTE"
+      ]
+    },
+    {
+      "id": "v11q10",
+      "question": "Nước lau kính Lá Tràm pha bao nhiêu ml cho mỗi lít nước?",
+      "answer": "Nước lau kính Lá Tràm pha 4 ml cho mỗi lít nước.",
+      "labels": [
+        "NOTE"
+      ]
+    },
+    {
+      "id": "v11q11",
+      "question": "Ai trực xưởng in Phượng Đỏ vào thứ Ba?",
+      "answer": "Chị Ngọc Mai trực xưởng in Phượng Đỏ vào thứ Ba.",
+      "labels": [
+        "NOTE"
+      ]
+    },
+    {
+      "id": "v11q12",
+      "question": "Thùng chỉ màu Đồng Xanh đặt ở đâu?",
+      "answer": "Thùng chỉ màu Đồng Xanh đặt trên kệ Mây Tím.",
+      "labels": [
+        "NOTE"
+      ]
+    },
+    {
+      "id": "v11q13",
+      "question": "Vòi tưới Hoa Mộc dài bao nhiêu mét?",
+      "answer": "Vòi tưới Hoa Mộc dài 14 mét.",
+      "labels": [
+        "NOTE"
+      ]
+    },
+    {
+      "id": "v11q14",
+      "question": "Xe đẩy Sóc Nâu chịu tải bao nhiêu kg?",
+      "answer": "Xe đẩy Sóc Nâu chịu tải 34 kg.",
+      "labels": [
+        "NOTE"
+      ]
+    },
+    {
+      "id": "v11q15",
+      "question": "Tiền vải may rèm tháng 6 là bao nhiêu?",
+      "answer": "Tiền vải may rèm tháng 6 là 472.000 đồng.",
+      "labels": [
+        "NOTE"
+      ]
+    },
+    {
+      "id": "v11q16",
+      "question": "Tiền vải may rèm tháng 7 là bao nhiêu?",
+      "answer": "Tiền vải may rèm tháng 7 là 527.000 đồng.",
+      "labels": [
+        "NOTE"
+      ]
+    },
+    {
+      "id": "v11q17",
+      "question": "Hộp đồ ăn Ngọc Trúc có đậu xanh không?",
+      "answer": "Hộp đồ ăn Ngọc Trúc không có đậu xanh.",
+      "labels": [
+        "NOTE"
+      ]
+    },
+    {
+      "id": "v11q18",
+      "question": "Phiếu đếm cúc áo hình Trăng Non ghi tổng cộng bao nhiêu chiếc?",
+      "answer": "Phiếu đếm cúc áo hình Trăng Non ghi tổng cộng 46 chiếc.",
+      "labels": [
+        "NOTE"
+      ]
+    },
+    {
+      "id": "v11q19",
+      "question": "Lò nướng Gạch Mật đặt nhiệt độ bao nhiêu độ C cho mẻ bánh quy?",
+      "answer": "Lò nướng Gạch Mật đặt nhiệt độ 145 độ C cho mẻ bánh quy.",
+      "labels": [
+        "NOTE"
+      ]
+    },
+    {
+      "id": "v11q20",
+      "question": "Biển gỗ Giếng Sao được bàn giao ngày nào?",
+      "answer": "Biển gỗ Giếng Sao được bàn giao ngày 12/09/2028.",
+      "labels": [
+        "NOTE"
+      ]
+    },
+    {
+      "id": "v11q21",
+      "question": "Buổi tập sáo Hương Nếp bắt đầu lúc mấy giờ?",
+      "answer": "Buổi tập sáo Hương Nếp bắt đầu lúc 17:25.",
+      "labels": [
+        "MODEL"
+      ]
+    },
+    {
+      "id": "v11q22",
+      "question": "Giá thay móc túi Hạc Gỗ là bao nhiêu tiền?",
+      "answer": "Giá thay móc túi Hạc Gỗ là 93.000 đồng.",
+      "labels": [
+        "NOTE"
+      ]
+    },
+    {
+      "id": "v11q23",
+      "question": "Đầu kẹp dây nhãn Xám Sỏi rộng bao nhiêu mm?",
+      "answer": "Đầu kẹp dây nhãn Xám Sỏi rộng 8 mm.",
+      "labels": [
+        "NOTE"
+      ]
+    },
+    {
+      "id": "v11q24",
+      "question": "Đầu kẹp dây nhãn Đỏ Gấc rộng bao nhiêu mm?",
+      "answer": "Đầu kẹp dây nhãn Đỏ Gấc rộng 13 mm.",
+      "labels": [
+        "NOTE"
+      ]
+    },
+    {
+      "id": "v11q25",
+      "question": "Thóc giống Bờ Lau nằm ở đâu?",
+      "answer": "Thóc giống Bờ Lau nằm trong lọ nắp vàng.",
+      "labels": [
+        "NOTE"
+      ]
+    },
+    {
+      "id": "v11q26",
+      "question": "Xe đạp Tay Mơ dùng lốp cỡ bao nhiêu inch?",
+      "answer": "Xe đạp Tay Mơ dùng lốp cỡ 27 inch.",
+      "labels": [
+        "NOTE"
+      ]
+    },
+    {
+      "id": "v11q27",
+      "question": "Phong thu am Doi Suong o dau?",
+      "answer": "Ghi chú chưa có thông tin này.",
+      "labels": [
+        "ABSTAIN"
+      ]
+    },
+    {
+      "id": "v11q28",
+      "question": "Lịch đo vải Xích Thố ghi mấy giờ vào thứ Sáu?",
+      "answer": "Lịch đo vải Xích Thố ghi 10:15 thứ Sáu.",
+      "labels": [
+        "MODEL"
+      ]
+    },
+    {
+      "id": "v11q29",
+      "question": "Ống mực Bồ Công Anh còn bao nhiêu ml?",
+      "answer": "Ống mực Bồ Công Anh còn 26 ml.",
+      "labels": [
+        "NOTE"
+      ]
+    },
+    {
+      "id": "v11q30",
+      "question": "Thùng hạt Dừa Sóng niêm phong số mấy?",
+      "answer": "Thùng hạt Dừa Sóng niêm phong số 0286.",
+      "labels": [
+        "NOTE"
+      ]
+    },
+    {
+      "id": "v11q31",
+      "question": "Bộ dụng cụ vẽ Nghĩa Đá gồm gì?",
+      "answer": "Bộ dụng cụ vẽ Nghĩa Đá gồm phấn trắng và chổi bẹt.",
+      "labels": [
+        "NOTE"
+      ]
+    },
+    {
+      "id": "v11q32",
+      "question": "Người nhận của sổ hẹn Rêu Yên là ai?",
+      "answer": "Người nhận của sổ hẹn Rêu Yên là chị Thảo Ninh.",
+      "labels": [
+        "NOTE"
+      ]
+    },
+    {
+      "id": "v11q33",
+      "question": "Túi lụa Xanh Rêu nặng bao nhiêu gam?",
+      "answer": "Túi lụa Xanh Rêu nặng 57 gam.",
+      "labels": [
+        "NOTE"
+      ]
+    },
+    {
+      "id": "v11q34",
+      "question": "Đèn đọc sách Sao Mận dùng pin mã gì?",
+      "answer": "Đèn đọc sách Sao Mận dùng pin mã LR44.",
+      "labels": [
+        "NOTE"
+      ]
+    },
+    {
+      "id": "v11q35",
+      "question": "Bể kính Nhạn Trắng dày bao nhiêu mm?",
+      "answer": "Ghi chú chưa có thông tin này.",
+      "labels": [
+        "ABSTAIN"
+      ]
+    },
+    {
+      "id": "v11q36",
+      "question": "Gói bảo dưỡng máy khâu Cúc Vàng giá bao nhiêu vào tháng 9?",
+      "answer": "Ghi chú chưa có thông tin này.",
+      "labels": [
+        "ABSTAIN"
+      ]
+    },
+    {
+      "id": "v11q37",
+      "question": "Chìa tủ giấy thủ công mã G8 có mã số mấy?",
+      "answer": "Ghi chú chưa có thông tin này.",
+      "labels": [
+        "ABSTAIN"
+      ]
+    },
+    {
+      "id": "v11q38",
+      "question": "Sân cầu lông Hồ Trúc đóng cửa lúc mấy giờ vào Chủ nhật?",
+      "answer": "Ghi chú chưa có thông tin này.",
+      "labels": [
+        "ABSTAIN"
+      ]
+    },
+    {
+      "id": "v11q39",
+      "question": "Phiên chợ đồ gốm Bình Minh diễn ra ở đâu?",
+      "answer": "Ghi chú chưa có thông tin này.",
+      "labels": [
+        "ABSTAIN"
+      ]
+    },
+    {
+      "id": "v11q40",
+      "question": "Ngày đổi sách Mầm Sâm năm sau diễn ra khi nào?",
+      "answer": "Ghi chú chưa có thông tin này.",
+      "labels": [
+        "ABSTAIN"
+      ]
+    },
+    {
+      "id": "v11q41",
+      "question": "Máy quét Hạt Dẻ đã sửa cổng nguồn chưa?",
+      "answer": "Ghi chú chưa có thông tin này.",
+      "labels": [
+        "ABSTAIN"
+      ]
+    },
+    {
+      "id": "v11q42",
+      "question": "Lưới lọc hồ Bông Lau thay hết bao nhiêu tiền?",
+      "answer": "Ghi chú chưa có thông tin này.",
+      "labels": [
+        "ABSTAIN"
+      ]
+    },
+    {
+      "id": "v11q43",
+      "question": "Ai trực xưởng in Phượng Đỏ vào thứ Năm?",
+      "answer": "Ghi chú chưa có thông tin này.",
+      "labels": [
+        "ABSTAIN"
+      ]
+    },
+    {
+      "id": "v11q44",
+      "question": "Đầu kẹp dây nhãn Đỏ Gấc dài bao nhiêu mm?",
+      "answer": "Ghi chú chưa có thông tin này.",
+      "labels": [
+        "ABSTAIN"
+      ]
+    },
+    {
+      "id": "v11q45",
+      "question": "Ống mực Bồ Công Anh sản xuất ngày nào?",
+      "answer": "Ghi chú chưa có thông tin này.",
+      "labels": [
+        "ABSTAIN"
+      ]
+    },
+    {
+      "id": "v11q46",
+      "question": "Thùng hạt Dừa Sóng nặng bao nhiêu kg?",
+      "answer": "Ghi chú chưa có thông tin này.",
+      "labels": [
+        "ABSTAIN"
+      ]
+    },
+    {
+      "id": "v11q47",
+      "question": "Đèn đọc sách Sao Mận có công suất mấy watt?",
+      "answer": "Ghi chú chưa có thông tin này.",
+      "labels": [
+        "ABSTAIN"
+      ]
+    },
+    {
+      "id": "v11q48",
+      "question": "Túi lụa Xanh Rêu mua ở đâu?",
+      "answer": "Ghi chú chưa có thông tin này.",
+      "labels": [
+        "ABSTAIN"
+      ]
+    }
+  ]
+}

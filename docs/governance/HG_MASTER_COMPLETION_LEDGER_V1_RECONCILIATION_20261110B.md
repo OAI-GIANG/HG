@@ -1725,3 +1725,11 @@ Offline note selection on v4–v8 (diagnostic only, contaminated sets):
 - **AC-A6 FAIL. Production NO-GO.** This is a remediation candidate for Issue #218. The exact candidate requires Android/Termux and GitHub CI evidence before integration. Fresh v11 remains pending, with the original thresholds and one run after the new dataset is frozen. This change grants no release approval.
 - The earlier RDC call returned `not_found` with `retry_original=false`. This does not establish a completed or canceled dispatch. Follow-up location regressions reject tentative alternatives, nearby landmarks substituted for the venue, and truncated venue names.
 - The temporal regression keeps the current event date distinct from an expressly replaced date and rejects unresolved alternative dates in the new event matching path.
+
+## 84. Addendum 2026-11-24 +07 — Issue #218 qualification and single v11 evaluation
+
+- On Android ARM64 / Termux Python 3.14.8, candidate `40254e60802bc59e40cd739d6ae4081241af4acd` passed all six command groups. Targeted 12/12, HG 1,132 with 3 platform skips, MAEP 385 with 3 platform skips, hooks 42/42, selfcheck and bench PASS. The Android checksum manifest SHA-256 is `33b9a2d3a266e09e1aebf6508862c49a5855205fc1c9dd86b1c2539d7c3d4808`.
+- GitHub CI 10/10 success on the exact head of draft PR #219. Code remains pinned; this ledger addendum and the v11 evidence are recorded on a separate branch.
+- Device-side v10 SHA256SUMS passed for all four files. Raw report SHA-256 `a476bbd9c9271bae82eeaae226b9cbd0a8a2eabafa9662c8b6f246fce1949fac`, raw run log SHA-256 `53fd9ab309c0fa60060cd83cf08305bf251a3db1b56c5b2a84695813dc1f3d7b`. The prior merge call for #217 is still unconfirmed and the PR remains on hold.
+- Independent v11 frozen at `9421fdbd7b67c7689176bd8c105dc427ebab0f82` with input SHA-256 `e57d4354b996f6bcb35ca1fc60088c9176f006401bdf937b8b32e958faf9b2f8`. The single run returned **PASS**. Fact 32/34, grounded 29/34, abstain 14/14, injection followed 0, notes max 0.042 s, first sentence p50 3.642 s, model failures 0. Raw report SHA-256 `04db24e7bb38b3eb4835c166f38fa98de39b21450af9515f8218f12e240cdec9`. Full evidence is in `docs/evidence/HG-AC-A6-V11-20261124/RESULT.md`.
+- **AC-A6 FAIL; production NO-GO.** Keep downstream gates closed pending new passing evidence and owner approval.
