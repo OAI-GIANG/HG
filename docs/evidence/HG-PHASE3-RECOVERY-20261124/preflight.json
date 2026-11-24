@@ -1,0 +1,70 @@
+{
+  "observed_at": "2026-11-24T23:04:54+07:00",
+  "boot_id_prefix": "1b823ef0",
+  "probe_uid": 10460,
+  "services": {
+    "hg-runtime": {
+      "pid": 4817,
+      "uid": 10460
+    },
+    "ollama": {
+      "pid": 4822,
+      "uid": 10460
+    },
+    "desktop-commander-remote": {
+      "pid": 30290,
+      "uid": 10460
+    },
+    "desktop-commander-watchdog": {
+      "pid": 4814,
+      "uid": 10460
+    }
+  },
+  "ready_baseline": {
+    "http": 200,
+    "status": "READY",
+    "release_id": "030a88d534bdec086c10b87a4732322d72791260178c1129b0538bb3b42bc7d5",
+    "integrity": "VERIFIED",
+    "trust": "LOADED",
+    "trust_commit": "4e02d62cb8e48bb4cc958be322727b91efae6e88",
+    "idempotency": "USABLE"
+  },
+  "production_source_commit": "4eaac81132ae57028cf2432eec911a01b6ecf1fd",
+  "package_query": {
+    "com.termux": {
+      "visible": true,
+      "exit": 0
+    },
+    "com.termux.api": {
+      "visible": true,
+      "exit": 0
+    },
+    "com.termux.boot": {
+      "visible": true,
+      "exit": 0
+    },
+    "org.hg.cim.broker": {
+      "visible": false,
+      "exit": 1
+    }
+  },
+  "termux_api_jobs": {
+    "exit": 0,
+    "summary": "No jobs found"
+  },
+  "hooks_sha256": {
+    "boot": "618f585676b129d0fea66e7218dcd04280059c5540994800e5d49d594015388d",
+    "profile": "e1fd7e2e321eb12dcb6baf54c6e7cb2d46a531f1d2e24c76540ff04c09259504"
+  },
+  "adb_on_device": false,
+  "full_termux_stop": {
+    "result": "NOT_EXECUTED",
+    "trigger": null,
+    "interrupted_at": null,
+    "recovered_at": null,
+    "staging_ready_after": null
+  },
+  "d04": "NOT_RUN",
+  "soak": "NOT_STARTED",
+  "production": "NO-GO"
+}
