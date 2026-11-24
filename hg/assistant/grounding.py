@@ -202,7 +202,7 @@ def _kin_gap(question, note_text):
     return missing
 
 
-def anchored(question, note_text, *, other_notes=()):
+def _strict_anchor(question, note_text, *, other_notes):
     """Return missing discriminative topic terms, or None when this note is on-topic.
 
     In addition to the original topic threshold, every question number, proper name, and
@@ -259,14 +259,87 @@ def anchored(question, note_text, *, other_notes=()):
     return None
 
 
+_EVENT_LOCATION = re.compile(r"^(?:ở|tại|o|tai)\s+(?!(?:sao|đâu|dau|đây|đó|đấy)\b)(?=\w)", re.I)
+_EVENT_TIME = re.compile(r"^(?:(?:vao|luc)\s+)?(?:\d|ngay\b|thang\b|thu\b|chu nhat\b)")
+_EVENT_CLAUSE_END = re.compile(r"[,;](?=\s)|\s+thay\s+(?:cho|vì|vi)\s+", re.I)
+
+
+def _event_source(question, note_text, other_notes):
+    event = textvi.event_question(question)
+    if not event:
+        return None
+    subject, slot = event
+    subject_words = textvi.words(subject)
+    sources = []
+    for sentence in split_sentences(note_text):
+        if sentence.rstrip().endswith("?"):
+            continue
+        clause = _EVENT_CLAUSE_END.split(sentence, maxsplit=1)[0]
+        if _strict_anchor(subject, clause, other_notes=other_notes):
+            continue
+        words = list(textvi.WORD.finditer(clause.lower()))
+        if len(words) <= len(subject_words):
+            continue
+        if any(asked != written.group() and
+               (asked != textvi.fold(asked) or asked != textvi.fold(written.group()))
+               for asked, written in zip(subject_words, words)):
+            continue
+        # Bind the value directly to the named event. A mention of its cancellation
+        # followed by some other event or location must not satisfy the question.
+        subject_end = words[len(subject_words) - 1].end()
+        remainder = clause[subject_end:].lstrip(" \t:")
+        if {"hay", "hoặc", "hoac"}.intersection(textvi.words(remainder)):
+            continue
+        if slot in {"o dau", "tai dau"}:
+            location = _EVENT_LOCATION.match(remainder)
+            if location:
+                place = textvi.words(remainder[location.end():])
+                sources.append((clause, (textvi.words(clause[:subject_end]), place)))
+        else:
+            slot_type = "time" if "gio" in slot else "date"
+            if _EVENT_TIME.match(textvi.fold(remainder.lower())) and not slot_mismatch(remainder, (slot_type,)):
+                sources.append((clause, None))
+    return sources[0] if len(sources) == 1 else None
+
+
+def _event_place_agrees(sentence, event_place):
+    """The answer must name the location itself, even if landmarks also appear nearby."""
+    subject, source_place = event_place
+    place = textvi.words(sentence)
+    if place[:len(subject)] == subject:
+        place = place[len(subject):]
+    if place[:2] in (["diễn", "ra"], ["dien", "ra"]):
+        place = place[2:]
+    if place and place[0] in {"tại", "ở", "tai", "o"}:
+        place = place[1:]
+    primary_place = " ".join(source_place).partition(" đối diện ")[0].split()
+    return place == source_place or place == primary_place
+
+
+def anchored(question, note_text, *, other_notes=()):
+    """Return the missing topic, allowing a time/place stated directly for the named event."""
+    missing = _strict_anchor(question, note_text, other_notes=other_notes)
+    if missing and _event_source(question, note_text, other_notes):
+        return None
+    return missing
+
+
 # An amount of money as notes write it: "185.000 đồng", "250.000đ", "250k", "1tr2", "250 nghìn", "1,2 triệu".
 _AMOUNT = re.compile(r"(?<![\w.,])\d[\d.,]*\s*(?:dong|d|k|nghin|ngan|trieu|tr\d*|ty|ti|vnd|usd)(?![a-z])|"
                      r"(?<![\w.,])\d{1,3}(?:[.,]\d{3})+(?![\d.,]*\d)|\$\s*\d")
+_COUNT = re.compile(r"\b(?:bao nhieu|so may|may (?:buoi|lan|cai|con|nguoi|tuoi|tuan|ngay|thang|nam))\b")
+
+
+def _polar_question(words):
+    return bool(words) and (textvi.negations(words[-1]) or
+                            (words[-1] == "chua" and "da" in words[:-1]))
 
 
 def answer_slots(question):
     """Return required answer shapes inferred conservatively from common Vietnamese questions."""
-    folded = " ".join(textvi.fold(w) for w in textvi.words(question or ""))
+    raw = textvi.words(question or "")
+    folded = " ".join(w if textvi.fold(w) == "may" and w not in {"may", "mấy"}
+                      else textvi.fold(w) for w in raw)
     slots = []
     money_context = bool(re.search(r"\b(?:phi|hoc phi|chi phi|tien|gia)\b", folded))
     if (re.search(r"\b(?:bao nhieu tien|gia bao nhieu|gia la bao nhieu|het bao nhieu)\b", folded)
@@ -278,9 +351,11 @@ def answer_slots(question):
         slots.append("date")
     if re.search(r"\b(?:ten gi|la ai|cua ai|ai phu trach|ai truc)\b", folded):
         slots.append("person")
-    if re.search(r"\b(?:o dau|cho nao|dia chi|dia diem nao)\b", folded):
+    if re.search(r"\b(?:o dau|tai dau|cho nao|dia chi|dia diem nao)\b", folded):
         slots.append("place")
-    if not slots and re.search(r"\b(?:bao nhieu|may|so may|co may|co bao nhieu)\b", folded):
+    if not slots and (_COUNT.search(folded) or "mấy" in raw or
+                      (raw and raw[-1] == "may") or
+                      (not _polar_question(raw) and re.search(r"\bco may\b", folded))):
         slots.append("number")
     return tuple(dict.fromkeys(slots))
 
@@ -332,13 +407,40 @@ def is_question_echo(sentence, question):
     """A sentence made only of the question's own content words is not an answer claim."""
     sentence_keys = set(textvi.query_keys(sentence or ""))
     question_keys = set(textvi.query_keys(question or ""))
-    return len(sentence_keys) >= 2 and sentence_keys <= question_keys and not textvi.numbers(sentence)
+    if len(sentence_keys) < 2 or not sentence_keys <= question_keys or textvi.numbers(sentence):
+        return False
+    asked = textvi.words(question)
+    # A final "chưa/không?" asks about polarity. A negation before a
+    # predicate in a declarative reply supplies polarity rather than echoing it.
+    if _polar_question(asked) and not sentence.rstrip().endswith("?"):
+        if _negated_clauses(sentence) and not _negated_clauses(question):
+            return False
+    return True
 
 
 NEW_INFO_RATIO = 0.6        # share of the answer's new words (not in the question) the note must contain
 
 
-def new_information_gap(sentence, question, note_text):
+_WITH = re.compile(r"\bcùng(?:\s+với)?\b", re.I)
+_LIST_WITH = re.compile(r"\bgồm .+\bcùng\b")
+
+
+def _coordination_claim(sentence, note_text):
+    """Normalize list conjunctions only when the whole list agrees with its source."""
+    reply = " ".join(textvi.words(sentence))
+    is_list = bool(_LIST_WITH.search(reply))
+    if not is_list and " cùng với " not in f" {reply} ":
+        return sentence
+    sources = [" ".join(textvi.words(clause))
+               for clause in split_sentences(note_text) if not clause.rstrip().endswith("?")]
+    if reply in sources:
+        return sentence
+    if is_list and _WITH.sub("và", reply) in sources:
+        return _WITH.sub("và", sentence)
+    return None
+
+
+def new_information_gap(sentence, question, note_text, *, require_all=False):
     """Words the sentence adds beyond the question that the note does not contain, if too many.
 
     An answer may only add what its source note says: with two or fewer new words all must be
@@ -355,7 +457,7 @@ def new_information_gap(sentence, question, note_text):
         return []
     note_keys = set(textvi.document_keys(note_text))
     missing = [k.lstrip("~") for k in new if k not in note_keys]
-    if (len(new) <= 2 and missing) or (len(new) > 2 and (len(new) - len(missing)) / len(new) < NEW_INFO_RATIO):
+    if require_all or len(new) <= 2 or (len(new) - len(missing)) / len(new) < NEW_INFO_RATIO:
         return sorted(missing)
     return []
 
@@ -364,7 +466,13 @@ def check_sentence(sentence, notes, *, question=None, other_notes_by_ref=None):
     """notes: {ref: text}; optional sibling notes enforce discriminative anchors."""
     text = strip_citations(sentence)
     cited = citations(sentence)
-    if question and is_question_echo(text, question):
+    asked = textvi.words(question)
+    reply = textvi.words(text)
+    # Dropping the final "chưa" can assert that an event already happened.
+    # Require the same affirmative statement in the source below.
+    exact_affirmative = (_polar_question(asked) and "đã" in reply and
+                         reply == asked[:-1] and not text.endswith("?"))
+    if question and not exact_affirmative and is_question_echo(text, question):
         return {"sentence": text, "label": "NONE", "note": None, "cited": cited,
                 "reasons": ["lặp lại câu hỏi, không cung cấp câu trả lời"]}
     if is_abstention(text):
@@ -373,15 +481,29 @@ def check_sentence(sentence, notes, *, question=None, other_notes_by_ref=None):
         return {"sentence": text, "label": "NONE", "note": None, "cited": cited, "reasons": []}
     scored, off_topic = [], {}
     for ref, note_text in notes.items():
-        overlap, problems = compare(text, note_text)
         siblings = (other_notes_by_ref or {}).get(ref, ())
-        topic = anchored(question, note_text, other_notes=siblings) if question else None
-        added = new_information_gap(text, question, note_text) if question else []
+        topic = _strict_anchor(question, note_text, other_notes=siblings) if question else None
+        event_source = _event_source(question, note_text, siblings) if topic else None
+        event_place = None
+        if event_source:
+            note_text, event_place = event_source
+            topic = None
+        coordinated = _coordination_claim(text, note_text)
+        claim = coordinated if coordinated is not None else text
+        overlap, problems = compare(claim, note_text)
+        added = new_information_gap(claim, question, note_text, require_all=bool(event_source)) if question else []
         question_topic = set(textvi.topic_keys(question or "")) if question else set()
         sentence_keys = set(textvi.query_keys(text))
         slot_relevant = bool(question_topic & sentence_keys)
-        slots_missing = slot_mismatch(text, answer_slots(question)) if slot_relevant else []
+        slots_missing = slot_mismatch(text, answer_slots(question)) if slot_relevant or event_source else []
         reasons = []
+        if exact_affirmative and not any(textvi.words(source) == reply for source in split_sentences(note_text)
+                                         if not source.rstrip().endswith("?")):
+            reasons.append(f"{ref} không xác nhận sự việc đã xảy ra")
+        if coordinated is None:
+            reasons.append(f"{ref} không có mối liên hệ được nêu")
+        if event_place and not _event_place_agrees(claim, event_place):
+            reasons.append(f"{ref} không xác nhận địa điểm của sự việc")
         if topic:
             reasons.append(f"{ref} không phân biệt đúng chủ đề: {topic}")
         if added:
