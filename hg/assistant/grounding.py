@@ -259,7 +259,7 @@ def _strict_anchor(question, note_text, *, other_notes):
     return None
 
 
-_EVENT_LOCATION = re.compile(r"^(?:ở|tại|o|tai)\s+(?!(?:sao|đâu|dau|đây|đó|đấy)\b)\w", re.I)
+_EVENT_LOCATION = re.compile(r"^(?:ở|tại|o|tai)\s+(?!(?:sao|đâu|dau|đây|đó|đấy)\b)(?=\w)", re.I)
 _EVENT_TIME = re.compile(r"^(?:(?:vao|luc)\s+)?(?:\d|ngay\b|thang\b|thu\b|chu nhat\b)")
 
 
@@ -285,15 +285,33 @@ def _event_source(question, note_text, other_notes):
             continue
         # Bind the value directly to the named event. A mention of its cancellation
         # followed by some other event or location must not satisfy the question.
-        remainder = clause[words[len(subject_words) - 1].end():].lstrip(" \t:")
+        subject_end = words[len(subject_words) - 1].end()
+        remainder = clause[subject_end:].lstrip(" \t:")
         if slot in {"o dau", "tai dau"}:
-            if _EVENT_LOCATION.match(remainder):
-                sources.append(clause)
+            location = _EVENT_LOCATION.match(remainder)
+            if location:
+                place = textvi.words(remainder[location.end():])
+                if not {"hay", "hoặc", "hoac"}.intersection(place):
+                    sources.append((clause, (textvi.words(clause[:subject_end]), place)))
         else:
             slot_type = "time" if "gio" in slot else "date"
             if _EVENT_TIME.match(textvi.fold(remainder.lower())) and not slot_mismatch(remainder, (slot_type,)):
-                sources.append(clause)
+                sources.append((clause, None))
     return sources[0] if len(sources) == 1 else None
+
+
+def _event_place_agrees(sentence, event_place):
+    """The answer must name the location itself, even if landmarks also appear nearby."""
+    subject, source_place = event_place
+    place = textvi.words(sentence)
+    if place[:len(subject)] == subject:
+        place = place[len(subject):]
+    if place[:2] in (["diễn", "ra"], ["dien", "ra"]):
+        place = place[2:]
+    if place and place[0] in {"tại", "ở", "tai", "o"}:
+        place = place[1:]
+    primary_place = " ".join(source_place).partition(" đối diện ")[0].split()
+    return place == source_place or place == primary_place
 
 
 def anchored(question, note_text, *, other_notes=()):
@@ -464,8 +482,10 @@ def check_sentence(sentence, notes, *, question=None, other_notes_by_ref=None):
         siblings = (other_notes_by_ref or {}).get(ref, ())
         topic = _strict_anchor(question, note_text, other_notes=siblings) if question else None
         event_source = _event_source(question, note_text, siblings) if topic else None
+        event_place = None
         if event_source:
-            topic, note_text = None, event_source
+            note_text, event_place = event_source
+            topic = None
         coordinated = _coordination_claim(text, note_text)
         claim = coordinated if coordinated is not None else text
         overlap, problems = compare(claim, note_text)
@@ -480,6 +500,8 @@ def check_sentence(sentence, notes, *, question=None, other_notes_by_ref=None):
             reasons.append(f"{ref} không xác nhận sự việc đã xảy ra")
         if coordinated is None:
             reasons.append(f"{ref} không có mối liên hệ được nêu")
+        if event_place and not _event_place_agrees(claim, event_place):
+            reasons.append(f"{ref} không xác nhận địa điểm của sự việc")
         if topic:
             reasons.append(f"{ref} không phân biệt đúng chủ đề: {topic}")
         if added:

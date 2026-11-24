@@ -34,21 +34,27 @@ class VietnameseEvidenceRegressionTests(AskBase):
             "Buổi hòa nhạc Sao Mai tại sao bị hủy?",
             "Buổi hòa nhạc Sao Mai tại sân Dẻ Gai?",
             "Buổi hòa nhạc Sao Mai không ở sân Dẻ Gai.",
+            "Buổi hòa nhạc Sao Mai tại sân Bạch Đàn hoặc sân Dẻ Gai.",
         ):
             with self.subTest(source=source):
                 self.assertIsNotNone(grounding.anchored("Buổi hòa nhạc Sao Mai diễn ra ở đâu?", source))
 
     def test_event_value_must_come_from_the_event_clause(self):
+        question = "Buổi hòa nhạc Sao Mai diễn ra ở đâu?"
         for source in (
             "Buổi hòa nhạc Sao Mai tại sân Bạch Đàn. Buổi tập tại sân Dẻ Gai.",
             "Buổi hòa nhạc Sao Mai tại sân Bạch Đàn, buổi tập tại sân Dẻ Gai.",
+            "Buổi hòa nhạc Sao Mai tại sân Bạch Đàn đối diện sân Dẻ Gai.",
         ):
             with self.subTest(source=source):
-                question = "Buổi hòa nhạc Sao Mai diễn ra ở đâu?"
                 good = grounding.check_sentence("Tại sân Bạch Đàn [N1].", {"N1": source}, question=question)
                 bad = grounding.check_sentence("Tại sân Dẻ Gai [N1].", {"N1": source}, question=question)
                 self.assertEqual(good["label"], "NOTE")
                 self.assertNotEqual(bad["label"], "NOTE")
+
+        source = {"N1": "Buổi hòa nhạc Sao Mai tại sân Bạch Đàn Nhỏ."}
+        incomplete = grounding.check_sentence("Tại sân Bạch Đàn [N1].", source, question=question)
+        self.assertNotEqual(incomplete["label"], "NOTE")
 
     def test_binary_question_with_machine_is_not_a_quantity_slot(self):
         self.nb.add("Máy khắc Rạng Đông chưa nghiệm thu.", subject="engraver", origin="test")
