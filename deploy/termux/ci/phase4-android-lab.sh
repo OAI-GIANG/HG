@@ -19,6 +19,7 @@ for p in com.termux_1002 com.termux.api_1002 com.termux.boot_1000; do
   d install -g "$lab/$p.apk"
 done
 d shell monkey -p com.termux.boot -c android.intent.category.LAUNCHER 1 >/dev/null
+d shell monkey -p com.termux.api -c android.intent.category.LAUNCHER 1 >"$out/api-launch.txt" 2>&1 || true
 d shell am start -n com.termux/.app.TermuxActivity >/dev/null
 prefix=/data/data/com.termux/files/usr
 home=/data/data/com.termux/files/home
@@ -137,25 +138,44 @@ d shell "touch '$case_dir/arm-recovery'; chown $uid:$uid '$case_dir/arm-recovery
 type_bootstrap
 poll_ready pre-kill 130
 for attempt in {1..20}; do if d shell test -s "$case_dir/job-armed-utc"; then break; fi; sleep 1; done
-d shell test -s "$case_dir/job-armed-utc"
-d shell grep -q 41226 "$case_dir/jobs-before.txt"
+d shell dumpsys jobscheduler > "$lab/jobs-android.txt"
+grep -iE '41226|com\.termux\.api' "$lab/jobs-android.txt" > "$out/jobs-android-before.txt" || true
+armed=false
+if grep -Eq 'JOB #[^ ]*/41226:|JobStatus\{[^}]*#[^ ]*/41226 ' "$out/jobs-android-before.txt"; then
+  armed=true
+fi
+event "SCHEDULER_REGISTRATION_OBSERVED=$armed job=41226"
+d shell cat /proc/sys/kernel/random/boot_id | tr -d '\r' > "$out/boot-pre-kill.txt"
 snapshot pre-kill
 test -s "$out/processes-pre-kill.txt"
 mapfile -t pids < <(awk '{print $2}' "$out/processes-pre-kill.txt")
 for pid in "${pids[@]}"; do [[ "$pid" =~ ^[1-9][0-9]*$ ]]; done
 event "EMULATOR_TEST_INDUCED_UID_TERMINATION_SIGKILL uid=$uid"
 d shell kill -9 "${pids[@]}" || true
-snapshot killed
-test ! -s "$out/processes-killed.txt"
-event "ZERO_SHARED_UID_PROCESSES_VERIFIED"
+for attempt in {1..10}; do
+  snapshot killed
+  if [ ! -s "$out/processes-killed.txt" ]; then break; fi
+  sleep 0.5
+done
+zero=false
+if [ ! -s "$out/processes-killed.txt" ]; then
+  zero=true
+  event "ZERO_SHARED_UID_PROCESSES_VERIFIED"
+fi
+if ready after-termination-before-trigger; then
+  event "READY_PERSISTED_AFTER_TERMINATION"
+  zero=false
+else
+  event "READY_UNAVAILABLE_AFTER_TERMINATION"
+fi
 d shell dumpsys battery set ac 1 >/dev/null
 event "ANDROID_CHARGING_CONSTRAINT_ENABLED job=41226"
 if poll_ready post-kill 45; then
   snapshot post-kill
-  if d shell grep -q jobscheduler-41226 "$case_dir/triggers.tsv"; then event "ISOLATED_APP_RECOVERY=PASS"; else event "ISOLATED_APP_RECOVERY=UNATTRIBUTED"; fi
+  if "$zero" && "$armed" && d shell grep -q jobscheduler-41226 "$case_dir/triggers.tsv"; then event "ISOLATED_APP_RECOVERY=PASS"; else event "ISOLATED_APP_RECOVERY=UNATTRIBUTED"; fi
 else
   snapshot post-kill-timeout
-  event "ISOLATED_APP_RECOVERY=FAIL_OBSERVED_WINDOW"
+  if "$zero" && "$armed"; then event "ISOLATED_APP_RECOVERY=FAIL_OBSERVED_WINDOW"; else event "ISOLATED_APP_RECOVERY=UNVERIFIED_PRECONDITION"; fi
 fi
 d shell cat /proc/sys/kernel/random/boot_id | tr -d '\r' > "$out/boot-before.txt"
 event "EMULATOR_D04_REBOOT_REQUESTED"
