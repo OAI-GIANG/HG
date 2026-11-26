@@ -124,6 +124,9 @@ poll_ready() {
 processes() { d shell ps -A -o UID,PID,NAME | tr -d '\r' | awk -v owner="$uid" '$1==owner {print}'; }
 snapshot() { processes > "$out/processes-$1.txt"; }
 type_bootstrap() {
+  d shell am start -W -n com.termux/.app.TermuxActivity > "$out/bootstrap-activity.txt"
+  sleep 3
+  d shell dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity' >> "$out/bootstrap-activity.txt" || true
   d shell input text "$case_dir/bootstrap.sh"
   d shell input keyevent 66
 }
@@ -141,7 +144,20 @@ collect() {
 trap collect EXIT
 d shell dumpsys battery unplug >/dev/null
 d shell "touch '$case_dir/arm-recovery'; chown $uid:$uid '$case_dir/arm-recovery'"
-type_bootstrap
+for attempt in {1..3}; do
+  type_bootstrap
+  for tick in {1..5}; do
+    if d shell test -f "$case_dir/bootstrap.log"; then break 2; fi
+    sleep 1
+  done
+done
+if ! d shell test -f "$case_dir/bootstrap.log"; then
+  if timeout 15 adb -s "$serial" shell uiautomator dump /data/local/tmp/hg-startup.xml >/dev/null; then
+    d shell cat /data/local/tmp/hg-startup.xml > "$out/bootstrap-window.xml"
+  fi
+  event "BOOTSTRAP_COMMAND_NOT_OBSERVED"
+  exit 1
+fi
 poll_ready pre-kill 130
 for attempt in {1..20}; do if d shell test -s "$case_dir/job-armed-utc"; then break; fi; sleep 1; done
 d shell dumpsys jobscheduler > "$lab/jobs-android.txt"
