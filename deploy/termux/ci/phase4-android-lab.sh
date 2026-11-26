@@ -8,10 +8,18 @@ mapfile -t devices < <(adb devices | awk '$2=="device" {print $1}')
 serial=${devices[0]}
 [[ "$serial" =~ ^emulator-[0-9]+$ ]]
 d() { adb -s "$serial" "$@"; }
-test "$(d shell getprop ro.kernel.qemu | tr -d '\r')" = 1
-d root >/dev/null
-d wait-for-device
-test "$(d shell id -u | tr -d '\r')" = 0
+ensure_emulator_root() {
+  local attempt
+  for attempt in {1..12}; do
+    if [ "$(d shell getprop ro.kernel.qemu 2>/dev/null | tr -d '\r')" = 1 ]; then
+      if [ "$(d shell id -u 2>/dev/null | tr -d '\r')" = 0 ]; then return 0; fi
+      d root >/dev/null 2>>"$out/adb-root-attempts.log" || true
+    fi
+    sleep 2
+  done
+  return 1
+}
+ensure_emulator_root
 stamp() { date -u +%FT%TZ; }
 event() { printf '%s\t%s\n' "$(stamp)" "$*" | tee -a "$out/timeline.tsv"; }
 event "EMULATOR_CONFIRMED $serial API=$(d shell getprop ro.build.version.sdk | tr -d '\r')"
@@ -214,8 +222,7 @@ for attempt in {1..75}; do if [ "$(d shell getprop sys.boot_completed | tr -d '\
 test "$(d shell getprop sys.boot_completed | tr -d '\r')" = 1
 d shell cat /proc/sys/kernel/random/boot_id | tr -d '\r' > "$out/boot-after.txt"
 ! cmp -s "$out/boot-before.txt" "$out/boot-after.txt"
-d root >/dev/null
-timeout 40 adb -s "$serial" wait-for-device
+ensure_emulator_root
 forward
 if poll_ready post-reboot 45; then
   snapshot post-reboot
