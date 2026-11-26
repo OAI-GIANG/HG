@@ -128,6 +128,12 @@ type_bootstrap() {
   d shell input keyevent 66
 }
 collect() {
+  if [ -n "${observation_pid:-}" ]; then
+    kill "$observation_pid" 2>/dev/null || true
+    wait "$observation_pid" 2>/dev/null || true
+    grep -E 'am_proc_(died|start)|am_kill' "$lab/android-events.log" |
+      grep -F 'com.termux' > "$out/android-process-events.txt" || true
+  fi
   for f in bootstrap.log service.log triggers.tsv bootstrap.exit jobs-before.txt job-armed-utc python-version; do
     if d shell test -r "$case_dir/$f"; then d shell cat "$case_dir/$f" > "$out/$f"; fi
   done
@@ -146,17 +152,24 @@ if grep -Eq 'JOB #[^ ]*/41226:|JobStatus\{[^}]*#[^ ]*/41226 ' "$out/jobs-android
 fi
 event "SCHEDULER_REGISTRATION_OBSERVED=$armed job=41226"
 d shell cat /proc/sys/kernel/random/boot_id | tr -d '\r' > "$out/boot-pre-kill.txt"
+d shell input keyevent KEYCODE_HOME
+d logcat -b events -v epoch -T 1 > "$lab/android-events.log" 2>&1 &
+observation_pid=$!
 snapshot pre-kill
 test -s "$out/processes-pre-kill.txt"
 mapfile -t pids < <(awk '{print $2}' "$out/processes-pre-kill.txt")
 for pid in "${pids[@]}"; do [[ "$pid" =~ ^[1-9][0-9]*$ ]]; done
 event "EMULATOR_TEST_INDUCED_UID_TERMINATION_SIGKILL uid=$uid"
-d shell kill -9 "${pids[@]}" || true
-for attempt in {1..10}; do
-  snapshot killed
-  if [ ! -s "$out/processes-killed.txt" ]; then break; fi
-  sleep 0.5
-done
+d shell "kill -9 ${pids[*]} || true
+  for attempt in \$(seq 1 20); do
+    remaining=\$(ps -A -o UID,PID,NAME | awk '\$1==$uid')
+    if [ -z \"\$remaining\" ]; then
+      date -u +%FT%TZ >&2
+      exit 0
+    fi
+    sleep 0.02
+  done
+  printf '%s\\n' \"\$remaining\"" > "$out/processes-killed.txt" 2> "$out/process-loss-device.txt"
 zero=false
 if [ ! -s "$out/processes-killed.txt" ]; then
   zero=true
