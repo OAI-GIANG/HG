@@ -1,0 +1,75 @@
+name: HG phase 4 isolated Android recovery lab
+on:
+  push:
+    branches: [stt/hg-phase4-android-lab-20261126]
+    paths:
+      - .github/workflows/hg-phase4-android-recovery-lab.yml
+      - deploy/termux/ci/phase4-android-lab.sh
+permissions:
+  contents: read
+jobs:
+  android-lab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 24
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Prepare exact HG release and signed test packages
+        run: |
+          set -euo pipefail
+          A="$RUNNER_TEMP/hg-phase4"
+          mkdir -p "$A/evidence"
+          echo "HG_ANDROID_LAB=$A" >> "$GITHUB_ENV"
+          pin=40254e60802bc59e40cd739d6ae4081241af4acd
+          git fetch --depth 1 origin "$pin"
+          git worktree add --detach "$A/source" "$pin"
+          (
+            cd "$A/source"
+            test "$(git rev-parse HEAD)" = "$pin"
+            python -m hg.release build --repo . --commit "$pin" --archive "$A/release.tar.gz" --manifest "$A/release.json"
+            python -m hg.release verify --repo . --archive "$A/release.tar.gz" --manifest "$A/release.json"
+          ) | tee "$A/evidence/release-build.log"
+          python - "$A/release.json" <<'PY'
+          import json, sys
+          d=json.load(open(sys.argv[1]))
+          assert d["commit"]=="40254e60802bc59e40cd739d6ae4081241af4acd"
+          assert d["release_id"]=="95df7ed9e62f83fe32807a625da4952d191342d1babd2ba19945132dff676153", d["release_id"]
+          PY
+          sdk="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          signer_bin=$(find "$sdk/build-tools" -type f -name apksigner | sort -V | tail -n1)
+          test -x "$signer_bin"
+          signer=228fb2cfe90831c1499ec3ccaf61e96e8e1ce70766b9474672ce427334d41c42
+          for item in com.termux_1002 com.termux.api_1002 com.termux.boot_1000; do
+            curl --fail --location --retry 2 --max-time 120 "https://f-droid.org/repo/$item.apk" -o "$A/$item.apk"
+            "$signer_bin" verify --print-certs "$A/$item.apk" > "$A/evidence/$item.signer.txt"
+            grep -F "certificate SHA-256 digest: $signer" "$A/evidence/$item.signer.txt"
+            sha256sum "$A/$item.apk" >> "$A/evidence/apks.sha256"
+          done
+      - name: Grant the hosted runner access to its emulator accelerator
+        run: sudo setfacl -m "u:$(id -u):rw" /dev/kvm
+      - name: Observe Android termination and reboot from outside Termux
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: default
+          arch: x86_64
+          profile: pixel_6
+          script: bash deploy/termux/ci/phase4-android-lab.sh
+      - name: Seal the evidence after the emulator step
+        if: always()
+        run: |
+          if [ -d "${HG_ANDROID_LAB:-$RUNNER_TEMP/hg-phase4}/evidence" ]; then
+            cd "${HG_ANDROID_LAB:-$RUNNER_TEMP/hg-phase4}/evidence"
+            find . -maxdepth 1 -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 -r sha256sum > SHA256SUMS
+            if [ -s SHA256SUMS ]; then sha256sum -c SHA256SUMS; fi
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hg-phase4-android-lab-evidence
+          path: ${{ runner.temp }}/hg-phase4/evidence
+          if-no-files-found: warn
