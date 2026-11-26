@@ -1,0 +1,3 @@
+         1795702696.343   556  1746 I am_proc_died: [0,2387,com.termux.boot,900,16]
+         1795702696.449   556  1485 I am_proc_died: [0,2458,com.termux.api,905,19]
+         1795702696.887   556   574 I am_proc_died: [0,2529,com.termux,50,2]

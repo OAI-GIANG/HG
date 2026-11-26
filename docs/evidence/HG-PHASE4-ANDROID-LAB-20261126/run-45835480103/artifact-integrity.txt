@@ -1,0 +1,7 @@
+./api-launch.txt: OK
+./apks.sha256: OK
+./com.termux.api_1002.signer.txt: OK
+./com.termux.boot_1000.signer.txt: OK
+./com.termux_1002.signer.txt: OK
+./release-build.log: OK
+./timeline.tsv: OK

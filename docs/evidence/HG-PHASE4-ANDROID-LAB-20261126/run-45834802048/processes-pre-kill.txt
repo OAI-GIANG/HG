@@ -1,0 +1,5 @@
+10148  2282 com.termux.boot
+10148  2367 com.termux.api
+10148  2402 com.termux
+10148  2548 bash
+10148  2983 python3

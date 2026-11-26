@@ -1,0 +1,18 @@
+    <0>com.termux.api::.schedulePersisted():
+    <0>com.termux.api::anr:
+    <0>com.termux.api::timeout-total:
+  JOB #u0a148/41226: 68fe92 com.termux.api/.apis.JobSchedulerAPI$JobSchedulerService
+    u0a148 tag=*job*/com.termux.api/.apis.JobSchedulerAPI$JobSchedulerService
+    Source: uid=u0a148 user=0 pkg=com.termux.api
+      Service: com.termux.api/.apis.JobSchedulerAPI$JobSchedulerService
+  #u0a148/41226 from u0a148-> Num Required Constraints: 0, lifecycle=[79745, (0%), 43279745]
+    JobStatus{68fe92 #u0a148/41226 com.termux.api/.apis.JobSchedulerAPI$JobSchedulerService u=0 s=10148 CHARGING satisfied:0x3600002 unsatisfied:0x1}: 21679745
+  ##u0a148/41226 from u0a148
+        com.termux.api
+    10148:com.termux.api=false
+    ##u0a148/41226 from u0a148 active: com.termux.api [RUN_ANY_IN_BACKGROUND allowed] RUNNABLE
+    ##u0a148/41226 from u0a148: com.termux.api RUNNABLE
+    ##u0a148/41226 from u0a148
+      <0>com.termux.api
+  0-ComponentInfo{com.termux.api/com.termux.api.apis.JobSchedulerAPI$JobSchedulerService}: com.termux.api
+  10148: {com.termux.api, com.termux.boot, com.termux}

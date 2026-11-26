@@ -1,0 +1,3 @@
+10148  1891 com.termux.boot
+10148  1910 com.termux
+10148  1925 python3

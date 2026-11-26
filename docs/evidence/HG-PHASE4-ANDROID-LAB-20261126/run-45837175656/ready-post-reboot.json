@@ -1,0 +1,9 @@
+{
+  "status": "READY",
+  "integrity": "VERIFIED",
+  "trust": "LOADED",
+  "release_id": "95df7ed9e62f83fe32807a625da4952d191342d1babd2ba19945132dff676153",
+  "idempotency": "USABLE",
+  "http": 200,
+  "observed_at_utc": "2026-11-26T14:20:32.268156+00:00"
+}

@@ -1,0 +1,15 @@
+  bash arg: -p
+  bash arg: com.termux.api
+  bash arg: -c
+  bash arg: android.intent.category.LAUNCHER
+  bash arg: 1
+args: [-p, com.termux.api, -c, android.intent.category.LAUNCHER, 1]
+ arg: "-p"
+ arg: "com.termux.api"
+ arg: "-c"
+ arg: "android.intent.category.LAUNCHER"
+ arg: "1"
+data="com.termux.api"
+data="android.intent.category.LAUNCHER"
+Events injected: 1
+## Network stats: elapsed time=39ms (0ms mobile, 0ms wifi, 39ms not connected)

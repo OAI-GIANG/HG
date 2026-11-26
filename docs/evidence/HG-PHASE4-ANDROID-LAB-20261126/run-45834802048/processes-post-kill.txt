@@ -1,0 +1,3 @@
+10148  3089 com.termux.api
+10148  3141 com.termux
+10148  3171 python3
